@@ -213,13 +213,17 @@
         </div>
 
         <div class="control-group">
-            <div class="group-title">Placa en subducción (histórico USGS)</div>
-            <div class="checkbox-item">
-                <input type="checkbox" id="showPlate" checked>
-                <label for="showPlate">Mostrar placa (<span id="plateCount">0</span> sismos, 1960-2026)</label>
+            <div class="group-title">Base de datos histórica (USGS)</div>
+            <div class="slider-group">
+                <select id="plateDataset" style="width:100%;background:#0f1628;color:#e0e0e0;border:1px solid #293548;border-radius:4px;padding:5px;font-size:11px;">
+                    <option value="none">Ninguna</option>
+                    <option value="plate1960" selected>Subducción Nazca (1960-2026)</option>
+                    <option value="hist1900">Histórico completo Colombia (1900-2026)</option>
+                </select>
+                <div class="hint" style="margin-top:4px;" id="plateDatasetInfo"></div>
             </div>
             <div class="slider-group">
-                <div class="slider-label"><span>Opacidad placa</span><span class="slider-value" id="plateOpacityValue">55%</span></div>
+                <div class="slider-label"><span>Opacidad</span><span class="slider-value" id="plateOpacityValue">55%</span></div>
                 <input type="range" id="plateOpacitySlider" min="0" max="100" value="55">
             </div>
             <div class="slider-group">
@@ -692,17 +696,24 @@ let mapBounds = null;
 let rawMapCanvas = null;
 let visibleEventos = [...eventos];
 let raycaster, mouseVec;
-let plateData = [];       // [lon, lat, depth, mag] x 4983 (USGS, histórico 1960-2026)
+// Bases de datos históricas seleccionables, cada una [lon, lat, depth, mag] x N (USGS)
+const PLATE_DATASETS = { plate1960: [], hist1900: [] };
 let plateMeshes = [];     // array de THREE.InstancedMesh, uno por "cubeta" de color (evita depender de setColorAt)
 
 async function loadPlateData() {
-    try {
-        const res = await fetch('subduccion-puntos.json');
-        plateData = await res.json();
-    } catch (err) {
-        console.warn('No se pudo cargar subduccion-puntos.json', err);
-        plateData = [];
-    }
+    const [r1, r2] = await Promise.allSettled([
+        fetch('subduccion-puntos.json').then(r => r.json()),
+        fetch('historico-1900-puntos.json').then(r => r.json())
+    ]);
+    PLATE_DATASETS.plate1960 = r1.status === 'fulfilled' ? r1.value : [];
+    PLATE_DATASETS.hist1900 = r2.status === 'fulfilled' ? r2.value : [];
+    if (r1.status !== 'fulfilled') console.warn('No se pudo cargar subduccion-puntos.json', r1.reason);
+    if (r2.status !== 'fulfilled') console.warn('No se pudo cargar historico-1900-puntos.json', r2.reason);
+
+    const optPlate1960 = document.querySelector('#plateDataset option[value="plate1960"]');
+    const optHist1900 = document.querySelector('#plateDataset option[value="hist1900"]');
+    if (optPlate1960) optPlate1960.textContent = `Subducción Nazca (1960-2026, ${PLATE_DATASETS.plate1960.length} sismos)`;
+    if (optHist1900) optHist1900.textContent = `Histórico completo Colombia (1900-2026, ${PLATE_DATASETS.hist1900.length} sismos)`;
 }
 
 const BASE_PLATE_RADIUS = 0.16;
@@ -718,14 +729,22 @@ function plateBucketFor(depth) {
     return { key: 'gray' + idx, color: (g << 16) | (g << 8) | g };
 }
 
+function currentPlateData() {
+    const key = document.getElementById('plateDataset').value;
+    return PLATE_DATASETS[key] || [];
+}
+
 function buildPlatePoints() {
     plateMeshes.forEach(m => { scene.remove(m); m.geometry.dispose(); m.material.dispose(); });
     plateMeshes = [];
+    const plateData = currentPlateData();
+    document.getElementById('plateDatasetInfo').textContent = plateData.length
+        ? `Mostrando ${plateData.length} sismos.`
+        : 'Sin capa histórica seleccionada.';
     if (!plateData.length) return;
 
     const sizeVal = parseFloat(document.getElementById('plateSizeSlider').value) / 100 * BASE_PLATE_RADIUS;
     const opacityVal = parseFloat(document.getElementById('plateOpacitySlider').value) / 100;
-    const visible = document.getElementById('showPlate').checked;
 
     // Agrupar índices por cubeta de color
     const groups = new Map(); // key -> { color, positions: [{lon,lat,depth}] }
@@ -753,12 +772,9 @@ function buildPlatePoints() {
             mesh.setMatrixAt(i, dummy.matrix);
         });
         mesh.instanceMatrix.needsUpdate = true;
-        mesh.visible = visible;
         scene.add(mesh);
         plateMeshes.push(mesh);
     });
-
-    document.getElementById('plateCount').textContent = plateData.length;
 }
 
 function getFlipFlags() {
@@ -1186,7 +1202,7 @@ function computeProfileSeries(swathKm) {
     });
 
     const platePts = [];
-    plateData.forEach(p => {
+    currentPlateData().forEach(p => {
         const [lon, lat, depth, mag] = p;
         const { t, perp } = project(lat, lon);
         if (t >= 0 && t <= L && Math.abs(perp) <= swathKm) {
@@ -1338,8 +1354,8 @@ document.getElementById('sizeSlider').addEventListener('input', e => {
 document.getElementById('speedSlider').addEventListener('input', e => {
     document.getElementById('speedValue').textContent = e.target.value + '%';
 });
-document.getElementById('showPlate').addEventListener('change', e => {
-    plateMeshes.forEach(m => m.visible = e.target.checked);
+document.getElementById('plateDataset').addEventListener('change', () => {
+    buildPlatePoints();
 });
 document.getElementById('plateOpacitySlider').addEventListener('input', e => {
     document.getElementById('plateOpacityValue').textContent = e.target.value + '%';
