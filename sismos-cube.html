@@ -509,8 +509,8 @@ async function buildMapTexture(satellite) {
     const minTileY = Math.floor(lat2tileY(maxLat, zoom));
     const maxTileY = Math.floor(lat2tileY(minLat, zoom));
 
-    const tilesX = Math.min(maxTileX - minTileX + 1, 10);
-    const tilesY = Math.min(maxTileY - minTileY + 1, 10);
+    const tilesX = Math.min(maxTileX - minTileX + 1, 14);
+    const tilesY = Math.min(maxTileY - minTileY + 1, 14);
 
     const canvas = document.createElement('canvas');
     canvas.width = tilesX * 256;
@@ -530,6 +530,9 @@ async function buildMapTexture(satellite) {
     for (const srcFn of sources) {
         try {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = '#16324a';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
             const jobs = [];
             for (let ty = 0; ty < tilesY; ty++) {
                 for (let tx = 0; tx < tilesX; tx++) {
@@ -537,11 +540,24 @@ async function buildMapTexture(satellite) {
                     jobs.push(loadTileImage(srcFn(x, y, zoom)).then(img => ({ img, tx, ty })));
                 }
             }
-            const results = await Promise.all(jobs);
-            results.forEach(({ img, tx, ty }) => ctx.drawImage(img, tx * 256, ty * 256, 256, 256));
+            const results = await Promise.allSettled(jobs);
+            let loaded = 0;
+            results.forEach(r => {
+                if (r.status === 'fulfilled') {
+                    const { img, tx, ty } = r.value;
+                    ctx.drawImage(img, tx * 256, ty * 256, 256, 256);
+                    loaded++;
+                }
+            });
             ctx.getImageData(0, 0, 1, 1); // dispara SecurityError si el canvas quedó "tainted"
-            success = true;
-            break;
+
+            // Consideramos la fuente utilizable si cargó al menos la mitad de las teselas;
+            // así una tesela suelta que falle no bota todo el mapa.
+            if (loaded >= Math.ceil(jobs.length * 0.5)) {
+                success = true;
+                break;
+            }
+            console.warn(`Fuente de mapa cargó solo ${loaded}/${jobs.length} teselas, probando alternativa...`);
         } catch (err) {
             console.warn('Fuente de mapa falló, probando alternativa...', err.message);
         }
@@ -1372,13 +1388,14 @@ document.getElementById('geojsonFileInput').addEventListener('change', (e) => {
             newEvents.forEach(ev => { importedCount++; ev.id = eventos.length + importedCount; });
             eventos.push(...newEvents);
 
-            status.textContent = 'Ajustando el mapa a los sismos importados…';
             const b = computeBoundsForEvents(newEvents);
+            const boundsTxt = `lat ${b.minLat.toFixed(1)}°–${b.maxLat.toFixed(1)}°, lon ${b.minLon.toFixed(1)}°–${b.maxLon.toFixed(1)}°`;
+            status.textContent = `Ajustando el mapa (${boundsTxt})…`;
             minLat = b.minLat; maxLat = b.maxLat; minLon = b.minLon; maxLon = b.maxLon;
             await reloadMap();
 
             refreshAfterEventChange();
-            status.textContent = `✓ ${newEvents.length} sismos importados (total: ${eventos.length}). Mapa ajustado a la nueva zona.`;
+            status.textContent = `✓ ${newEvents.length} sismos importados (total: ${eventos.length}). Ventana: ${boundsTxt}.`;
             document.getElementById('clearImportedBtn').style.display = 'block';
         } catch (err) {
             status.textContent = '⚠ Error al leer el archivo: ' + err.message;
