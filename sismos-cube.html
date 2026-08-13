@@ -49,11 +49,11 @@
     }
 
     #panelResizeHandle {
-        flex-shrink: 0; height: 12px; cursor: row-resize; display: flex;
+        flex-shrink: 0; height: 22px; cursor: row-resize; display: flex;
         align-items: center; justify-content: center; touch-action: none;
     }
     #panelResizeHandle::before {
-        content: ''; width: 70px; height: 4px; border-radius: 2px;
+        content: ''; width: 120px; height: 7px; border-radius: 4px;
         background: #293548; transition: background 0.15s;
     }
     #panelResizeHandle:hover::before, #panelResizeHandle.dragging::before { background: #64b5f6; }
@@ -140,6 +140,8 @@
         </div>
     </div>
 
+    <div id="panelResizeHandle" title="Arrastra para ajustar el espacio"></div>
+
     <div class="timeline-container">
         <div class="timeline-header">
             <span>⏱️ Línea de tiempo (según fecha/hora real del sismo)</span>
@@ -152,8 +154,6 @@
             <span id="timeEnd">-</span>
         </div>
     </div>
-
-    <div id="panelResizeHandle" title="Arrastra para ajustar el espacio"></div>
 
     <div class="control-panel">
         <div class="control-logo">
