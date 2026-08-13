@@ -1183,8 +1183,12 @@ document.getElementById('playBtn').addEventListener('click', () => {
 
     function clampHeight(h) {
         const containerH = document.querySelector('.container').clientHeight;
+        const timeline = document.querySelector('.timeline-container');
         const minPanel = 50;
-        const maxPanel = Math.max(minPanel, containerH - 50); // deja al menos ~50px para canvas+timeline+handle
+        const minCanvas = 50;
+        const gapTotal = 30; // 3 gaps de 10px entre scene-wrap, handle, timeline y panel
+        const reservedOther = handle.offsetHeight + timeline.offsetHeight + gapTotal;
+        const maxPanel = Math.max(minPanel, containerH - reservedOther - minCanvas);
         return Math.min(maxPanel, Math.max(minPanel, h));
     }
 
