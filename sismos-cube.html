@@ -1,0 +1,862 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cubo 3D de Sismos - Chocó, Colombia</title>
+<script src="https://cdn.jsdelivr.net/npm/three@0.140.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.140.0/examples/js/controls/OrbitControls.js"></script>
+<style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: Arial, sans-serif; background: #0a0e27; color: #e0e0e0; overflow: hidden; }
+
+    .container { display: flex; height: 100vh; gap: 10px; padding: 10px; }
+    .main-content { flex: 1; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+
+    .scene-wrap { flex: 1; position: relative; border-radius: 8px; border: 1px solid #1e293b; background: #0a0e27; overflow: hidden; }
+    #canvas3d { width: 100%; height: 100%; display: block; }
+
+    #loading {
+        position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+        display: flex; align-items: center; justify-content: center;
+        background: rgba(10,14,39,0.85); font-size: 13px; color: #90caf9; z-index: 5;
+    }
+
+    #attribution {
+        position: absolute; bottom: 6px; left: 8px; font-size: 9px; color: #5a7a9a;
+        background: rgba(10,14,39,0.6); padding: 2px 6px; border-radius: 3px; z-index: 3;
+    }
+
+    #eventInfo {
+        position: absolute; top: 10px; left: 10px; background: rgba(15,22,40,0.92);
+        border: 1px solid #64b5f6; border-radius: 6px; padding: 10px 14px; font-size: 12px;
+        line-height: 1.7; color: #e0e0e0; display: none; z-index: 4; min-width: 180px;
+    }
+    #eventInfo strong { color: #64b5f6; }
+    #eventInfo .close { position: absolute; top: 4px; right: 8px; cursor: pointer; color: #90caf9; }
+
+    .timeline-container { background: #1a1f3a; padding: 12px; border-radius: 8px; border: 1px solid #1e293b; }
+    .timeline-header { font-size: 12px; font-weight: bold; color: #64b5f6; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; }
+    #playBtn { background: #64b5f6; color: #0a0e27; border: none; padding: 4px 12px; border-radius: 4px; font-weight: bold; font-size: 11px; cursor: pointer; }
+    #playBtn:hover { background: #90caf9; }
+    .timeline-slider { width: 100%; }
+    .timeline-info { display: flex; justify-content: space-between; font-size: 11px; color: #90caf9; margin-top: 8px; }
+    #timeValue { color: #fff; font-weight: bold; }
+
+    .control-panel { width: 280px; background: #1a1f3a; border-radius: 8px; padding: 15px; border: 1px solid #1e293b; overflow-y: auto; max-height: 100vh; }
+    .panel-title { font-size: 14px; font-weight: bold; color: #64b5f6; margin-bottom: 15px; border-bottom: 2px solid #64b5f6; padding-bottom: 8px; }
+    .control-group { margin-bottom: 15px; padding-bottom: 12px; border-bottom: 1px solid #293548; }
+    .control-group:last-child { border-bottom: none; }
+    .group-title { font-size: 11px; font-weight: bold; color: #90caf9; margin-bottom: 8px; text-transform: uppercase; }
+    .checkbox-item { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; font-size: 12px; }
+    .checkbox-item input { cursor: pointer; width: 16px; height: 16px; accent-color: #64b5f6; }
+    .checkbox-item label { cursor: pointer; user-select: none; }
+    .slider-group { margin-bottom: 10px; }
+    .slider-label { font-size: 11px; display: flex; justify-content: space-between; margin-bottom: 6px; color: #90caf9; }
+    .slider-value { background: #64b5f6; color: #0a0e27; padding: 2px 6px; border-radius: 3px; font-weight: bold; font-size: 10px; }
+    input[type="range"] { width: 100%; height: 4px; border-radius: 2px; background: #293548; outline: none; cursor: pointer; -webkit-appearance: none; }
+    input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 12px; height: 12px; border-radius: 50%; background: #64b5f6; cursor: pointer; }
+    input[type="range"]::-moz-range-thumb { width: 12px; height: 12px; border-radius: 50%; background: #64b5f6; cursor: pointer; border: none; }
+    .info-box { background: #0f1628; border: 1px solid #293548; border-radius: 6px; padding: 10px; font-size: 11px; line-height: 1.6; color: #90caf9; }
+    .info-box strong { color: #64b5f6; }
+    .legend { margin-top: 12px; padding-top: 12px; border-top: 1px solid #293548; }
+    .legend-title { font-size: 11px; font-weight: bold; color: #90caf9; margin-bottom: 8px; text-transform: uppercase; }
+    .legend-item { display: flex; align-items: center; gap: 6px; font-size: 10px; margin-bottom: 4px; }
+    .legend-color { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+    .hint { font-size: 10px; color: #5a7a9a; margin-top: 10px; line-height: 1.5; }
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: #0f1628; }
+    ::-webkit-scrollbar-thumb { background: #64b5f6; border-radius: 3px; }
+
+    #pageCredit {
+        position: fixed; bottom: 8px; left: 10px; z-index: 20;
+        font-size: 15px; color: #90caf9; background: rgba(10,14,39,0.7);
+        padding: 4px 10px; border-radius: 4px; pointer-events: none;
+    }
+</style>
+</head>
+<body>
+<div class="container">
+    <div class="main-content">
+        <div class="scene-wrap">
+            <canvas id="canvas3d"></canvas>
+            <div id="loading">Cargando mapa base y datos de la placa (4,983 sismos históricos)…</div>
+            <div id="attribution">Mapa: © OpenStreetMap contributors</div>
+            <div id="eventInfo">
+                <span class="close" id="closeInfo">✕</span>
+                <div id="eventInfoBody"></div>
+            </div>
+        </div>
+
+        <div class="timeline-container">
+            <div class="timeline-header">
+                <span>⏱️ Línea de tiempo (según fecha/hora real del sismo)</span>
+                <button id="playBtn">▶ Reproducir</button>
+            </div>
+            <input type="range" class="timeline-slider" id="timelineSlider" min="0" max="1000" value="1000">
+            <div class="timeline-info">
+                <span id="timeStart">-</span>
+                <span id="timeValue">Ahora</span>
+                <span id="timeEnd">-</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="control-panel">
+        <img src="swtectonics-logo.png" alt="SWTectonics" style="display:block;width:100%;max-width:none;height:auto;margin:0 auto 14px auto;">
+        <div class="panel-title">⚙️ Controles</div>
+
+        <div class="control-group">
+            <div class="group-title">Capas</div>
+            <div class="checkbox-item">
+                <input type="checkbox" id="showMap" checked>
+                <label for="showMap">Mapa (cara superior)</label>
+            </div>
+            <div class="slider-group">
+                <div class="slider-label"><span>Opacidad mapa</span><span class="slider-value" id="mapOpacityValue">100%</span></div>
+                <input type="range" id="mapOpacitySlider" min="0" max="100" value="100">
+            </div>
+
+            <div class="checkbox-item">
+                <input type="checkbox" id="showEvents" checked>
+                <label for="showEvents">Sismos (esferas)</label>
+            </div>
+            <div class="slider-group">
+                <div class="slider-label"><span>Opacidad sismos</span><span class="slider-value" id="eventOpacityValue">100%</span></div>
+                <input type="range" id="eventOpacitySlider" min="0" max="100" value="100">
+            </div>
+
+            <div class="checkbox-item">
+                <input type="checkbox" id="showGrid" checked>
+                <label for="showGrid">Cuadrícula de profundidad</label>
+            </div>
+            <div class="slider-group">
+                <div class="slider-label"><span>Opacidad cuadrícula</span><span class="slider-value" id="gridOpacityValue">40%</span></div>
+                <input type="range" id="gridOpacitySlider" min="0" max="100" value="40">
+            </div>
+        </div>
+
+        <div class="control-group">
+            <div class="group-title">Placa en subducción (histórico USGS)</div>
+            <div class="checkbox-item">
+                <input type="checkbox" id="showPlate" checked>
+                <label for="showPlate">Mostrar placa (<span id="plateCount">0</span> sismos, 1960-2026)</label>
+            </div>
+            <div class="slider-group">
+                <div class="slider-label"><span>Opacidad placa</span><span class="slider-value" id="plateOpacityValue">55%</span></div>
+                <input type="range" id="plateOpacitySlider" min="0" max="100" value="55">
+            </div>
+            <div class="slider-group">
+                <div class="slider-label"><span>Tamaño puntos</span><span class="slider-value" id="plateSizeValue">100%</span></div>
+                <input type="range" id="plateSizeSlider" min="30" max="300" value="100">
+            </div>
+            <div style="height:10px;border-radius:3px;margin-top:6px;background:linear-gradient(to right, #2659f2 0%, #2659f2 7.8%, #000000 7.9%, #ffffff 35.6%, #ffffff 100%); border:1px solid #293548;"></div>
+            <div style="display:flex;justify-content:space-between;font-size:9px;color:#5a7a9a;margin-top:2px;">
+                <span>0 km (azul)</span><span>35 km (negro)</span><span>160+ km (blanco)</span>
+            </div>
+        </div>
+
+        <div class="control-group">
+            <div class="group-title">Orientación del mapa</div>
+            <div class="checkbox-item">
+                <input type="checkbox" id="flipEW" checked>
+                <label for="flipEW">Espejo Este-Oeste</label>
+            </div>
+            <div class="checkbox-item">
+                <input type="checkbox" id="flipNS">
+                <label for="flipNS">Espejo Norte-Sur</label>
+            </div>
+            <div class="hint" style="margin-top:4px;">Si el mapa se ve invertido o los letreros al revés, prueba estas dos casillas hasta que quede correcto. Los sismos se reposicionan junto con el mapa.</div>
+        </div>
+
+        <div class="control-group">
+            <div class="group-title">Tamaño de esferas (magnitud)</div>
+            <div class="slider-group">
+                <div class="slider-label"><span>Escala</span><span class="slider-value" id="sizeValue">100%</span></div>
+                <input type="range" id="sizeSlider" min="50" max="250" value="100">
+            </div>
+        </div>
+
+        <div class="control-group">
+            <div class="group-title">Cámara</div>
+            <div class="checkbox-item">
+                <input type="checkbox" id="autoRotate">
+                <label for="autoRotate">Auto-rotar</label>
+            </div>
+            <div class="slider-group">
+                <div class="slider-label"><span>Velocidad</span><span class="slider-value" id="speedValue">100%</span></div>
+                <input type="range" id="speedSlider" min="10" max="300" value="100">
+            </div>
+            <button id="resetCam" style="width:100%;background:#293548;color:#90caf9;border:1px solid #64b5f6;border-radius:4px;padding:6px;font-size:11px;cursor:pointer;">Restablecer vista</button>
+        </div>
+
+        <div class="info-box">
+            <strong>Total de eventos:</strong> <span id="totalEvents">0</span><br>
+            <strong>Mostrando:</strong> <span id="visibleEvents">0</span> eventos<br>
+            <strong>Magnitudes:</strong> 0.9 - 7.4<br>
+            <strong>Profundidades:</strong> 0 - 118 km<br>
+            <strong>Zona:</strong> Chocó, Colombia (datos reales SGC)
+        </div>
+
+        <div class="legend">
+            <div class="legend-title">Profundidad</div>
+            <div class="legend-item"><div class="legend-color" style="background-color:#00ff00;"></div><span>0-30 km</span></div>
+            <div class="legend-item"><div class="legend-color" style="background-color:#ffff00;"></div><span>30-60 km</span></div>
+            <div class="legend-item"><div class="legend-color" style="background-color:#ff8800;"></div><span>60-90 km</span></div>
+            <div class="legend-item"><div class="legend-color" style="background-color:#ff0000;"></div><span>90+ km</span></div>
+        </div>
+
+        <div class="hint">Arrastra para rotar · rueda para zoom · clic derecho para desplazar · clic en una esfera para ver el detalle del sismo.</div>
+    </div>
+</div>
+
+<div id="pageCredit">Created by SWTectonics. Jose Fernando Duque T.</div>
+
+<script>
+// ============ DATOS ============
+// Fuente: descarga real del usuario desde archive.sgc.gov.co (catálogo oficial SGC)
+// 10 ago 2026 07:34 UTC - 13 ago 2026 04:31 UTC. profundidad = |depth| del geojson original (m bajo superficie).
+const RAW = [
+    ['SGC2026pqqmro',7.4,-99.0,4.976333333333333,-76.319,'2026-08-10T12:34:29+00:00'],
+    ['SGC2026pqryij',4.8,-88.0,4.8785,-76.44483333333334,'2026-08-10T13:18:10+00:00'],
+    ['SGC2026pqrtud',2.8,-48.0,4.6935,-76.53,'2026-08-10T13:12:56+00:00'],
+    ['SGC2026pqueew',2.4,-100.0,4.829,-76.4715,'2026-08-10T14:25:20+00:00'],
+    ['SGC2026pquomq',2.4,-88.0,4.529666666666667,-76.485,'2026-08-10T14:37:17+00:00'],
+    ['SGC2026pqvjkv',3.8,-88.0,4.844166666666666,-76.4095,'2026-08-10T15:01:31+00:00'],
+    ['SGC2026pqzirp',1.2,-2.0,4.894833333333334,-75.3035,'2026-08-10T17:01:24+00:00'],
+    ['SGC2026pqzkxc',1.6,-91.0,4.803166666666667,-76.46533333333333,'2026-08-10T17:03:58+00:00'],
+    ['SGC2026prxwtq',1.8,-99.0,4.849833333333334,-76.373,'2026-08-11T05:21:52+00:00'],
+    ['SGC2026prygxr',1.7,-50.0,4.485966454503836,-76.5584266358237,'2026-08-11T05:33:37+00:00'],
+    ['SGC2026pryhvk',2.2,-86.0,4.754577845921141,-76.49367658062563,'2026-08-11T05:34:43+00:00'],
+    ['SGC2026pryqsr',2.2,-89.0,4.396076815643714,-76.6570911805299,'2026-08-11T05:45:02+00:00'],
+    ['SGC2026pryvci',1.9,-115.0,4.637333333333333,-76.60283333333334,'2026-08-11T05:50:07+00:00'],
+    ['SGC2026pryyzh',2.8,-93.0,4.87725076483613,-76.37061639705767,'2026-08-11T05:54:36+00:00'],
+    ['SGC2026psairi',1.7,-52.0,4.397134340806774,-76.71783400499024,'2026-08-11T06:36:00+00:00'],
+    ['SGC2026psbkof',1.8,-73.0,4.502833333333333,-76.64116666666666,'2026-08-11T07:08:24+00:00'],
+    ['SGC2026psbmmf',2.0,-86.0,4.7545,-76.38083333333333,'2026-08-11T07:10:38+00:00'],
+    ['SGC2026pscvzk',1.7,-102.0,4.954,-76.22316666666667,'2026-08-11T07:51:50+00:00'],
+    ['SGC2026psegmm',1.9,-90.0,4.812741729889455,-76.37562571554031,'2026-08-11T08:34:12+00:00'],
+    ['SGC2026psejsw',2.2,-79.0,4.661515631571838,-76.54224353137778,'2026-08-11T08:37:56+00:00'],
+    ['SGC2026psfqyb',1.9,-79.0,4.824374506683117,-76.33196873563637,'2026-08-11T09:16:29+00:00'],
+    ['SGC2026psfwvr',1.3,-15.0,4.7425,-74.73883333333333,'2026-08-11T09:23:20+00:00'],
+    ['SGC2026psgbtm',1.8,-60.0,4.232833333333334,-76.80466666666666,'2026-08-11T09:29:03+00:00'],
+    ['SGC2026psgdra',3.0,-97.0,4.769383198203984,-76.49375178620645,'2026-08-11T09:31:15+00:00'],
+    ['SGC2026psgwmn',2.8,-92.0,4.957622677228709,-76.33903044430849,'2026-08-11T09:53:04+00:00'],
+    ['SGC2026psilow',2.1,-39.0,4.568453417222536,-76.64409808129886,'2026-08-11T10:40:46+00:00'],
+    ['SGC2026psjvaq',2.0,-50.0,4.091509568682361,-76.77494582653708,'2026-08-11T11:21:54+00:00'],
+    ['SGC2026pskwdg',2.9,-51.0,4.323107579392556,-76.68550375098089,'2026-08-11T11:53:24+00:00'],
+    ['SGC2026pslemw',2.2,-75.0,4.446838023470606,-76.70423005124084,'2026-08-11T12:03:04+00:00'],
+    ['SGC2026pslrde',2.3,-34.0,4.574798568200897,-76.62920870490056,'2026-08-11T12:17:43+00:00'],
+    ['SGC2026psnlel',1.9,-96.0,4.048333333333333,-76.62566666666666,'2026-08-11T13:11:11+00:00'],
+    ['SGC2026psofms',1.9,-31.0,4.7115,-76.808,'2026-08-11T13:34:46+00:00'],
+    ['SGC2026pssmqj',3.9,-92.0,4.899987555841926,-76.36699863508608,'2026-08-11T15:43:39+00:00'],
+    ['SGC2026pstwsc',2.4,-24.0,6.998646241934998,-76.25945535279558,'2026-08-11T16:25:33+00:00'],
+    ['SGC2026pstxgo',2.1,-41.0,4.483851404177715,-76.67990588007494,'2026-08-11T16:26:13+00:00'],
+    ['SGC2026psudyk',2.7,-88.0,4.865617988042467,-76.4078778234393,'2026-08-11T16:33:59+00:00'],
+    ['SGC2026psugkp',2.1,-55.0,4.222642688901832,-76.80114170644936,'2026-08-11T16:36:50+00:00'],
+    ['SGC2026psukuu',2.2,-42.0,4.549417964287451,-76.66318584081816,'2026-08-11T16:41:55+00:00'],
+    ['SGC2026psurnp',1.7,-18.0,4.540666666666667,-76.60133333333333,'2026-08-11T16:49:46+00:00'],
+    ['SGC2026psveng',2.4,-86.0,4.813799255052515,-76.43000700587649,'2026-08-11T17:04:48+00:00'],
+    ['SGC2026psvrno',2.1,-36.0,4.655170480593476,-76.68078539105079,'2026-08-11T17:19:54+00:00'],
+    ['SGC2026pswpeq',2.0,-78.0,4.75140527043196,-76.4627436016782,'2026-08-11T17:47:23+00:00'],
+    ['SGC2026psyoii',2.2,-88.0,4.873020664183889,-76.31941323637395,'2026-08-11T18:46:43+00:00'],
+    ['SGC2026pszhjh',1.6,-17.0,7.007106443239481,-76.26165533460698,'2026-08-11T19:08:47+00:00'],
+    ['SGC2026ptcclg',2.0,-45.0,4.640365128310633,-76.47391762913513,'2026-08-11T20:34:20+00:00'],
+    ['SGC2026ptcyyy',2.6,-19.0,6.849006431361972,-76.26858745568784,'2026-08-11T20:59:43+00:00'],
+    ['SGC2026pteuwz',1.8,-41.0,4.433090196350823,-76.76916411230532,'2026-08-11T21:55:21+00:00'],
+    ['SGC2026ptevqq',2.5,-38.0,4.41828484406798,-76.73498944020298,'2026-08-11T21:56:16+00:00'],
+    ['SGC2026ptfbph',2.2,-79.0,4.440492872492245,-76.7319046783016,'2026-08-11T22:03:10+00:00'],
+    ['SGC2026ptfsko',2.6,-52.0,4.181399207542483,-76.78070051976948,'2026-08-11T22:22:39+00:00'],
+    ['SGC2026ptftuf',3.5,-91.0,4.896286217771214,-76.37284479538661,'2026-08-11T22:24:02+00:00'],
+    ['SGC2026pthkcm',1.8,-10.0,4.346166666666667,-76.62733333333334,'2026-08-11T23:13:23+00:00'],
+    ['SGC2026ptiila',2.2,-81.0,4.860330362227166,-76.32574825937475,'2026-08-11T23:41:35+00:00'],
+    ['SGC2026ptinaf',2.4,0.0,5.129666666666667,-77.3055,'2026-08-11T23:46:56+00:00'],
+    ['SGC2026ptkska',1.6,-12.0,6.956873997994118,-76.24471525416936,'2026-08-12T00:53:31+00:00'],
+    ['SGC2026ptlgrq',2.1,-81.0,4.828604607335358,-76.37037343352907,'2026-08-12T01:10:05+00:00'],
+    ['SGC2026ptmlnp',2.3,-52.0,4.21418248759735,-76.83945169844228,'2026-08-12T01:45:52+00:00'],
+    ['SGC2026ptmpxy',1.5,-40.0,4.745333333333333,-76.58,'2026-08-12T01:51:00+00:00'],
+    ['SGC2026ptnnqj',1.8,-55.0,4.538842712656848,-76.41587149509841,'2026-08-12T02:18:29+00:00'],
+    ['SGC2026ptnteg',0.9,-13.0,5.556181919520812,-74.89691244593047,'2026-08-12T02:24:56+00:00'],
+    ['SGC2026ptnthf',1.6,-76.0,4.858215311901045,-76.38758130076022,'2026-08-12T02:25:04+00:00'],
+    ['SGC2026ptnwqc',1.6,-79.0,4.789476176302129,-76.37337827135342,'2026-08-12T02:28:57+00:00'],
+    ['SGC2026ptoqvy',1.5,-43.0,5.245269521581097,-76.38320343861812,'2026-08-12T02:52:24+00:00'],
+    ['SGC2026ptpcea',1.8,-84.0,4.858215311901045,-76.27455701255582,'2026-08-12T03:05:32+00:00'],
+    ['SGC2026ptphix',1.5,-85.0,4.984060806305216,-76.22078644635323,'2026-08-12T03:11:33+00:00'],
+    ['SGC2026ptplbk',1.7,-38.0,4.5028868571128,-76.6714761532248,'2026-08-12T03:15:52+00:00'],
+    ['SGC2026ptprtg',1.5,-80.0,4.783333333333333,-76.555,'2026-08-12T03:23:38+00:00'],
+    ['SGC2026ptrdtd',3.1,-50.0,4.814856780215575,-76.49718284960191,'2026-08-12T04:07:38+00:00'],
+    ['SGC2026ptrfev',3.2,-95.0,4.957093914647179,-76.28943901441835,'2026-08-12T04:09:23+00:00'],
+    ['SGC2026ptrhki',2.0,-15.0,6.929907106336081,-76.39490008803475,'2026-08-12T04:11:57+00:00'],
+    ['SGC2026ptsags',1.5,-80.0,4.857157786737985,-76.33959405306453,'2026-08-12T04:33:52+00:00'],
+    ['SGC2026ptvjxd',2.5,-53.0,4.094682144171542,-76.75046221900335,'2026-08-12T06:15:33+00:00'],
+    ['SGC2026ptwfjy',2.1,-53.0,4.151788502976795,-76.7613840156657,'2026-08-12T06:40:26+00:00'],
+    ['SGC2026ptwqny',2.7,-92.0,4.765153097551742,-76.50012700132966,'2026-08-12T06:53:25+00:00'],
+    ['SGC2026pufaqh',1.3,-17.0,6.87,-76.34916666666666,'2026-08-12T11:06:31+00:00'],
+    ['SGC2026puijhg',2.6,-54.0,4.0873333333333335,-76.761,'2026-08-12T12:47:05+00:00'],
+    ['SGC2026pungro',1.6,-43.0,4.557878165591933,-76.72717732001469,'2026-08-12T15:14:53+00:00'],
+    ['SGC2026punstc',1.8,-40.0,4.570568467548656,-76.74003312789621,'2026-08-12T15:28:53+00:00'],
+    ['SGC2026puoioy',1.8,-70.0,4.285666666666667,-76.6965,'2026-08-12T15:47:19+00:00'],
+    ['SGC2026purrga',2.5,-86.0,4.796878852443551,-76.36595162484764,'2026-08-12T17:27:51+00:00'],
+    ['SGC2026pusibi',2.3,-92.0,4.959737727554829,-76.21960107347782,'2026-08-12T17:47:25+00:00'],
+    ['SGC2026puslrh',2.2,-118.0,4.446166666666667,-76.889,'2026-08-12T17:51:34+00:00'],
+    ['SGC2026putbwh',1.5,-118.0,4.0195,-76.24266666666666,'2026-08-12T18:10:22+00:00'],
+    ['SGC2026putmcs',1.8,-41.0,4.621329675375549,-76.66142279352549,'2026-08-12T18:22:13+00:00'],
+    ['SGC2026putuwb',3.4,-92.0,4.972428029511553,-76.33270670273203,'2026-08-12T18:32:19+00:00'],
+    ['SGC2026pvbnym',1.7,-41.0,4.33685540651234,-76.81023267997595,'2026-08-12T22:25:45+00:00'],
+    ['SGC2026pvdhap',1.7,-45.0,4.616042049560247,-76.75199644062207,'2026-08-12T23:17:59+00:00'],
+    ['SGC2026pvdoei',2.5,-43.0,4.409824642763498,-76.73281568713288,'2026-08-12T23:26:22+00:00'],
+    ['SGC2026pvenyr',2.0,-77.0,4.834949758313719,-76.34908038148481,'2026-08-12T23:56:18+00:00'],
+    ['SGC2026pvewcf',1.8,-10.0,7.004991392913359,-76.24879542276003,'2026-08-13T00:05:42+00:00'],
+    ['SGC2026pvfcol',2.5,-43.0,4.524037360374005,-76.68224070709637,'2026-08-13T00:13:20+00:00'],
+    ['SGC2026pvffzq',1.7,-38.0,4.547302913961331,-76.69728039539721,'2026-08-13T00:17:12+00:00'],
+    ['SGC2026pvfkmk',1.3,-19.0,3.8726018599288894,-75.61217146952032,'2026-08-13T00:22:24+00:00'],
+    ['SGC2026pvfwjo',2.0,-34.0,4.570568467548656,-76.51407812102273,'2026-08-13T00:36:14+00:00'],
+    ['SGC2026pvgmdx',1.8,-47.0,3.7468333333333335,-77.03233333333333,'2026-08-13T00:54:33+00:00'],
+    ['SGC2026pvgnxs',1.8,-41.0,4.430975146024703,-76.71374102977074,'2026-08-13T00:56:34+00:00'],
+    ['SGC2026pvgsif',1.6,-39.0,4.4457804983075455,-76.78414792192696,'2026-08-13T01:01:40+00:00'],
+    ['SGC2026pvgsrj',1.4,-10.0,7.013451594217842,-76.31950382008564,'2026-08-13T01:02:05+00:00'],
+    ['SGC2026pvkvbg',2.0,-77.0,4.857157786737985,-76.35665429622115,'2026-08-13T03:05:33+00:00'],
+    ['SGC2026pvlfed',2.0,-40.0,4.589603920483741,-76.64207411214741,'2026-08-13T03:17:16+00:00'],
+    ['SGC2026pvnrde',2.6,-52.0,4.4638333333333335,-76.7055,'2026-08-13T04:31:34+00:00']
+];
+
+const eventos = RAW.map((r, i) => ({
+    id: i + 1,
+    sgcId: r[0],
+    mag: r[1],
+    prof: Math.abs(r[2]),
+    lat: r[3],
+    lon: r[4],
+    time: new Date(r[5])
+}));
+
+eventos.sort((a,b) => a.time - b.time);
+const minTime = eventos[0].time;
+const maxTime = eventos[eventos.length - 1].time;
+
+// ============ GEOMETRÍA DEL CUBO ============
+// Ventana de proyección del mapa fija (cubre el enjambre + la zona usada para la placa en subducción)
+const minLat = 1;
+const maxLat = 9.6;
+const minLon = -79.8;
+const maxLon = -71.8;
+
+const BOX_SIZE = 20;      // ancho/profundidad horizontal (lat/lon)
+const BOX_HEIGHT = 14;    // alto (representa la profundidad 0-DEPTH_MAX)
+const DEPTH_MAX = 450;    // cubre el rango completo de sismicidad de la placa de Nazca en subducción
+const DEPTH_LEVELS = [0, 100, 200, 300, 400];
+
+function depthColor(d) {
+    if (d < 30) return new THREE.Color(0x00ff00);
+    if (d < 60) return new THREE.Color(0xffff00);
+    if (d < 90) return new THREE.Color(0xff8800);
+    return new THREE.Color(0xff0000);
+}
+
+// Escala para la placa en subducción:
+// 0-35 km: azul (sismicidad cortical/superficial)
+// 35-160 km: negro (35 km) -> blanco (160 km)
+// >160 km: blanco
+const plateColorObj = new THREE.Color();
+function plateDepthColor(d) {
+    if (d <= 35) {
+        plateColorObj.setRGB(0.15, 0.35, 0.95);
+        return plateColorObj.clone();
+    }
+    const t = Math.max(0, Math.min(1, (d - 35) / (160 - 35)));
+    plateColorObj.setRGB(t, t, t);
+    return plateColorObj.clone();
+}
+
+// ============ TILES DEL MAPA (cara superior) ============
+function lon2tileX(lon, z) { return (lon + 180) / 360 * Math.pow(2, z); }
+function lat2tileY(lat, z) {
+    const rad = lat * Math.PI / 180;
+    return (1 - Math.log(Math.tan(rad) + 1 / Math.cos(rad)) / Math.PI) / 2 * Math.pow(2, z);
+}
+function tileX2lon(x, z) { return x / Math.pow(2, z) * 360 - 180; }
+function tileY2lat(y, z) {
+    const n = Math.PI - 2 * Math.PI * y / Math.pow(2, z);
+    return 180 / Math.PI * Math.atan(0.5 * (Math.exp(n) - Math.exp(-n)));
+}
+
+function loadTileImage(url) {
+    return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.onload = () => resolve(img);
+        img.onerror = () => reject(new Error('tile load failed: ' + url));
+        img.src = url;
+    });
+}
+
+async function buildMapTexture() {
+    const zoom = 8;
+    const minTileX = Math.floor(lon2tileX(minLon, zoom));
+    const maxTileX = Math.floor(lon2tileX(maxLon, zoom));
+    const minTileY = Math.floor(lat2tileY(maxLat, zoom));
+    const maxTileY = Math.floor(lat2tileY(minLat, zoom));
+
+    const tilesX = Math.min(maxTileX - minTileX + 1, 10);
+    const tilesY = Math.min(maxTileY - minTileY + 1, 10);
+
+    const canvas = document.createElement('canvas');
+    canvas.width = tilesX * 256;
+    canvas.height = tilesY * 256;
+    const ctx = canvas.getContext('2d');
+
+    const sources = [
+        (x, y, z) => `https://tile.openstreetmap.org/${z}/${x}/${y}.png`,
+        (x, y, z) => `https://a.tile.opentopomap.org/${z}/${x}/${y}.png`
+    ];
+
+    let success = false;
+
+    for (const srcFn of sources) {
+        try {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            const jobs = [];
+            for (let ty = 0; ty < tilesY; ty++) {
+                for (let tx = 0; tx < tilesX; tx++) {
+                    const x = minTileX + tx, y = minTileY + ty;
+                    jobs.push(loadTileImage(srcFn(x, y, zoom)).then(img => ({ img, tx, ty })));
+                }
+            }
+            const results = await Promise.all(jobs);
+            results.forEach(({ img, tx, ty }) => ctx.drawImage(img, tx * 256, ty * 256, 256, 256));
+            ctx.getImageData(0, 0, 1, 1); // dispara SecurityError si el canvas quedó "tainted"
+            success = true;
+            break;
+        } catch (err) {
+            console.warn('Fuente de mapa falló, probando alternativa...', err.message);
+        }
+    }
+
+    if (!success) {
+        ctx.fillStyle = '#16324a';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.strokeStyle = '#2a5a8a';
+        ctx.lineWidth = 1;
+        for (let i = 0; i <= 12; i++) {
+            const gx = i * canvas.width / 12, gy = i * canvas.height / 12;
+            ctx.beginPath(); ctx.moveTo(gx, 0); ctx.lineTo(gx, canvas.height); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(canvas.width, gy); ctx.stroke();
+        }
+        ctx.fillStyle = '#5a8ab8';
+        ctx.font = 'bold 22px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('Mapa no disponible (offline)', canvas.width / 2, canvas.height / 2);
+    }
+
+    const bounds = {
+        west: tileX2lon(minTileX, zoom),
+        east: tileX2lon(minTileX + tilesX, zoom),
+        north: tileY2lat(minTileY, zoom),
+        south: tileY2lat(minTileY + tilesY, zoom)
+    };
+
+    return { canvas, bounds };
+}
+
+// ============ THREE.JS ============
+let scene, camera, renderer, controls;
+let sphereMeshes = [], gridLines = [], mapPlane = null;
+let mapBounds = null;
+let rawMapCanvas = null;
+let visibleEventos = [...eventos];
+let raycaster, mouseVec;
+let plateData = [];       // [lon, lat, depth, mag] x 4983 (USGS, histórico 1960-2026)
+let plateMeshes = [];     // array de THREE.InstancedMesh, uno por "cubeta" de color (evita depender de setColorAt)
+
+async function loadPlateData() {
+    try {
+        const res = await fetch('subduccion-puntos.json');
+        plateData = await res.json();
+    } catch (err) {
+        console.warn('No se pudo cargar subduccion-puntos.json', err);
+        plateData = [];
+    }
+}
+
+const BASE_PLATE_RADIUS = 0.16;
+const GRAY_BUCKETS = 20; // resolución de la rampa negro->blanco (35-160 km)
+
+// Devuelve el índice de cubeta (0 = azul, 1..GRAY_BUCKETS = negro->blanco) y el color sólido de esa cubeta
+function plateBucketFor(depth) {
+    if (depth <= 35) return { key: 'blue', color: 0x2659f2 };
+    const t = Math.max(0, Math.min(1, (depth - 35) / (160 - 35)));
+    const idx = Math.min(GRAY_BUCKETS - 1, Math.floor(t * GRAY_BUCKETS));
+    const v = (idx + 0.5) / GRAY_BUCKETS; // valor de gris al centro de la cubeta
+    const g = Math.round(v * 255);
+    return { key: 'gray' + idx, color: (g << 16) | (g << 8) | g };
+}
+
+function buildPlatePoints() {
+    plateMeshes.forEach(m => { scene.remove(m); m.geometry.dispose(); m.material.dispose(); });
+    plateMeshes = [];
+    if (!plateData.length) return;
+
+    const sizeVal = parseFloat(document.getElementById('plateSizeSlider').value) / 100 * BASE_PLATE_RADIUS;
+    const opacityVal = parseFloat(document.getElementById('plateOpacitySlider').value) / 100;
+    const visible = document.getElementById('showPlate').checked;
+
+    // Agrupar índices por cubeta de color
+    const groups = new Map(); // key -> { color, positions: [{lon,lat,depth}] }
+    plateData.forEach(p => {
+        const [lon, lat, depth] = p;
+        const bucket = plateBucketFor(depth);
+        if (!groups.has(bucket.key)) groups.set(bucket.key, { color: bucket.color, items: [] });
+        groups.get(bucket.key).items.push([lon, lat, depth]);
+    });
+
+    const dummy = new THREE.Object3D();
+    const geo = new THREE.SphereGeometry(1, 8, 6);
+
+    groups.forEach(group => {
+        const mat = new THREE.MeshStandardMaterial({
+            color: group.color, transparent: true, opacity: opacityVal,
+            roughness: 0.7, metalness: 0.05
+        });
+        const mesh = new THREE.InstancedMesh(geo, mat, group.items.length);
+        group.items.forEach(([lon, lat, depth], i) => {
+            const pos = latLonDepthToPos(lat, lon, depth);
+            dummy.position.set(pos.x, pos.y, pos.z);
+            dummy.scale.setScalar(sizeVal);
+            dummy.updateMatrix();
+            mesh.setMatrixAt(i, dummy.matrix);
+        });
+        mesh.instanceMatrix.needsUpdate = true;
+        mesh.visible = visible;
+        scene.add(mesh);
+        plateMeshes.push(mesh);
+    });
+
+    document.getElementById('plateCount').textContent = plateData.length;
+}
+
+function getFlipFlags() {
+    return {
+        ew: document.getElementById('flipEW').checked,
+        ns: document.getElementById('flipNS').checked
+    };
+}
+
+function latLonDepthToPos(lat, lon, depth) {
+    const { ew, ns } = getFlipFlags();
+    let u = (lon - mapBounds.west) / (mapBounds.east - mapBounds.west);
+    let v = (lat - mapBounds.north) / (mapBounds.south - mapBounds.north);
+    if (ew) u = 1 - u;
+    if (ns) v = 1 - v;
+    const x = (u - 0.5) * BOX_SIZE;
+    const z = (0.5 - v) * BOX_SIZE;
+    const y = -(Math.min(depth, DEPTH_MAX) / DEPTH_MAX) * BOX_HEIGHT;
+    return { x, y, z };
+}
+
+function eventToPosition(e) {
+    return latLonDepthToPos(e.lat, e.lon, e.prof);
+}
+
+function flipCanvas(src, flipH, flipV) {
+    if (!flipH && !flipV) return src;
+    const out = document.createElement('canvas');
+    out.width = src.width;
+    out.height = src.height;
+    const ctx = out.getContext('2d');
+    ctx.save();
+    ctx.translate(flipH ? out.width : 0, flipV ? out.height : 0);
+    ctx.scale(flipH ? -1 : 1, flipV ? -1 : 1);
+    ctx.drawImage(src, 0, 0);
+    ctx.restore();
+    return out;
+}
+
+function applyMapOrientation() {
+    if (!rawMapCanvas || !mapPlane) return;
+    const { ew, ns } = getFlipFlags();
+    const finalCanvas = flipCanvas(rawMapCanvas, ew, ns);
+    const texture = new THREE.CanvasTexture(finalCanvas);
+    texture.flipY = false;
+    texture.needsUpdate = true;
+    mapPlane.material.map = texture;
+    mapPlane.material.needsUpdate = true;
+    rebuildEvents();
+    buildPlatePoints();
+}
+
+function makeTextSprite(text) {
+    const c = document.createElement('canvas');
+    c.width = 160; c.height = 40;
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = 'rgba(10,14,39,0.75)';
+    ctx.fillRect(0, 0, c.width, c.height);
+    ctx.font = 'bold 26px Arial';
+    ctx.fillStyle = '#90caf9';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, c.width / 2, c.height / 2);
+    const tex = new THREE.CanvasTexture(c);
+    const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false });
+    const sprite = new THREE.Sprite(mat);
+    sprite.scale.set(2.4, 0.6, 1);
+    return sprite;
+}
+
+async function init3D() {
+    const canvasEl = document.getElementById('canvas3d');
+    const wrap = document.getElementById('scene-wrap') || canvasEl.parentElement;
+
+    scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x0a0e27);
+    scene.fog = new THREE.Fog(0x0a0e27, 30, 90);
+
+    camera = new THREE.PerspectiveCamera(60, wrap.clientWidth / wrap.clientHeight, 0.1, 1000);
+    camera.position.set(16, 12, 22);
+
+    renderer = new THREE.WebGLRenderer({ canvas: canvasEl, antialias: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(wrap.clientWidth, wrap.clientHeight);
+
+    if (typeof THREE.OrbitControls === 'function') {
+        controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.08;
+        controls.target.set(0, -BOX_HEIGHT / 2, 0);
+        controls.minDistance = 8;
+        controls.maxDistance = 70;
+        controls.update();
+    } else {
+        console.warn('OrbitControls no cargó, usando rotación manual de respaldo.');
+        controls = null;
+    }
+
+    scene.add(new THREE.AmbientLight(0xffffff, 0.7));
+    const dLight = new THREE.DirectionalLight(0xffffff, 0.7);
+    dLight.position.set(15, 20, 10);
+    scene.add(dLight);
+
+    // Caja (bordes) representando el volumen de la corteza
+    const boxGeo = new THREE.BoxGeometry(BOX_SIZE, BOX_HEIGHT, BOX_SIZE);
+    const edges = new THREE.EdgesGeometry(boxGeo);
+    const boxLines = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0x64b5f6, transparent: true, opacity: 0.5 }));
+    boxLines.position.y = -BOX_HEIGHT / 2;
+    scene.add(boxLines);
+
+    // Cuadrícula de profundidad (anillos horizontales + etiquetas)
+    DEPTH_LEVELS.forEach(d => {
+        const y = -(d / DEPTH_MAX) * BOX_HEIGHT;
+        const pts = [
+            new THREE.Vector3(-BOX_SIZE/2, y, -BOX_SIZE/2),
+            new THREE.Vector3(BOX_SIZE/2, y, -BOX_SIZE/2),
+            new THREE.Vector3(BOX_SIZE/2, y, BOX_SIZE/2),
+            new THREE.Vector3(-BOX_SIZE/2, y, BOX_SIZE/2),
+            new THREE.Vector3(-BOX_SIZE/2, y, -BOX_SIZE/2)
+        ];
+        const lineGeo = new THREE.BufferGeometry().setFromPoints(pts);
+        const line = new THREE.Line(lineGeo, new THREE.LineBasicMaterial({ color: 0x3a5a7a, transparent: true, opacity: 0.4 }));
+        scene.add(line);
+        gridLines.push(line);
+
+        const label = makeTextSprite(d + ' km');
+        label.position.set(BOX_SIZE/2 + 1.6, y, BOX_SIZE/2 + 1.6);
+        scene.add(label);
+        gridLines.push(label);
+    });
+
+    // Mapa (cara superior del cubo) + datos de la placa, en paralelo
+    const [{ canvas, bounds }] = await Promise.all([buildMapTexture(), loadPlateData()]);
+    mapBounds = bounds;
+    rawMapCanvas = canvas;
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.flipY = false;
+    texture.needsUpdate = true;
+
+    const mapGeo = new THREE.PlaneGeometry(BOX_SIZE, BOX_SIZE);
+    const mapMat = new THREE.MeshBasicMaterial({ map: texture, transparent: true, opacity: 1, side: THREE.DoubleSide });
+    mapPlane = new THREE.Mesh(mapGeo, mapMat);
+    mapPlane.rotation.x = -Math.PI / 2;
+    mapPlane.position.y = 0.01;
+    scene.add(mapPlane);
+
+    document.getElementById('loading').style.display = 'none';
+    applyMapOrientation();
+
+    raycaster = new THREE.Raycaster();
+    mouseVec = new THREE.Vector2();
+    renderer.domElement.addEventListener('click', onCanvasClick);
+
+    window.addEventListener('resize', onResize);
+
+    rebuildEvents();
+    animate();
+}
+
+function onResize() {
+    const wrap = document.getElementById('canvas3d').parentElement;
+    camera.aspect = wrap.clientWidth / wrap.clientHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(wrap.clientWidth, wrap.clientHeight);
+}
+
+function rebuildEvents() {
+    sphereMeshes.forEach(m => scene.remove(m));
+    sphereMeshes = [];
+
+    const sizeScale = parseFloat(document.getElementById('sizeSlider').value) / 100;
+    const opacity = parseFloat(document.getElementById('eventOpacitySlider').value) / 100;
+
+    visibleEventos.forEach(e => {
+        const pos = eventToPosition(e);
+        const size = Math.max(0.1, sizeScale * (0.15 + (e.mag - 0.8) * 0.16));
+        const color = depthColor(e.prof);
+
+        const geom = new THREE.SphereGeometry(size, 20, 20);
+        const mat = new THREE.MeshStandardMaterial({
+            color, emissive: color, emissiveIntensity: 0.45,
+            transparent: true, opacity, metalness: 0.15, roughness: 0.5
+        });
+        const mesh = new THREE.Mesh(geom, mat);
+        mesh.position.set(pos.x, pos.y, pos.z);
+        mesh.userData = e;
+        scene.add(mesh);
+        sphereMeshes.push(mesh);
+    });
+
+    document.getElementById('showEvents').checked && (sphereMeshes.forEach(m => m.visible = true));
+    if (!document.getElementById('showEvents').checked) sphereMeshes.forEach(m => m.visible = false);
+
+    document.getElementById('totalEvents').textContent = eventos.length;
+    document.getElementById('visibleEvents').textContent = visibleEventos.length;
+}
+
+function onCanvasClick(ev) {
+    const rect = renderer.domElement.getBoundingClientRect();
+    mouseVec.x = ((ev.clientX - rect.left) / rect.width) * 2 - 1;
+    mouseVec.y = -((ev.clientY - rect.top) / rect.height) * 2 + 1;
+    raycaster.setFromCamera(mouseVec, camera);
+    const hits = raycaster.intersectObjects(sphereMeshes);
+    if (hits.length > 0) {
+        const e = hits[0].object.userData;
+        const d = e.time;
+        const pad = n => String(n).padStart(2, '0');
+        const fecha = `${pad(d.getUTCDate())}/${pad(d.getUTCMonth()+1)}/${d.getUTCFullYear()} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())} UTC`;
+        document.getElementById('eventInfoBody').innerHTML = `
+            <strong>ID SGC:</strong> ${e.sgcId || '-'}<br>
+            <strong>Magnitud:</strong> ${e.mag}<br>
+            <strong>Profundidad:</strong> ${e.prof.toFixed(1)} km<br>
+            <strong>Latitud (N):</strong> ${e.lat.toFixed(4)}°<br>
+            <strong>Longitud (O):</strong> ${Math.abs(e.lon).toFixed(4)}°<br>
+            <strong>Fecha/Hora:</strong><br>${fecha}
+        `;
+        document.getElementById('eventInfo').style.display = 'block';
+    }
+}
+document.getElementById('closeInfo').addEventListener('click', () => {
+    document.getElementById('eventInfo').style.display = 'none';
+});
+
+function animate() {
+    requestAnimationFrame(animate);
+    if (controls) {
+        controls.autoRotate = document.getElementById('autoRotate').checked;
+        controls.autoRotateSpeed = parseFloat(document.getElementById('speedSlider').value) / 20;
+        controls.update();
+    }
+    renderer.render(scene, camera);
+}
+
+// ============ CONTROLES UI ============
+document.getElementById('showMap').addEventListener('change', e => {
+    if (mapPlane) mapPlane.visible = e.target.checked;
+});
+document.getElementById('mapOpacitySlider').addEventListener('input', e => {
+    document.getElementById('mapOpacityValue').textContent = e.target.value + '%';
+    if (mapPlane) mapPlane.material.opacity = e.target.value / 100;
+});
+document.getElementById('showEvents').addEventListener('change', e => {
+    sphereMeshes.forEach(m => m.visible = e.target.checked);
+});
+document.getElementById('eventOpacitySlider').addEventListener('input', e => {
+    document.getElementById('eventOpacityValue').textContent = e.target.value + '%';
+    sphereMeshes.forEach(m => m.material.opacity = e.target.value / 100);
+});
+document.getElementById('showGrid').addEventListener('change', e => {
+    gridLines.forEach(g => g.visible = e.target.checked);
+});
+document.getElementById('gridOpacitySlider').addEventListener('input', e => {
+    document.getElementById('gridOpacityValue').textContent = e.target.value + '%';
+    gridLines.forEach(g => { if (g.material && g.material.opacity !== undefined) g.material.opacity = e.target.value / 100; });
+});
+document.getElementById('sizeSlider').addEventListener('input', e => {
+    document.getElementById('sizeValue').textContent = e.target.value + '%';
+    rebuildEvents();
+});
+document.getElementById('speedSlider').addEventListener('input', e => {
+    document.getElementById('speedValue').textContent = e.target.value + '%';
+});
+document.getElementById('showPlate').addEventListener('change', e => {
+    plateMeshes.forEach(m => m.visible = e.target.checked);
+});
+document.getElementById('plateOpacitySlider').addEventListener('input', e => {
+    document.getElementById('plateOpacityValue').textContent = e.target.value + '%';
+    plateMeshes.forEach(m => m.material.opacity = e.target.value / 100);
+});
+document.getElementById('plateSizeSlider').addEventListener('input', e => {
+    document.getElementById('plateSizeValue').textContent = e.target.value + '%';
+    buildPlatePoints();
+});
+document.getElementById('flipEW').addEventListener('change', applyMapOrientation);
+document.getElementById('flipNS').addEventListener('change', applyMapOrientation);
+document.getElementById('resetCam').addEventListener('click', () => {
+    camera.position.set(16, 12, 22);
+    if (controls) { controls.target.set(0, -BOX_HEIGHT/2, 0); controls.update(); }
+});
+
+// ============ TIMELINE ============
+const monthNames = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+const pad2 = n => String(n).padStart(2, '0');
+const formatDT = d => `${pad2(d.getUTCDate())} ${monthNames[d.getUTCMonth()]} ${pad2(d.getUTCHours())}:${pad2(d.getUTCMinutes())}`;
+
+document.getElementById('timeStart').textContent = formatDT(minTime);
+document.getElementById('timeEnd').textContent = formatDT(maxTime);
+
+function applyTimelineValue(val) {
+    const percent = val / 1000;
+    const selectedTime = new Date(minTime.getTime() + (maxTime.getTime() - minTime.getTime()) * percent);
+    visibleEventos = eventos.filter(ev => ev.time <= selectedTime);
+    document.getElementById('timeValue').textContent = formatDT(selectedTime);
+    rebuildEvents();
+}
+
+document.getElementById('timelineSlider').addEventListener('input', e => {
+    applyTimelineValue(parseFloat(e.target.value));
+});
+
+let playing = false, playInterval = null;
+document.getElementById('playBtn').addEventListener('click', () => {
+    playing = !playing;
+    const btn = document.getElementById('playBtn');
+    const slider = document.getElementById('timelineSlider');
+    if (playing) {
+        btn.textContent = '⏸ Pausar';
+        if (parseFloat(slider.value) >= 1000) slider.value = 0;
+        playInterval = setInterval(() => {
+            let v = parseFloat(slider.value) + 4;
+            if (v >= 1000) {
+                v = 1000; playing = false; btn.textContent = '▶ Reproducir'; clearInterval(playInterval);
+            }
+            slider.value = v;
+            applyTimelineValue(v);
+        }, 80);
+    } else {
+        btn.textContent = '▶ Reproducir';
+        clearInterval(playInterval);
+    }
+});
+
+// ============ INIT ============
+init3D();
+</script>
+</body>
+</html>
