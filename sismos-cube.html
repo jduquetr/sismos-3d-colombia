@@ -10,7 +10,8 @@
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { font-family: Arial, sans-serif; background: #0a0e27; color: #e0e0e0; overflow: hidden; }
 
-    .container { display: flex; flex-direction: column; height: 100vh; gap: 10px; padding: 10px; }
+    .container { display: flex; flex-direction: row; height: 100vh; gap: 10px; padding: 10px; }
+    .main-content { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
 
     .scene-wrap { flex: 1; min-height: 0; position: relative; border-radius: 8px; border: 1px solid #1e293b; background: #0a0e27; overflow: hidden; }
     #canvas3d { width: 100%; height: 100%; display: block; }
@@ -43,28 +44,28 @@
     #timeValue { color: #fff; font-weight: bold; }
 
     .control-panel {
-        width: 100%; flex-shrink: 0; background: #1a1f3a; border-radius: 8px;
-        padding: 12px 16px; border: 1px solid #1e293b; overflow-y: auto; height: 220px;
-        display: flex; flex-wrap: wrap; align-items: flex-start; gap: 0;
+        width: 300px; flex-shrink: 0; background: #1a1f3a; border-radius: 8px;
+        padding: 15px; border: 1px solid #1e293b; overflow-y: auto; max-height: 100vh;
+        display: flex; flex-direction: column;
     }
 
     #panelResizeHandle {
-        flex-shrink: 0; height: 22px; cursor: row-resize; display: flex;
+        flex-shrink: 0; width: 16px; cursor: col-resize; display: flex;
         align-items: center; justify-content: center; touch-action: none;
     }
     #panelResizeHandle::before {
-        content: ''; width: 120px; height: 7px; border-radius: 4px;
+        content: ''; height: 90px; width: 7px; border-radius: 4px;
         background: #293548; transition: background 0.15s;
     }
     #panelResizeHandle:hover::before, #panelResizeHandle.dragging::before { background: #64b5f6; }
-    .control-logo { flex: 0 0 auto; display: flex; align-items: center; margin-right: 18px; padding-right: 18px; border-right: 1px solid #293548; }
-    .control-logo img { height: 48px; width: auto; filter: invert(1); }
-    .panel-title { display: none; }
+    .control-logo { display: flex; align-items: center; justify-content: center; margin-bottom: 14px; }
+    .control-logo img { width: 100%; height: auto; filter: invert(1); }
+    .panel-title { display: block; font-size: 14px; font-weight: bold; color: #64b5f6; margin-bottom: 15px; border-bottom: 2px solid #64b5f6; padding-bottom: 8px; }
     .control-group {
-        flex: 0 0 auto; min-width: 175px; max-width: 230px;
-        margin: 0; padding: 0 18px; border-bottom: none; border-right: 1px solid #293548;
+        flex: none; min-width: 0; max-width: none;
+        margin: 0 0 15px 0; padding: 0 0 12px 0; border-bottom: 1px solid #293548; border-right: none;
     }
-    .control-group:last-child { border-right: none; }
+    .control-group:last-child { border-bottom: none; margin-bottom: 0; }
     .group-title { font-size: 11px; font-weight: bold; color: #90caf9; margin-bottom: 8px; text-transform: uppercase; }
     .checkbox-item { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; font-size: 12px; }
     .checkbox-item input { cursor: pointer; width: 16px; height: 16px; accent-color: #64b5f6; }
@@ -126,39 +127,42 @@
 </head>
 <body>
 <div class="container">
-    <div class="scene-wrap">
-        <canvas id="canvas3d"></canvas>
-        <div id="loading">Cargando mapa base y datos de la placa (4,983 sismos históricos)…</div>
-        <div id="attribution">Mapa: © OpenStreetMap contributors</div>
-        <div id="eventInfo">
-            <span class="close" id="closeInfo">✕</span>
-            <div id="eventInfoBody"></div>
+    <div class="main-content">
+        <div class="scene-wrap">
+            <canvas id="canvas3d"></canvas>
+            <div id="loading">Cargando mapa base y datos de la placa (4,983 sismos históricos)…</div>
+            <div id="attribution">Mapa: © OpenStreetMap contributors</div>
+            <div id="eventInfo">
+                <span class="close" id="closeInfo">✕</span>
+                <div id="eventInfoBody"></div>
+            </div>
+            <div id="profileBanner">
+                <span id="profileBannerText">Haz clic en el mapa para el punto INICIAL del perfil</span>
+                <button id="profileCancelBtn">Cancelar</button>
+            </div>
         </div>
-        <div id="profileBanner">
-            <span id="profileBannerText">Haz clic en el mapa para el punto INICIAL del perfil</span>
-            <button id="profileCancelBtn">Cancelar</button>
+
+        <div class="timeline-container">
+            <div class="timeline-header">
+                <span>⏱️ Línea de tiempo (según fecha/hora real del sismo)</span>
+                <button id="playBtn">▶ Reproducir</button>
+            </div>
+            <input type="range" class="timeline-slider" id="timelineSlider" min="0" max="1000" value="1000">
+            <div class="timeline-info">
+                <span id="timeStart">-</span>
+                <span id="timeValue">Ahora</span>
+                <span id="timeEnd">-</span>
+            </div>
         </div>
     </div>
 
     <div id="panelResizeHandle" title="Arrastra para ajustar el espacio"></div>
 
-    <div class="timeline-container">
-        <div class="timeline-header">
-            <span>⏱️ Línea de tiempo (según fecha/hora real del sismo)</span>
-            <button id="playBtn">▶ Reproducir</button>
-        </div>
-        <input type="range" class="timeline-slider" id="timelineSlider" min="0" max="1000" value="1000">
-        <div class="timeline-info">
-            <span id="timeStart">-</span>
-            <span id="timeValue">Ahora</span>
-            <span id="timeEnd">-</span>
-        </div>
-    </div>
-
     <div class="control-panel">
         <div class="control-logo">
             <img src="swtectonics-logo.png" alt="SWTectonics">
         </div>
+        <div class="panel-title">⚙️ Controles</div>
 
         <div class="control-group">
             <div class="group-title">Capas</div>
@@ -169,6 +173,10 @@
             <div class="slider-group">
                 <div class="slider-label"><span>Opacidad mapa</span><span class="slider-value" id="mapOpacityValue">100%</span></div>
                 <input type="range" id="mapOpacitySlider" min="0" max="100" value="100">
+            </div>
+            <div class="checkbox-item">
+                <input type="checkbox" id="showSatellite">
+                <label for="showSatellite">Vista satelital</label>
             </div>
 
             <div class="checkbox-item">
@@ -210,18 +218,6 @@
             </div>
         </div>
 
-        <div class="control-group">
-            <div class="group-title">Orientación del mapa</div>
-            <div class="checkbox-item">
-                <input type="checkbox" id="flipEW" checked>
-                <label for="flipEW">Espejo Este-Oeste</label>
-            </div>
-            <div class="checkbox-item">
-                <input type="checkbox" id="flipNS">
-                <label for="flipNS">Espejo Norte-Sur</label>
-            </div>
-            <div class="hint" style="margin-top:4px;">Si el mapa se ve invertido o los letreros al revés, prueba estas dos casillas hasta que quede correcto. Los sismos se reposicionan junto con el mapa.</div>
-        </div>
 
         <div class="control-group">
             <div class="group-title">Tamaño de esferas (magnitud)</div>
@@ -478,7 +474,7 @@ function loadTileImage(url) {
     });
 }
 
-async function buildMapTexture() {
+async function buildMapTexture(satellite) {
     const zoom = 8;
     const minTileX = Math.floor(lon2tileX(minLon, zoom));
     const maxTileX = Math.floor(lon2tileX(maxLon, zoom));
@@ -493,7 +489,10 @@ async function buildMapTexture() {
     canvas.height = tilesY * 256;
     const ctx = canvas.getContext('2d');
 
-    const sources = [
+    const sources = satellite ? [
+        (x, y, z) => `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${y}/${x}`,
+        (x, y, z) => `https://tile.openstreetmap.org/${z}/${x}/${y}.png`
+    ] : [
         (x, y, z) => `https://tile.openstreetmap.org/${z}/${x}/${y}.png`,
         (x, y, z) => `https://a.tile.opentopomap.org/${z}/${x}/${y}.png`
     ];
@@ -544,6 +543,21 @@ async function buildMapTexture() {
     };
 
     return { canvas, bounds };
+}
+
+async function reloadMap() {
+    const loading = document.getElementById('loading');
+    loading.textContent = 'Cargando mapa…';
+    loading.style.display = 'flex';
+    const satellite = document.getElementById('showSatellite').checked;
+    const { canvas, bounds } = await buildMapTexture(satellite);
+    mapBounds = bounds;
+    rawMapCanvas = canvas;
+    document.getElementById('attribution').textContent = satellite
+        ? 'Imagen satelital: © Esri, Maxar, Earthstar Geographics'
+        : 'Mapa: © OpenStreetMap contributors';
+    applyMapOrientation();
+    loading.style.display = 'none';
 }
 
 // ============ THREE.JS ============
@@ -623,10 +637,8 @@ function buildPlatePoints() {
 }
 
 function getFlipFlags() {
-    return {
-        ew: document.getElementById('flipEW').checked,
-        ns: document.getElementById('flipNS').checked
-    };
+    // Orientación fija (confirmada correcta para la ventana geográfica usada): espejo Este-Oeste activo.
+    return { ew: true, ns: false };
 }
 
 function latLonDepthToPos(lat, lon, depth) {
@@ -670,6 +682,71 @@ function applyMapOrientation() {
     mapPlane.material.needsUpdate = true;
     rebuildEvents();
     buildPlatePoints();
+    buildCompass();
+}
+
+// ============ BRÚJULA (N/S/E/O) en la base del cubo ============
+let compassObjects = [];
+
+function makeCompassLabel(text, color) {
+    const c = document.createElement('canvas');
+    c.width = 72; c.height = 72;
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = 'rgba(10,14,39,0.9)';
+    ctx.beginPath(); ctx.arc(36, 36, 32, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#64b5f6'; ctx.lineWidth = 2.5; ctx.stroke();
+    ctx.font = 'bold 34px Arial';
+    ctx.fillStyle = color;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, 36, 38);
+    const tex = new THREE.CanvasTexture(c);
+    const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false });
+    const sprite = new THREE.Sprite(mat);
+    sprite.scale.set(1.5, 1.5, 1);
+    sprite.renderOrder = 12;
+    return sprite;
+}
+
+function buildCompass() {
+    compassObjects.forEach(o => { scene.remove(o); if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); });
+    compassObjects = [];
+    if (!mapBounds) return;
+
+    const latMid = (mapBounds.north + mapBounds.south) / 2;
+    const lonMid = (mapBounds.west + mapBounds.east) / 2;
+    const c = latLonDepthToPos(latMid, lonMid, 0);
+    const nP = latLonDepthToPos(latMid + 0.5, lonMid, 0);
+    const eP = latLonDepthToPos(latMid, lonMid + 0.5, 0);
+    const dN = new THREE.Vector2(nP.x - c.x, nP.z - c.z).normalize();
+    const dE = new THREE.Vector2(eP.x - c.x, eP.z - c.z).normalize();
+
+    const R = BOX_SIZE / 2 + 1.7;
+    const y = -BOX_HEIGHT - 0.15;
+
+    const segments = 64;
+    const pts = [];
+    for (let i = 0; i <= segments; i++) {
+        const a = (i / segments) * Math.PI * 2;
+        pts.push(new THREE.Vector3(Math.cos(a) * R, y, Math.sin(a) * R));
+    }
+    const ringGeo = new THREE.BufferGeometry().setFromPoints(pts);
+    const ring = new THREE.Line(ringGeo, new THREE.LineBasicMaterial({ color: 0x64b5f6, transparent: true, opacity: 0.5 }));
+    scene.add(ring);
+    compassObjects.push(ring);
+
+    const dirs = [
+        { label: 'N', dx: dN.x, dz: dN.y, color: '#ff5566' },
+        { label: 'S', dx: -dN.x, dz: -dN.y, color: '#90caf9' },
+        { label: 'E', dx: dE.x, dz: dE.y, color: '#90caf9' },
+        { label: 'O', dx: -dE.x, dz: -dE.y, color: '#90caf9' }
+    ];
+    dirs.forEach(d => {
+        const sprite = makeCompassLabel(d.label, d.color);
+        sprite.position.set(d.dx * R, y, d.dz * R);
+        scene.add(sprite);
+        compassObjects.push(sprite);
+    });
 }
 
 function makeTextSprite(text) {
@@ -752,7 +829,7 @@ async function init3D() {
     });
 
     // Mapa (cara superior del cubo) + datos de la placa, en paralelo
-    const [{ canvas, bounds }] = await Promise.all([buildMapTexture(), loadPlateData()]);
+    const [{ canvas, bounds }] = await Promise.all([buildMapTexture(false), loadPlateData()]);
     mapBounds = bounds;
     rawMapCanvas = canvas;
 
@@ -1094,6 +1171,7 @@ document.getElementById('mapOpacitySlider').addEventListener('input', e => {
     document.getElementById('mapOpacityValue').textContent = e.target.value + '%';
     if (mapPlane) mapPlane.material.opacity = e.target.value / 100;
 });
+document.getElementById('showSatellite').addEventListener('change', reloadMap);
 document.getElementById('showEvents').addEventListener('change', e => {
     sphereMeshes.forEach(m => m.visible = e.target.checked);
 });
@@ -1126,8 +1204,6 @@ document.getElementById('plateSizeSlider').addEventListener('input', e => {
     document.getElementById('plateSizeValue').textContent = e.target.value + '%';
     buildPlatePoints();
 });
-document.getElementById('flipEW').addEventListener('change', applyMapOrientation);
-document.getElementById('flipNS').addEventListener('change', applyMapOrientation);
 document.getElementById('resetCam').addEventListener('click', () => {
     camera.position.set(16, 12, 22);
     if (controls) { controls.target.set(0, -BOX_HEIGHT/2, 0); controls.update(); }
@@ -1179,23 +1255,21 @@ document.getElementById('playBtn').addEventListener('click', () => {
 (function initPanelResize() {
     const handle = document.getElementById('panelResizeHandle');
     const panel = document.querySelector('.control-panel');
-    let dragging = false, startY = 0, startHeight = 0;
+    let dragging = false, startX = 0, startWidth = 0;
 
-    function clampHeight(h) {
-        const containerH = document.querySelector('.container').clientHeight;
-        const timeline = document.querySelector('.timeline-container');
-        const minPanel = 50;
-        const minCanvas = 50;
-        const gapTotal = 30; // 3 gaps de 10px entre scene-wrap, handle, timeline y panel
-        const reservedOther = handle.offsetHeight + timeline.offsetHeight + gapTotal;
-        const maxPanel = Math.max(minPanel, containerH - reservedOther - minCanvas);
-        return Math.min(maxPanel, Math.max(minPanel, h));
+    function clampWidth(w) {
+        const containerW = document.querySelector('.container').clientWidth;
+        const minPanel = 60;
+        const minCanvas = 200;
+        const gapTotal = 20; // 2 gaps de 10px entre main-content, handle y panel
+        const maxPanel = Math.max(minPanel, containerW - handle.offsetWidth - gapTotal - minCanvas);
+        return Math.min(maxPanel, Math.max(minPanel, w));
     }
 
     handle.addEventListener('pointerdown', (e) => {
         dragging = true;
-        startY = e.clientY;
-        startHeight = panel.getBoundingClientRect().height;
+        startX = e.clientX;
+        startWidth = panel.getBoundingClientRect().width;
         handle.classList.add('dragging');
         handle.setPointerCapture(e.pointerId);
         e.preventDefault();
@@ -1203,8 +1277,8 @@ document.getElementById('playBtn').addEventListener('click', () => {
 
     handle.addEventListener('pointermove', (e) => {
         if (!dragging) return;
-        const deltaY = e.clientY - startY;
-        panel.style.height = clampHeight(startHeight - deltaY) + 'px';
+        const deltaX = e.clientX - startX;
+        panel.style.width = clampWidth(startWidth - deltaX) + 'px';
         onResize();
     });
 
