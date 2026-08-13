@@ -1184,7 +1184,7 @@ document.getElementById('playBtn').addEventListener('click', () => {
     function clampHeight(h) {
         const containerH = document.querySelector('.container').clientHeight;
         const minPanel = 50;
-        const maxPanel = Math.max(minPanel, containerH - 220); // deja al menos ~220px para canvas+timeline+handle
+        const maxPanel = Math.max(minPanel, containerH - 110); // deja al menos ~110px para canvas+timeline+handle
         return Math.min(maxPanel, Math.max(minPanel, h));
     }
 
