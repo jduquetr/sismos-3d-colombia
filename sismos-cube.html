@@ -544,14 +544,17 @@ async function buildGeologicTexture() {
 }
 
 async function buildMapTexture(mapType) {
+    console.log('[buildMapTexture] mapType=', mapType, 'minLat=', minLat, 'maxLat=', maxLat, 'minLon=', minLon, 'maxLon=', maxLon);
     if (mapType === 'geologic') return buildGeologicTexture();
     const satellite = mapType === 'satellite';
 
     const zoom = computeZoomForBounds();
+    console.log('[buildMapTexture] zoom calculado =', zoom);
     const minTileX = Math.floor(lon2tileX(minLon, zoom));
     const maxTileX = Math.floor(lon2tileX(maxLon, zoom));
     const minTileY = Math.floor(lat2tileY(maxLat, zoom));
     const maxTileY = Math.floor(lat2tileY(minLat, zoom));
+    console.log('[buildMapTexture] tileX', minTileX, '-', maxTileX, ' tileY', minTileY, '-', maxTileY);
 
     const tilesX = Math.min(maxTileX - minTileX + 1, 14);
     const tilesY = Math.min(maxTileY - minTileY + 1, 14);
@@ -640,15 +643,18 @@ const MAP_ATTRIBUTIONS = {
 };
 
 async function reloadMap() {
+    console.log('[reloadMap] iniciando con bounds actuales', { minLat, maxLat, minLon, maxLon });
     const loading = document.getElementById('loading');
     loading.textContent = 'Cargando mapa…';
     loading.style.display = 'flex';
     const mapType = document.getElementById('mapType').value;
     const { canvas, bounds, success } = await buildMapTexture(mapType);
+    console.log('[reloadMap] resultado: success=', success, 'bounds devueltos=', bounds);
     mapBounds = bounds;
     rawMapCanvas = canvas;
     document.getElementById('attribution').textContent = MAP_ATTRIBUTIONS[mapType] || MAP_ATTRIBUTIONS.osm;
     applyMapOrientation();
+    console.log('[reloadMap] applyMapOrientation() completado, mapBounds actual =', mapBounds);
     loading.style.display = 'none';
     return success;
 }
@@ -765,7 +771,8 @@ function flipCanvas(src, flipH, flipV) {
 }
 
 function applyMapOrientation() {
-    if (!rawMapCanvas || !mapPlane) return;
+    if (!rawMapCanvas || !mapPlane) { console.warn('[applyMapOrientation] abortado: rawMapCanvas=', !!rawMapCanvas, 'mapPlane=', !!mapPlane); return; }
+    console.log('[applyMapOrientation] aplicando textura, canvas size=', rawMapCanvas.width, 'x', rawMapCanvas.height, 'mapBounds=', mapBounds);
     const { ew, ns } = getFlipFlags();
     const finalCanvas = flipCanvas(rawMapCanvas, ew, ns);
     const texture = new THREE.CanvasTexture(finalCanvas);
@@ -1411,12 +1418,14 @@ function computeBoundsForEvents(events) {
     const lonSpan = Math.max(rawMaxLon - rawMinLon, 0.2);
     const padLat = Math.max(latSpan * 0.15, 0.15);
     const padLon = Math.max(lonSpan * 0.15, 0.15);
-    return {
+    const result = {
         minLat: Math.max(-85, rawMinLat - padLat),
         maxLat: Math.min(85, rawMaxLat + padLat),
         minLon: Math.max(-180, rawMinLon - padLon),
         maxLon: Math.min(180, rawMaxLon + padLon)
     };
+    console.log('[computeBoundsForEvents]', events.length, 'eventos -> crudo:', {rawMinLat, rawMaxLat, rawMinLon, rawMaxLon}, '-> con margen:', result);
+    return result;
 }
 
 document.getElementById('geojsonFileInput').addEventListener('change', (e) => {
