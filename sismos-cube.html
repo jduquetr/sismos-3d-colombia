@@ -73,6 +73,37 @@
         font-size: 15px; color: #90caf9; background: rgba(10,14,39,0.7);
         padding: 4px 10px; border-radius: 4px; pointer-events: none;
     }
+
+    #profileBanner {
+        position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
+        background: rgba(15,22,40,0.95); border: 1px solid #64b5f6; border-radius: 6px;
+        padding: 8px 14px; font-size: 12px; color: #e0e0e0; display: none; z-index: 6;
+        display: flex; align-items: center; gap: 10px;
+    }
+    #profileBanner button {
+        background: #293548; color: #90caf9; border: 1px solid #64b5f6; border-radius: 4px;
+        padding: 3px 10px; font-size: 11px; cursor: pointer;
+    }
+
+    #profileModalOverlay {
+        position: fixed; inset: 0; background: rgba(5,8,20,0.85); z-index: 50;
+        display: none; align-items: center; justify-content: center;
+    }
+    #profileModal {
+        background: #131a30; border: 1px solid #64b5f6; border-radius: 10px;
+        padding: 18px; width: min(90vw, 900px); max-height: 90vh; overflow-y: auto;
+        box-shadow: 0 8px 40px rgba(0,0,0,0.5);
+    }
+    #profileModal h3 { color: #64b5f6; font-size: 15px; margin-bottom: 4px; }
+    #profileModal .sub { color: #90caf9; font-size: 11px; margin-bottom: 10px; }
+    #profileModal .closeModal {
+        float: right; cursor: pointer; color: #90caf9; font-size: 16px; margin-top: -4px;
+    }
+    #profileCanvas { background: #0a0e27; border-radius: 6px; width: 100%; display: block; }
+    .profile-controls { display: flex; align-items: center; gap: 10px; margin-top: 10px; font-size: 11px; color: #90caf9; }
+    .profile-controls input[type="range"] { flex: 1; }
+    .profile-legend { display: flex; gap: 16px; margin-top: 10px; font-size: 10px; color: #90caf9; flex-wrap: wrap; }
+    .profile-legend span.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px; }
 </style>
 </head>
 <body>
@@ -85,6 +116,10 @@
             <div id="eventInfo">
                 <span class="close" id="closeInfo">✕</span>
                 <div id="eventInfoBody"></div>
+            </div>
+            <div id="profileBanner">
+                <span id="profileBannerText">Haz clic en el mapa para el punto INICIAL del perfil</span>
+                <button id="profileCancelBtn">Cancelar</button>
             </div>
         </div>
 
@@ -207,10 +242,38 @@
         </div>
 
         <div class="hint">Arrastra para rotar · rueda para zoom · clic derecho para desplazar · clic en una esfera para ver el detalle del sismo.</div>
+
+        <div class="control-group" style="border-bottom:none;">
+            <div class="group-title">Perfil de profundidad</div>
+            <button id="profileBtn" style="width:100%;background:#64b5f6;color:#0a0e27;border:none;border-radius:4px;padding:9px;font-size:12px;font-weight:bold;cursor:pointer;">📐 Trazar perfil (inicio → fin)</button>
+            <div class="hint">Elige dos puntos sobre el mapa para ver la sección de profundidad vs. distancia.</div>
+        </div>
     </div>
 </div>
 
 <div id="pageCredit">Created by SWTectonics. Jose Fernando Duque T.</div>
+
+<div id="profileModalOverlay">
+    <div id="profileModal">
+        <span class="closeModal" id="profileModalClose">✕</span>
+        <h3>Perfil de profundidad</h3>
+        <div class="sub" id="profileModalSub"></div>
+        <canvas id="profileCanvas" width="860" height="420"></canvas>
+        <div class="profile-controls">
+            <span>Ancho de banda:</span>
+            <input type="range" id="swathSlider" min="5" max="100" value="25">
+            <span id="swathValue">25 km</span>
+        </div>
+        <div class="profile-legend">
+            <span><span class="dot" style="background:#00ff00;"></span>0-30 km (enjambre)</span>
+            <span><span class="dot" style="background:#ffff00;"></span>30-60 km</span>
+            <span><span class="dot" style="background:#ff8800;"></span>60-90 km</span>
+            <span><span class="dot" style="background:#ff0000;"></span>90+ km</span>
+            <span><span class="dot" style="background:#2659f2;"></span>0-35 km (placa USGS)</span>
+            <span><span class="dot" style="background:linear-gradient(90deg,#000,#fff);"></span>35-160+ km (placa, negro→blanco)</span>
+        </div>
+    </div>
+</div>
 
 <script>
 // ============ DATOS ============
@@ -735,6 +798,12 @@ function onCanvasClick(ev) {
     mouseVec.x = ((ev.clientX - rect.left) / rect.width) * 2 - 1;
     mouseVec.y = -((ev.clientY - rect.top) / rect.height) * 2 + 1;
     raycaster.setFromCamera(mouseVec, camera);
+
+    if (pickingProfile) {
+        handleProfileClick();
+        return;
+    }
+
     const hits = raycaster.intersectObjects(sphereMeshes);
     if (hits.length > 0) {
         const e = hits[0].object.userData;
@@ -755,6 +824,232 @@ function onCanvasClick(ev) {
 document.getElementById('closeInfo').addEventListener('click', () => {
     document.getElementById('eventInfo').style.display = 'none';
 });
+
+// ============ PERFIL DE PROFUNDIDAD ============
+let pickingProfile = null;   // null | 'start' | 'end'
+let profileStart = null, profileEnd = null; // {lat, lon}
+let profileMarkers = [];     // objetos 3D temporales (marcadores + línea)
+
+function posToLatLon(x, z) {
+    const { ew, ns } = getFlipFlags();
+    let u = x / BOX_SIZE + 0.5;
+    let v = 0.5 - z / BOX_SIZE;
+    const u0 = ew ? 1 - u : u;
+    const v0 = ns ? 1 - v : v;
+    const lon = mapBounds.west + u0 * (mapBounds.east - mapBounds.west);
+    const lat = mapBounds.north + v0 * (mapBounds.south - mapBounds.north);
+    return { lat, lon };
+}
+
+function clearProfileMarkers() {
+    profileMarkers.forEach(m => { scene.remove(m); if (m.geometry) m.geometry.dispose(); if (m.material) m.material.dispose(); });
+    profileMarkers = [];
+}
+
+function addProfileMarker(pos, color) {
+    const geo = new THREE.SphereGeometry(0.22, 16, 16);
+    const mat = new THREE.MeshBasicMaterial({ color, depthTest: false });
+    const m = new THREE.Mesh(geo, mat);
+    m.position.set(pos.x, 0.05, pos.z);
+    m.renderOrder = 10;
+    scene.add(m);
+    profileMarkers.push(m);
+    return m;
+}
+
+document.getElementById('profileBtn').addEventListener('click', () => {
+    clearProfileMarkers();
+    profileStart = null; profileEnd = null;
+    pickingProfile = 'start';
+    document.getElementById('profileBannerText').textContent = 'Haz clic en el mapa para el punto INICIAL del perfil';
+    document.getElementById('profileBanner').style.display = 'flex';
+});
+
+document.getElementById('profileCancelBtn').addEventListener('click', () => {
+    pickingProfile = null;
+    document.getElementById('profileBanner').style.display = 'none';
+});
+
+function handleProfileClick() {
+    const hits = raycaster.intersectObject(mapPlane);
+    if (hits.length === 0) return; // clic fuera del mapa, ignorar
+
+    const p = hits[0].point;
+    const latlon = posToLatLon(p.x, p.z);
+
+    if (pickingProfile === 'start') {
+        profileStart = latlon;
+        addProfileMarker(p, 0x00ff88);
+        pickingProfile = 'end';
+        document.getElementById('profileBannerText').textContent = 'Haz clic en el mapa para el punto FINAL del perfil';
+    } else if (pickingProfile === 'end') {
+        profileEnd = latlon;
+        addProfileMarker(p, 0xff3366);
+
+        const startPos = latLonDepthToPos(profileStart.lat, profileStart.lon, 0);
+        const lineGeo = new THREE.BufferGeometry().setFromPoints([
+            new THREE.Vector3(startPos.x, 0.05, startPos.z),
+            new THREE.Vector3(p.x, 0.05, p.z)
+        ]);
+        const line = new THREE.Line(lineGeo, new THREE.LineBasicMaterial({ color: 0xffffff, depthTest: false }));
+        line.renderOrder = 10;
+        scene.add(line);
+        profileMarkers.push(line);
+
+        pickingProfile = null;
+        document.getElementById('profileBanner').style.display = 'none';
+        openProfileModal();
+    }
+}
+
+function kmPerDegree(latRef) {
+    const R = 6371;
+    return {
+        lat: (Math.PI / 180) * R,
+        lon: (Math.PI / 180) * R * Math.cos(latRef * Math.PI / 180)
+    };
+}
+
+function computeProfileSeries(swathKm) {
+    const latRef = (profileStart.lat + profileEnd.lat) / 2;
+    const k = kmPerDegree(latRef);
+    const toXY = (lat, lon) => ({ x: lon * k.lon, y: lat * k.lat });
+
+    const A = toXY(profileStart.lat, profileStart.lon);
+    const B = toXY(profileEnd.lat, profileEnd.lon);
+    const dx = B.x - A.x, dy = B.y - A.y;
+    const L = Math.sqrt(dx * dx + dy * dy);
+    const ux = dx / L, uy = dy / L;
+    const px = -uy, py = ux; // perpendicular unitario
+
+    function project(lat, lon) {
+        const P = toXY(lat, lon);
+        const vx = P.x - A.x, vy = P.y - A.y;
+        const t = vx * ux + vy * uy;
+        const perp = vx * px + vy * py;
+        return { t, perp };
+    }
+
+    const swarmPts = [];
+    eventos.forEach(e => {
+        const { t, perp } = project(e.lat, e.lon);
+        if (t >= 0 && t <= L && Math.abs(perp) <= swathKm) {
+            swarmPts.push({ t, depth: e.prof, mag: e.mag, kind: 'swarm' });
+        }
+    });
+
+    const platePts = [];
+    plateData.forEach(p => {
+        const [lon, lat, depth, mag] = p;
+        const { t, perp } = project(lat, lon);
+        if (t >= 0 && t <= L && Math.abs(perp) <= swathKm) {
+            platePts.push({ t, depth, mag, kind: 'plate' });
+        }
+    });
+
+    return { L, swarmPts, platePts };
+}
+
+function renderProfileChart() {
+    if (!profileStart || !profileEnd) return;
+    const swathKm = parseFloat(document.getElementById('swathSlider').value);
+    document.getElementById('swathValue').textContent = swathKm + ' km';
+
+    const { L, swarmPts, platePts } = computeProfileSeries(swathKm);
+
+    document.getElementById('profileModalSub').innerHTML =
+        `Inicio: ${profileStart.lat.toFixed(3)}°N, ${Math.abs(profileStart.lon).toFixed(3)}°O &nbsp;→&nbsp; ` +
+        `Fin: ${profileEnd.lat.toFixed(3)}°N, ${Math.abs(profileEnd.lon).toFixed(3)}°O &nbsp;·&nbsp; ` +
+        `Longitud: ${L.toFixed(1)} km &nbsp;·&nbsp; ${swarmPts.length + platePts.length} sismos en la banda`;
+
+    const canvas = document.getElementById('profileCanvas');
+    const ctx = canvas.getContext('2d');
+    const W = canvas.width, H = canvas.height;
+    ctx.clearRect(0, 0, W, H);
+    ctx.fillStyle = '#0a0e27';
+    ctx.fillRect(0, 0, W, H);
+
+    const marginL = 55, marginR = 20, marginT = 15, marginB = 40;
+    const plotW = W - marginL - marginR;
+    const plotH = H - marginT - marginB;
+
+    const allDepths = swarmPts.concat(platePts).map(p => p.depth);
+    let maxDepth = allDepths.length ? Math.max(...allDepths) : 120;
+    maxDepth = Math.ceil((maxDepth * 1.1) / 10) * 10;
+    if (maxDepth < 10) maxDepth = 10;
+
+    const xScale = t => marginL + (t / L) * plotW;
+    const yScale = d => marginT + (d / maxDepth) * plotH;
+
+    // grilla
+    ctx.strokeStyle = '#1e293b';
+    ctx.fillStyle = '#5a7a9a';
+    ctx.font = '10px Arial';
+    ctx.lineWidth = 1;
+    const depthStep = maxDepth <= 50 ? 10 : (maxDepth <= 150 ? 25 : 50);
+    for (let d = 0; d <= maxDepth; d += depthStep) {
+        const y = yScale(d);
+        ctx.beginPath(); ctx.moveTo(marginL, y); ctx.lineTo(W - marginR, y); ctx.stroke();
+        ctx.textAlign = 'right';
+        ctx.fillText(d + ' km', marginL - 6, y + 3);
+    }
+    const distStep = L <= 100 ? 20 : (L <= 300 ? 50 : 100);
+    for (let t = 0; t <= L; t += distStep) {
+        const x = xScale(t);
+        ctx.beginPath(); ctx.moveTo(x, marginT); ctx.lineTo(x, H - marginB); ctx.stroke();
+        ctx.textAlign = 'center';
+        ctx.fillText(Math.round(t) + ' km', x, H - marginB + 14);
+    }
+
+    // ejes
+    ctx.strokeStyle = '#64b5f6';
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(marginL, marginT, plotW, plotH);
+
+    ctx.save();
+    ctx.translate(14, marginT + plotH / 2);
+    ctx.rotate(-Math.PI / 2);
+    ctx.fillStyle = '#90caf9';
+    ctx.font = 'bold 11px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText('Profundidad (km)', 0, 0);
+    ctx.restore();
+    ctx.fillStyle = '#90caf9';
+    ctx.textAlign = 'center';
+    ctx.fillText('Distancia a lo largo del perfil (km)', marginL + plotW / 2, H - 6);
+
+    // puntos: placa primero (fondo), enjambre encima
+    platePts.forEach(p => {
+        const c = plateDepthColor(p.depth);
+        const r = Math.max(1.2, 1 + (p.mag - 2) * 0.5);
+        ctx.beginPath();
+        ctx.fillStyle = `rgb(${Math.round(c.r*255)},${Math.round(c.g*255)},${Math.round(c.b*255)})`;
+        ctx.globalAlpha = 0.85;
+        ctx.arc(xScale(p.t), yScale(p.depth), r, 0, Math.PI * 2);
+        ctx.fill();
+    });
+    ctx.globalAlpha = 1;
+    swarmPts.forEach(p => {
+        const c = depthColor(p.depth);
+        const r = Math.max(2.5, 2 + (p.mag - 0.8) * 1.6);
+        ctx.beginPath();
+        ctx.fillStyle = `rgb(${Math.round(c.r*255)},${Math.round(c.g*255)},${Math.round(c.b*255)})`;
+        ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+        ctx.lineWidth = 0.5;
+        ctx.arc(xScale(p.t), yScale(p.depth), r, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+    });
+}
+
+function openProfileModal() {
+    document.getElementById('profileModalOverlay').style.display = 'flex';
+    renderProfileChart();
+}
+document.getElementById('profileModalClose').addEventListener('click', () => {
+    document.getElementById('profileModalOverlay').style.display = 'none';
+});
+document.getElementById('swathSlider').addEventListener('input', renderProfileChart);
 
 function animate() {
     requestAnimationFrame(animate);
