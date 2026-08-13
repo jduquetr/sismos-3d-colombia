@@ -180,9 +180,13 @@
                 <div class="slider-label"><span>Opacidad mapa</span><span class="slider-value" id="mapOpacityValue">100%</span></div>
                 <input type="range" id="mapOpacitySlider" min="0" max="100" value="100">
             </div>
-            <div class="checkbox-item">
-                <input type="checkbox" id="showSatellite">
-                <label for="showSatellite">Vista satelital</label>
+            <div class="slider-group">
+                <div class="slider-label"><span>Tipo de mapa</span></div>
+                <select id="mapType" style="width:100%;background:#0f1628;color:#e0e0e0;border:1px solid #293548;border-radius:4px;padding:5px;font-size:11px;">
+                    <option value="osm">Calles (OpenStreetMap)</option>
+                    <option value="satellite">Satélite (Esri)</option>
+                    <option value="geologic">Mapa Geológico (SGC 2023)</option>
+                </select>
             </div>
 
             <div class="checkbox-item">
@@ -502,7 +506,47 @@ function computeZoomForBounds() {
     return Math.max(3, Math.min(13, z));
 }
 
-async function buildMapTexture(satellite) {
+// Mapa geológico del SGC: se pide como UNA sola imagen completa (ArcGIS /export)
+// para el bbox exacto solicitado, en vez de mosaico de teselas -> nunca queda recortado.
+async function buildGeologicTexture() {
+    const lonSpan = Math.max(maxLon - minLon, 0.01);
+    const latSpan = Math.max(maxLat - minLat, 0.01);
+    let w, h;
+    if (lonSpan >= latSpan) { w = 1024; h = Math.max(256, Math.round(1024 * latSpan / lonSpan)); }
+    else { h = 1024; w = Math.max(256, Math.round(1024 * lonSpan / latSpan)); }
+
+    const url = `https://srvags.sgc.gov.co/arcgis/rest/services/Mapa_Geologico_Colombia/Mapa_Geologico_Colombia_V2023/MapServer/export` +
+        `?bbox=${minLon},${minLat},${maxLon},${maxLat}&bboxSR=4326&imageSR=4326&size=${w},${h}&format=png32&transparent=false&f=image`;
+
+    const canvas = document.createElement('canvas');
+    canvas.width = w; canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    let success = false;
+    try {
+        const img = await loadTileImage(url);
+        ctx.drawImage(img, 0, 0, w, h);
+        ctx.getImageData(0, 0, 1, 1);
+        success = true;
+    } catch (err) {
+        console.warn('Mapa geológico no disponible:', err.message);
+    }
+
+    if (!success) {
+        ctx.fillStyle = '#16324a';
+        ctx.fillRect(0, 0, w, h);
+        ctx.fillStyle = '#5a8ab8';
+        ctx.font = 'bold 20px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('Mapa geológico no disponible', w / 2, h / 2);
+    }
+
+    return { canvas, bounds: { west: minLon, east: maxLon, north: maxLat, south: minLat } };
+}
+
+async function buildMapTexture(mapType) {
+    if (mapType === 'geologic') return buildGeologicTexture();
+    const satellite = mapType === 'satellite';
+
     const zoom = computeZoomForBounds();
     const minTileX = Math.floor(lon2tileX(minLon, zoom));
     const maxTileX = Math.floor(lon2tileX(maxLon, zoom));
@@ -589,17 +633,21 @@ async function buildMapTexture(satellite) {
     return { canvas, bounds };
 }
 
+const MAP_ATTRIBUTIONS = {
+    osm: 'Mapa: © OpenStreetMap contributors',
+    satellite: 'Imagen satelital: © Esri, Maxar, Earthstar Geographics',
+    geologic: 'Mapa geológico: © Servicio Geológico Colombiano (SGC), 2023'
+};
+
 async function reloadMap() {
     const loading = document.getElementById('loading');
     loading.textContent = 'Cargando mapa…';
     loading.style.display = 'flex';
-    const satellite = document.getElementById('showSatellite').checked;
-    const { canvas, bounds } = await buildMapTexture(satellite);
+    const mapType = document.getElementById('mapType').value;
+    const { canvas, bounds } = await buildMapTexture(mapType);
     mapBounds = bounds;
     rawMapCanvas = canvas;
-    document.getElementById('attribution').textContent = satellite
-        ? 'Imagen satelital: © Esri, Maxar, Earthstar Geographics'
-        : 'Mapa: © OpenStreetMap contributors';
+    document.getElementById('attribution').textContent = MAP_ATTRIBUTIONS[mapType] || MAP_ATTRIBUTIONS.osm;
     applyMapOrientation();
     loading.style.display = 'none';
 }
@@ -873,7 +921,7 @@ async function init3D() {
     });
 
     // Mapa (cara superior del cubo) + datos de la placa, en paralelo
-    const [{ canvas, bounds }] = await Promise.all([buildMapTexture(false), loadPlateData()]);
+    const [{ canvas, bounds }] = await Promise.all([buildMapTexture('osm'), loadPlateData()]);
     mapBounds = bounds;
     rawMapCanvas = canvas;
 
@@ -1215,7 +1263,7 @@ document.getElementById('mapOpacitySlider').addEventListener('input', e => {
     document.getElementById('mapOpacityValue').textContent = e.target.value + '%';
     if (mapPlane) mapPlane.material.opacity = e.target.value / 100;
 });
-document.getElementById('showSatellite').addEventListener('change', reloadMap);
+document.getElementById('mapType').addEventListener('change', reloadMap);
 document.getElementById('showEvents').addEventListener('change', e => {
     sphereMeshes.forEach(m => m.visible = e.target.checked);
 });
