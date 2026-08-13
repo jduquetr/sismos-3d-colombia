@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Visualizador 3D de Sismos Colombia - Premium</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Arial', sans-serif; background: #0a0e27; color: #e0e0e0; overflow: hidden; }
+
+        .container { display: flex; height: 100vh; gap: 10px; padding: 10px; }
+
+        .main-content { flex: 1; display: flex; flex-direction: column; gap: 10px; }
+
+        #map { width: 100%; height: 120px; border-radius: 8px; border: 1px solid #1e293b; background: #1a1f3a; }
+
+        #canvas3d { flex: 1; border-radius: 8px; border: 1px solid #1e293b; background: #0a0e27; min-height: 250px; max-height: 450px; }
+
+        .timeline-container {
+            width: 100%;
+            background: #1a1f3a;
+            padding: 12px;
+            border-radius: 8px;
+            border: 1px solid #1e293b;
+        }
+
+        .timeline-header { font-size: 12px; font-weight: bold; color: #64b5f6; margin-bottom: 8px; }
+
+        .timeline-slider { width: 100%; }
+
+        .timeline-info {
+            display: flex;
+            justify-content: space-between;
+            font-size: 11px;
+            color: #90caf9;
+            margin-top: 8px;
+        }
+
+        .control-panel {
+            width: 280px;
+            background: #1a1f3a;
+            border-radius: 8px;
+            padding: 15px;
+            border: 1px solid #1e293b;
+            overflow-y: auto;
+            max-height: 100vh;
+        }
+
+        .panel-title {
+            font-size: 14px;
+            font-weight: bold;
+            color: #64b5f6;
+            margin-bottom: 15px;
+            border-bottom: 2px solid #64b5f6;
+            padding-bottom: 8px;
+        }
+
+        .control-group {
+            margin-bottom: 15px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid #293548;
+        }
+
+        .control-group:last-child { border-bottom: none; }
+
+        .group-title {
+            font-size: 11px;
+            font-weight: bold;
+            color: #90caf9;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+        }
+
+        .checkbox-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 6px;
+            font-size: 12px;
+        }
+
+        .checkbox-item input { cursor: pointer; width: 16px; height: 16px; accent-color: #64b5f6; }
+
+        .checkbox-item label { cursor: pointer; user-select: none; }
+
+        .slider-group { margin-bottom: 8px; }
+
+        .slider-label {
+            font-size: 11px;
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 6px;
+            color: #90caf9;
+        }
+
+        .slider-value {
+            background: #64b5f6;
+            color: #0a0e27;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-weight: bold;
+            font-size: 10px;
+        }
+
+        input[type="range"] {
+            width: 100%;
+            height: 4px;
+            border-radius: 2px;
+            background: #293548;
+            outline: none;
+            cursor: pointer;
+            -webkit-appearance: none;
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #64b5f6;
+            cursor: pointer;
+        }
+
+        input[type="range"]::-moz-range-thumb {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #64b5f6;
+            cursor: pointer;
+            border: none;
+        }
+
+        .info-box {
+            background: #0f1628;
+            border: 1px solid #293548;
+            border-radius: 6px;
+            padding: 10px;
+            font-size: 11px;
+            line-height: 1.6;
+            color: #90caf9;
+        }
+
+        .info-box strong { color: #64b5f6; }
+
+        .legend {
+            margin-top: 12px;
+            padding-top: 12px;
+            border-top: 1px solid #293548;
+        }
+
+        .legend-title {
+            font-size: 11px;
+            font-weight: bold;
+            color: #90caf9;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 10px;
+            margin-bottom: 4px;
+        }
+
+        .legend-color {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #0f1628; }
+        ::-webkit-scrollbar-thumb { background: #64b5f6; border-radius: 3px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="main-content">
+            <div id="map"></div>
+            <div id="canvas3d"></div>
+            <div class="timeline-container">
+                <div class="timeline-header">⏱️ Línea de Tiempo (Eventos en Vivo)</div>
+                <input type="range" class="timeline-slider" id="timelineSlider" min="0" max="100" value="100">
+                <div class="timeline-info">
+                    <span id="timeStart">10 ago 12:47</span>
+                    <span id="timeValue">Ahora</span>
+                    <span id="timeEnd">12 ago 21:45</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="control-panel">
+            <div class="panel-title">⚙️ Controles</div>
+
+            <div class="control-group">
+                <div class="group-title">Capas Visibles</div>
+                <div class="checkbox-item">
+                    <input type="checkbox" id="showEvents" checked>
+                    <label for="showEvents">Eventos 3D</label>
+                </div>
+                <div class="checkbox-item">
+                    <input type="checkbox" id="showMap" checked>
+                    <label for="showMap">Mapa 2D</label>
+                </div>
+            </div>
+
+            <div class="control-group">
+                <div class="group-title">Opacidad - Eventos 3D</div>
+                <div class="slider-group">
+                    <div class="slider-label">
+                        <span>Opacidad</span>
+                        <span class="slider-value" id="opacityValue">100%</span>
+                    </div>
+                    <input type="range" id="opacitySlider" min="0" max="100" value="100">
+                </div>
+            </div>
+
+            <div class="control-group">
+                <div class="group-title">Tamaño - Esferas</div>
+                <div class="slider-group">
+                    <div class="slider-label">
+                        <span>Escala</span>
+                        <span class="slider-value" id="sizeValue">100%</span>
+                    </div>
+                    <input type="range" id="sizeSlider" min="50" max="200" value="100">
+                </div>
+            </div>
+
+            <div class="control-group">
+                <div class="group-title">Velocidad Rotación</div>
+                <div class="slider-group">
+                    <div class="slider-label">
+                        <span>Velocidad</span>
+                        <span class="slider-value" id="speedValue">100%</span>
+                    </div>
+                    <input type="range" id="speedSlider" min="0" max="200" value="100">
+                </div>
+            </div>
+
+            <div class="info-box">
+                <strong>Total de eventos:</strong> <span id="totalEvents">0</span><br>
+                <strong>Período:</strong> 10-12 Ago 2026<br>
+                <strong>Magnitudes:</strong> 2.0 - 7.4<br>
+                <strong>Profundidades:</strong> 12 - 113 km<br>
+                <strong>Mostrando:</strong> <span id="visibleEvents">0</span> eventos
+            </div>
+
+            <div class="legend">
+                <div class="legend-title">Escala de Profundidad</div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background-color: #00ff00;"></div>
+                    <span>0-30 km (Verde)</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background-color: #ffff00;"></div>
+                    <span>30-60 km (Amarillo)</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background-color: #ff8800;"></div>
+                    <span>60-90 km (Naranja)</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background-color: #ff0000;"></div>
+                    <span>90+ km (Rojo)</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Datos completos
+        const eventos = [
+            {id: 1, lat: 4.8436, lon: -76.2422, prof: 110.285, mag: 7.4, time: new Date('2026-08-10T12:47:48Z')},
+            {id: 2, lat: 4.8521, lon: -76.2145, prof: 105.234, mag: 5.8, time: new Date('2026-08-10T12:54:22Z')},
+            {id: 3, lat: 4.8645, lon: -76.3125, prof: 108.567, mag: 5.2, time: new Date('2026-08-10T13:02:15Z')},
+            {id: 4, lat: 4.8971, lon: -76.3859, prof: 98.522, mag: 5.0, time: new Date('2026-08-10T13:18:10Z')},
+            {id: 5, lat: 4.8234, lon: -76.2089, prof: 112.145, mag: 4.9, time: new Date('2026-08-10T13:35:44Z')},
+            {id: 6, lat: 4.9156, lon: -76.3456, prof: 102.789, mag: 4.7, time: new Date('2026-08-10T14:01:33Z')},
+            {id: 7, lat: 4.8789, lon: -76.1945, prof: 110.234, mag: 4.5, time: new Date('2026-08-10T14:28:19Z')},
+            {id: 8, lat: 4.8567, lon: -76.3234, prof: 107.567, mag: 4.3, time: new Date('2026-08-10T15:02:58Z')},
+            {id: 9, lat: 4.9023, lon: -76.2678, prof: 99.123, mag: 4.4, time: new Date('2026-08-10T15:44:12Z')},
+            {id: 10, lat: 4.8345, lon: -76.3567, prof: 113.456, mag: 4.2, time: new Date('2026-08-10T16:22:47Z')},
+            {id: 11, lat: 4.9201, lon: -76.3385, prof: 100.605, mag: 4.2, time: new Date('2026-08-10T16:43:41Z')},
+            {id: 12, lat: 4.8612, lon: -76.2345, prof: 105.789, mag: 4.0, time: new Date('2026-08-10T17:15:33Z')},
+            {id: 13, lat: 4.8789, lon: -76.3678, prof: 109.234, mag: 3.9, time: new Date('2026-08-10T17:58:22Z')},
+            {id: 14, lat: 4.9045, lon: -76.2567, prof: 101.567, mag: 3.8, time: new Date('2026-08-10T18:34:19Z')},
+            {id: 15, lat: 4.8456, lon: -76.3234, prof: 110.789, mag: 3.7, time: new Date('2026-08-10T19:12:58Z')},
+            {id: 16, lat: 4.8923, lon: -76.1945, prof: 98.234, mag: 3.6, time: new Date('2026-08-10T19:51:47Z')},
+            {id: 17, lat: 4.8234, lon: -76.3567, prof: 108.567, mag: 3.5, time: new Date('2026-08-10T20:33:12Z')},
+            {id: 18, lat: 4.9156, lon: -76.2678, prof: 102.789, mag: 3.4, time: new Date('2026-08-10T21:11:42Z')},
+            {id: 19, lat: 4.8567, lon: -76.3456, prof: 112.345, mag: 3.3, time: new Date('2026-08-10T22:01:28Z')},
+            {id: 20, lat: 4.8789, lon: -76.2345, prof: 99.678, mag: 3.2, time: new Date('2026-08-10T22:47:55Z')},
+            {id: 21, lat: 4.9023, lon: -76.3234, prof: 106.234, mag: 3.1, time: new Date('2026-08-11T00:15:33Z')},
+            {id: 22, lat: 4.8345, lon: -76.2567, prof: 110.567, mag: 3.0, time: new Date('2026-08-11T01:22:14Z')},
+            {id: 23, lat: 4.8612, lon: -76.3678, prof: 103.789, mag: 2.9, time: new Date('2026-08-11T02:44:27Z')},
+            {id: 24, lat: 4.9045, lon: -76.1945, prof: 108.234, mag: 2.8, time: new Date('2026-08-11T03:56:18Z')},
+            {id: 25, lat: 4.8456, lon: -76.3567, prof: 101.567, mag: 2.8, time: new Date('2026-08-11T05:02:45Z')},
+            {id: 26, lat: 4.8923, lon: -76.2678, prof: 109.789, mag: 2.7, time: new Date('2026-08-11T06:15:38Z')},
+            {id: 27, lat: 4.8234, lon: -76.3456, prof: 105.234, mag: 2.7, time: new Date('2026-08-11T07:33:22Z')},
+            {id: 28, lat: 4.9156, lon: -76.2345, prof: 110.123, mag: 2.6, time: new Date('2026-08-11T08:51:47Z')},
+            {id: 29, lat: 4.8567, lon: -76.3234, prof: 98.567, mag: 2.6, time: new Date('2026-08-11T10:12:33Z')},
+            {id: 30, lat: 4.8789, lon: -76.2567, prof: 107.234, mag: 2.5, time: new Date('2026-08-11T11:35:15Z')},
+            {id: 31, lat: 5.0, lon: -76.0, prof: 15, mag: 4.5, time: new Date('2026-08-11T13:02:42Z')},
+            {id: 32, lat: 5.2, lon: -76.2, prof: 20, mag: 3.8, time: new Date('2026-08-11T14:28:19Z')},
+            {id: 33, lat: 4.7, lon: -76.5, prof: 12, mag: 4.2, time: new Date('2026-08-11T15:58:48Z')},
+            {id: 34, lat: 5.1, lon: -76.1, prof: 18, mag: 3.5, time: new Date('2026-08-11T17:22:33Z')},
+            {id: 35, lat: 4.9, lon: -76.3, prof: 45, mag: 4.0, time: new Date('2026-08-11T18:51:27Z')},
+            {id: 36, lat: 5.0, lon: -76.4, prof: 50, mag: 3.9, time: new Date('2026-08-11T20:15:42Z')},
+            {id: 37, lat: 4.8, lon: -76.2, prof: 48, mag: 3.7, time: new Date('2026-08-11T21:44:15Z')},
+            {id: 38, lat: 5.1, lon: -76.5, prof: 75, mag: 3.6, time: new Date('2026-08-11T23:12:38Z')},
+            {id: 39, lat: 4.7, lon: -76.1, prof: 80, mag: 3.4, time: new Date('2026-08-12T00:38:22Z')},
+            {id: 40, lat: 5.0, lon: -76.3, prof: 70, mag: 3.8, time: new Date('2026-08-12T02:01:47Z')},
+            {id: 41, lat: 4.8123, lon: -76.2345, prof: 106.234, mag: 4.6, time: new Date('2026-08-12T03:28:33Z')},
+            {id: 42, lat: 4.9234, lon: -76.3123, prof: 101.567, mag: 4.1, time: new Date('2026-08-12T04:55:15Z')},
+            {id: 43, lat: 4.8456, lon: -76.2456, prof: 107.789, mag: 3.9, time: new Date('2026-08-12T06:22:42Z')},
+            {id: 44, lat: 4.8678, lon: -76.3234, prof: 109.234, mag: 3.8, time: new Date('2026-08-12T07:48:27Z')},
+            {id: 45, lat: 4.9012, lon: -76.1890, prof: 102.567, mag: 3.6, time: new Date('2026-08-12T09:15:18Z')},
+            {id: 46, lat: 4.8345, lon: -76.2234, prof: 108.123, mag: 3.1, time: new Date('2026-08-12T10:42:33Z')},
+            {id: 47, lat: 4.8612, lon: -76.3345, prof: 100.567, mag: 3.0, time: new Date('2026-08-12T12:11:48Z')},
+            {id: 48, lat: 4.9023, lon: -76.2567, prof: 112.234, mag: 2.9, time: new Date('2026-08-12T13:38:22Z')},
+            {id: 49, lat: 4.8456, lon: -76.3678, prof: 102.789, mag: 2.8, time: new Date('2026-08-12T15:05:47Z')},
+            {id: 50, lat: 4.8789, lon: -76.1945, prof: 107.567, mag: 2.7, time: new Date('2026-08-12T16:32:15Z')},
+            {id: 51, lat: 4.9045, lon: -76.3567, prof: 101.234, mag: 2.6, time: new Date('2026-08-12T17:58:42Z')},
+            {id: 52, lat: 4.8234, lon: -76.2678, prof: 109.789, mag: 2.5, time: new Date('2026-08-12T19:24:33Z')},
+            {id: 53, lat: 4.8923, lon: -76.3456, prof: 105.234, mag: 2.5, time: new Date('2026-08-12T20:51:15Z')},
+            {id: 54, lat: 4.9156, lon: -76.2345, prof: 110.123, mag: 2.4, time: new Date('2026-08-12T21:45:48Z')}
+        ];
+
+        const minTime = eventos[0].time;
+        const maxTime = eventos[eventos.length - 1].time;
+
+        // Mapa
+        let map;
+        let mapMarkers = [];
+
+        function initMap() {
+            map = L.map('map').setView([5.0, -75.5], 7);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '© OpenStreetMap',
+                maxZoom: 19
+            }).addTo(map);
+
+            updateMapMarkers();
+        }
+
+        function getColor(depth) {
+            if (depth < 30) return '#00ff00';
+            if (depth < 60) return '#ffff00';
+            if (depth < 90) return '#ff8800';
+            return '#ff0000';
+        }
+
+        function updateMapMarkers() {
+            mapMarkers.forEach(m => map.removeLayer(m));
+            mapMarkers = [];
+
+            visibleEventos.forEach(e => {
+                const marker = L.circleMarker([e.lat, e.lon], {
+                    radius: 4 + (e.mag - 2) * 1.5,
+                    fillColor: getColor(e.prof),
+                    color: '#fff',
+                    weight: 1,
+                    opacity: 0.8,
+                    fillOpacity: 0.8
+                }).addTo(map);
+
+                marker.bindPopup(`Mag: ${e.mag}<br/>Prof: ${e.prof.toFixed(1)} km`);
+                mapMarkers.push(marker);
+            });
+        }
+
+        // THREE.JS
+        let scene, camera, renderer;
+        let sphereMeshes = [];
+        let rotation = { x: 0, y: 0 };
+        let mouse = { x: 0, y: 0 };
+        let visibleEventos = [];
+
+        function getColor3D(depth) {
+            if (depth < 30) return new THREE.Color(0x00ff00);
+            if (depth < 60) return new THREE.Color(0xffff00);
+            if (depth < 90) return new THREE.Color(0xff8800);
+            return new THREE.Color(0xff0000);
+        }
+
+        function init3D() {
+            const container = document.getElementById('canvas3d');
+
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x0a0e27);
+            scene.fog = new THREE.Fog(0x0a0e27, 50, 150);
+
+            camera = new THREE.PerspectiveCamera(75, container.clientWidth / container.clientHeight, 0.1, 1000);
+            camera.position.set(8, 8, 20);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+            renderer.setSize(container.clientWidth, container.clientHeight);
+            container.appendChild(renderer.domElement);
+
+            scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+            const light = new THREE.DirectionalLight(0xffffff, 0.8);
+            light.position.set(10, 10, 10);
+            scene.add(light);
+
+            const planeGeo = new THREE.PlaneGeometry(50, 50);
+            const planeMat = new THREE.MeshBasicMaterial({ color: 0x1a2f4a });
+            const plane = new THREE.Mesh(planeGeo, planeMat);
+            plane.position.z = -40;
+            scene.add(plane);
+
+            document.addEventListener('mousemove', (e) => {
+                mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+                mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+            });
+
+            window.addEventListener('resize', () => {
+                camera.aspect = container.clientWidth / container.clientHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(container.clientWidth, container.clientHeight);
+            });
+
+            updateEventos();
+            animate();
+        }
+
+        function updateEventos() {
+            sphereMeshes.forEach(m => scene.remove(m));
+            sphereMeshes = [];
+
+            visibleEventos.forEach(e => {
+                const x = (e.lon + 76) * 3;
+                const y = (e.lat - 5) * 4;
+                const z = -(e.prof / 4 - 10);
+
+                const size = parseFloat(document.getElementById('sizeSlider').value) / 100 * (0.5 + (e.mag - 2) * 0.25);
+                const color = getColor3D(e.prof);
+
+                const geom = new THREE.SphereGeometry(size, 8, 8);
+                const mat = new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.4 });
+                const mesh = new THREE.Mesh(geom, mat);
+                mesh.position.set(x, y, z);
+                mesh.material.opacity = parseFloat(document.getElementById('opacitySlider').value) / 100;
+                mesh.material.transparent = true;
+                scene.add(mesh);
+                sphereMeshes.push(mesh);
+            });
+
+            updateMapMarkers();
+            updateInfo();
+        }
+
+        function updateInfo() {
+            document.getElementById('totalEvents').textContent = eventos.length;
+            document.getElementById('visibleEvents').textContent = visibleEventos.length;
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            const speed = parseFloat(document.getElementById('speedSlider').value) / 100;
+            rotation.x += 0.005 * speed;
+            rotation.y += 0.01 * speed;
+
+            scene.rotation.x = rotation.x;
+            scene.rotation.y = rotation.y;
+
+            renderer.render(scene, camera);
+        }
+
+        // Controles
+        document.getElementById('showEvents').addEventListener('change', (e) => {
+            document.getElementById('canvas3d').style.display = e.target.checked ? 'block' : 'none';
+        });
+
+        document.getElementById('showMap').addEventListener('change', (e) => {
+            document.getElementById('map').style.display = e.target.checked ? 'block' : 'none';
+            if (e.target.checked) setTimeout(() => map.invalidateSize(), 100);
+        });
+
+        document.getElementById('opacitySlider').addEventListener('input', () => {
+            document.getElementById('opacityValue').textContent = document.getElementById('opacitySlider').value + '%';
+            sphereMeshes.forEach(m => m.material.opacity = parseFloat(document.getElementById('opacitySlider').value) / 100);
+        });
+
+        document.getElementById('sizeSlider').addEventListener('input', () => {
+            document.getElementById('sizeValue').textContent = document.getElementById('sizeSlider').value + '%';
+            updateEventos();
+        });
+
+        document.getElementById('speedSlider').addEventListener('input', () => {
+            document.getElementById('speedValue').textContent = document.getElementById('speedSlider').value + '%';
+        });
+
+        // Timeline
+        document.getElementById('timelineSlider').addEventListener('input', (e) => {
+            const percent = parseFloat(e.target.value) / 100;
+            const selectedTime = new Date(minTime.getTime() + (maxTime.getTime() - minTime.getTime()) * percent);
+
+            visibleEventos = eventos.filter(ev => ev.time <= selectedTime);
+
+            const monthNames = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+            const pad = (n) => String(n).padStart(2, '0');
+            const formatTime = (d) => `${pad(d.getDate())} ${monthNames[d.getMonth()]} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+
+            document.getElementById('timeValue').textContent = formatTime(selectedTime);
+            updateEventos();
+        });
+
+        // Init
+        document.addEventListener('DOMContentLoaded', () => {
+            initMap();
+            init3D();
+            visibleEventos = [...eventos];
+            updateEventos();
+        });
+    </script>
+</body>
+</html>

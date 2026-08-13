@@ -1,0 +1,13 @@
+{
+  "name": "sismos-3d-colombia",
+  "version": "1.0.0",
+  "description": "Visualizador 3D interactivo de eventos sísmicos en Colombia",
+  "main": "index.html",
+  "scripts": {
+    "dev": "python -m http.server 8000",
+    "build": "echo 'Static site - no build needed'"
+  },
+  "keywords": ["sismos", "sismología", "colombia", "3d", "visualización"],
+  "author": "jduquetr@gmail.com",
+  "license": "MIT"
+}
