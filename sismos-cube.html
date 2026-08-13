@@ -540,7 +540,7 @@ async function buildGeologicTexture() {
         ctx.fillText('Mapa geológico no disponible', w / 2, h / 2);
     }
 
-    return { canvas, bounds: { west: minLon, east: maxLon, north: maxLat, south: minLat } };
+    return { canvas, bounds: { west: minLon, east: maxLon, north: maxLat, south: minLat }, success };
 }
 
 async function buildMapTexture(mapType) {
@@ -630,7 +630,7 @@ async function buildMapTexture(mapType) {
         south: tileY2lat(minTileY + tilesY, zoom)
     };
 
-    return { canvas, bounds };
+    return { canvas, bounds, success };
 }
 
 const MAP_ATTRIBUTIONS = {
@@ -644,12 +644,13 @@ async function reloadMap() {
     loading.textContent = 'Cargando mapa…';
     loading.style.display = 'flex';
     const mapType = document.getElementById('mapType').value;
-    const { canvas, bounds } = await buildMapTexture(mapType);
+    const { canvas, bounds, success } = await buildMapTexture(mapType);
     mapBounds = bounds;
     rawMapCanvas = canvas;
     document.getElementById('attribution').textContent = MAP_ATTRIBUTIONS[mapType] || MAP_ATTRIBUTIONS.osm;
     applyMapOrientation();
     loading.style.display = 'none';
+    return success;
 }
 
 // ============ THREE.JS ============
@@ -1440,10 +1441,11 @@ document.getElementById('geojsonFileInput').addEventListener('change', (e) => {
             const boundsTxt = `lat ${b.minLat.toFixed(1)}°–${b.maxLat.toFixed(1)}°, lon ${b.minLon.toFixed(1)}°–${b.maxLon.toFixed(1)}°`;
             status.textContent = `Ajustando el mapa (${boundsTxt})…`;
             minLat = b.minLat; maxLat = b.maxLat; minLon = b.minLon; maxLon = b.maxLon;
-            await reloadMap();
+            const mapOk = await reloadMap();
 
             refreshAfterEventChange();
-            status.textContent = `✓ ${newEvents.length} sismos importados (total: ${eventos.length}). Ventana: ${boundsTxt}.`;
+            const mapNote = mapOk ? '' : ' ⚠ El mapa base no cargó para esta zona (los sismos sí están ubicados correctamente; revisa la consola para más detalle).';
+            status.textContent = `✓ ${newEvents.length} sismos importados (total: ${eventos.length}). Ventana: ${boundsTxt}.${mapNote}`;
             document.getElementById('clearImportedBtn').style.display = 'block';
         } catch (err) {
             status.textContent = '⚠ Error al leer el archivo: ' + err.message;
