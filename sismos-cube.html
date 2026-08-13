@@ -266,8 +266,16 @@
             <div class="hint">Elige dos puntos sobre el mapa para la sección de profundidad vs. distancia.</div>
         </div>
 
-        <div class="control-group" style="border-right:none;">
+        <div class="control-group">
             <div class="hint" style="margin-top:0;">Arrastra para rotar · rueda para zoom · clic derecho para desplazar · clic en una esfera para ver el detalle del sismo.</div>
+        </div>
+
+        <div class="control-group">
+            <div class="group-title">Importar GeoJSON</div>
+            <input type="file" id="geojsonFileInput" accept=".geojson,.json" style="display:none;">
+            <label for="geojsonFileInput" style="display:block;text-align:center;width:100%;background:#293548;color:#90caf9;border:1px solid #64b5f6;border-radius:4px;padding:8px;font-size:12px;cursor:pointer;box-sizing:border-box;">📂 Cargar archivo GeoJSON</label>
+            <div id="importStatus" class="hint" style="margin-top:6px;">Agrega sismos propios (magnitud, profundidad, lat/lon, fecha) al cubo 3D.</div>
+            <button id="clearImportedBtn" style="width:100%;background:#293548;color:#ff8899;border:1px solid #ff5566;border-radius:4px;padding:6px;font-size:11px;cursor:pointer;margin-top:6px;display:none;">🗑 Quitar sismos importados</button>
         </div>
     </div>
 </div>
@@ -404,7 +412,7 @@ const RAW = [
     ['SGC2026pvnrde',2.6,-52.0,4.4638333333333335,-76.7055,'2026-08-13T04:31:34+00:00']
 ];
 
-const eventos = RAW.map((r, i) => ({
+let eventos = RAW.map((r, i) => ({
     id: i + 1,
     sgcId: r[0],
     mag: r[1],
@@ -415,8 +423,8 @@ const eventos = RAW.map((r, i) => ({
 }));
 
 eventos.sort((a,b) => a.time - b.time);
-const minTime = eventos[0].time;
-const maxTime = eventos[eventos.length - 1].time;
+let minTime = eventos[0].time;
+let maxTime = eventos[eventos.length - 1].time;
 
 // ============ GEOMETRÍA DEL CUBO ============
 // Ventana de proyección del mapa fija (cubre el enjambre + la zona usada para la placa en subducción)
@@ -1249,6 +1257,96 @@ document.getElementById('playBtn').addEventListener('click', () => {
         btn.textContent = '▶ Reproducir';
         clearInterval(playInterval);
     }
+});
+
+// ============ IMPORTAR GEOJSON ============
+let importedCount = 0;
+
+function parseGeoJSONEvents(geojson) {
+    const feats = (geojson && Array.isArray(geojson.features)) ? geojson.features : [];
+    const out = [];
+    feats.forEach((f, i) => {
+        const p = f.properties || {};
+        const geom = f.geometry || {};
+        const coords = Array.isArray(geom.coordinates) ? geom.coordinates : [];
+
+        const lon = numOrNull(p.longitude ?? p.lon ?? p.longitud ?? coords[0]);
+        const lat = numOrNull(p.latitude ?? p.lat ?? p.latitud ?? coords[1]);
+        const depthRaw = numOrNull(p.depth ?? p.profundidad ?? p.prof ?? coords[2]);
+        const mag = numOrNull(p.magnitude ?? p.mag ?? p.magnitud);
+        const timeRaw = p.utc_time ?? p.time ?? p.fecha ?? p.date ?? p.local_time ?? p.ESP_FECHA_TXT;
+
+        if (lat === null || lon === null || depthRaw === null || mag === null || !timeRaw) return;
+
+        const time = new Date(timeRaw);
+        if (isNaN(time.getTime())) return;
+
+        out.push({
+            id: 0,
+            sgcId: p.id || p.ID || p.codigo || p.event_id || ('IMP-' + (i + 1)),
+            mag: mag,
+            prof: Math.abs(depthRaw),
+            lat: lat,
+            lon: lon,
+            time: time,
+            imported: true
+        });
+    });
+    return out;
+}
+
+function numOrNull(v) {
+    if (v === undefined || v === null || v === '') return null;
+    const n = typeof v === 'number' ? v : parseFloat(v);
+    return isNaN(n) ? null : n;
+}
+
+function refreshAfterEventChange() {
+    eventos.sort((a, b) => a.time - b.time);
+    minTime = eventos[0].time;
+    maxTime = eventos[eventos.length - 1].time;
+    document.getElementById('timeStart').textContent = formatDT(minTime);
+    document.getElementById('timeEnd').textContent = formatDT(maxTime);
+    document.getElementById('timelineSlider').value = 1000;
+    visibleEventos = [...eventos];
+    rebuildEvents();
+}
+
+document.getElementById('geojsonFileInput').addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    const status = document.getElementById('importStatus');
+    if (!file) return;
+    status.textContent = 'Leyendo archivo…';
+
+    const reader = new FileReader();
+    reader.onload = () => {
+        try {
+            const json = JSON.parse(reader.result);
+            const newEvents = parseGeoJSONEvents(json);
+            if (newEvents.length === 0) {
+                status.textContent = '⚠ No se encontraron sismos válidos (revisa que tenga lat/lon/profundidad/magnitud/fecha).';
+                return;
+            }
+            newEvents.forEach(ev => { importedCount++; ev.id = eventos.length + importedCount; });
+            eventos.push(...newEvents);
+            refreshAfterEventChange();
+            status.textContent = `✓ ${newEvents.length} sismos importados (total: ${eventos.length}).`;
+            document.getElementById('clearImportedBtn').style.display = 'block';
+        } catch (err) {
+            status.textContent = '⚠ Error al leer el archivo: ' + err.message;
+        }
+    };
+    reader.onerror = () => { status.textContent = '⚠ No se pudo leer el archivo.'; };
+    reader.readAsText(file);
+    e.target.value = '';
+});
+
+document.getElementById('clearImportedBtn').addEventListener('click', () => {
+    eventos = eventos.filter(ev => !ev.imported);
+    importedCount = 0;
+    refreshAfterEventChange();
+    document.getElementById('importStatus').textContent = 'Sismos importados eliminados.';
+    document.getElementById('clearImportedBtn').style.display = 'none';
 });
 
 // ============ REDIMENSIONAR PANEL DE CONTROLES ============
