@@ -1,13 +1,13 @@
 {
   "name": "sismos-3d-colombia",
   "version": "1.0.0",
-  "description": "Visualizador 3D interactivo de eventos sísmicos en Colombia",
-  "main": "index.html",
+  "description": "Cubo 3D de sismicidad de Colombia: enjambre de Choco (SGC), historico USGS 1900-2026 y subduccion de Nazca, con mapa geologico, importacion de GeoJSON y perfiles de profundidad",
+  "main": "sismos-cube.html",
   "scripts": {
     "dev": "python -m http.server 8000",
     "build": "echo 'Static site - no build needed'"
   },
-  "keywords": ["sismos", "sismología", "colombia", "3d", "visualización"],
+  "keywords": ["sismos", "sismologia", "colombia", "3d", "visualizacion", "usgs", "sgc", "subduccion", "geojson"],
   "author": "jduquetr@gmail.com",
   "license": "MIT"
 }
