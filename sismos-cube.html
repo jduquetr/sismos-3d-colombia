@@ -494,8 +494,16 @@ function loadTileImage(url) {
     });
 }
 
+// Elige el zoom de teselas según qué tan grande sea la ventana geográfica actual,
+// para que el mapa realmente "se acerque" cuando la zona importada es pequeña.
+function computeZoomForBounds() {
+    const span = Math.max(maxLat - minLat, maxLon - minLon, 0.01);
+    const z = Math.round(Math.log2(1800 / span));
+    return Math.max(3, Math.min(13, z));
+}
+
 async function buildMapTexture(satellite) {
-    const zoom = 8;
+    const zoom = computeZoomForBounds();
     const minTileX = Math.floor(lon2tileX(minLon, zoom));
     const maxTileX = Math.floor(lon2tileX(maxLon, zoom));
     const minTileY = Math.floor(lat2tileY(maxLat, zoom));
