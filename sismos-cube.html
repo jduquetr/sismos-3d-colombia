@@ -441,9 +441,10 @@ let minTime = eventos[0].time;
 let maxTime = eventos[eventos.length - 1].time;
 
 // ============ GEOMETRÍA DEL CUBO ============
-// Ventana de proyección del mapa (por defecto cubre el enjambre de Chocó + la placa en subducción USGS).
-// Se reajusta automáticamente cuando el usuario importa un GeoJSON externo.
-const ORIGINAL_MAP_BOUNDS = { minLat: 1, maxLat: 9.6, minLon: -79.8, maxLon: -71.8 };
+// Ventana de proyección FIJA: cubre Colombia completa. La caja de alambre y el mapa
+// superior siempre representan esta misma zona, sin importar qué datos se importen;
+// así el mapa (calles, satélite o geológico) se descarga una sola vez y no cambia.
+const ORIGINAL_MAP_BOUNDS = { minLat: 0, maxLat: 13, minLon: -80, maxLon: -70 };
 let minLat = ORIGINAL_MAP_BOUNDS.minLat;
 let maxLat = ORIGINAL_MAP_BOUNDS.maxLat;
 let minLon = ORIGINAL_MAP_BOUNDS.minLon;
@@ -1490,22 +1491,16 @@ document.getElementById('geojsonFileInput').addEventListener('change', (e) => {
             newEvents.forEach(ev => { importedCount++; ev.id = eventos.length + importedCount; });
             eventos.push(...newEvents);
 
+            // La ventana del mapa (Colombia completa) es fija: no se recarga el mapa base,
+            // solo se ubican los nuevos sismos dentro de esa caja según su lat/lon real.
             const b = computeBoundsForEvents(newEvents);
             const boundsTxt = `lat ${b.minLat.toFixed(1)}°–${b.maxLat.toFixed(1)}°, lon ${b.minLon.toFixed(1)}°–${b.maxLon.toFixed(1)}°`;
-            status.textContent = `Ajustando el mapa (${boundsTxt})…`;
-            minLat = b.minLat; maxLat = b.maxLat; minLon = b.minLon; maxLon = b.maxLon;
-            const mapOk = await reloadMap();
-
-            // El enjambre original y la placa USGS están fijos en la zona de Chocó; si los datos
-            // importados están en otra región, dejarlos activos solo dispersaría puntos fuera del
-            // mapa nuevo. Se ocultan por defecto (el usuario los puede reactivar manualmente).
-            document.getElementById('showOriginalSwarm').checked = false;
-            document.getElementById('showPlate').checked = false;
-            plateMeshes.forEach(m => m.visible = false);
+            const fuera = (b.minLat < ORIGINAL_MAP_BOUNDS.minLat || b.maxLat > ORIGINAL_MAP_BOUNDS.maxLat ||
+                           b.minLon < ORIGINAL_MAP_BOUNDS.minLon || b.maxLon > ORIGINAL_MAP_BOUNDS.maxLon);
 
             refreshAfterEventChange();
-            const mapNote = mapOk ? '' : ' ⚠ El mapa base no cargó para esta zona (los sismos sí están ubicados correctamente; revisa la consola para más detalle).';
-            status.textContent = `✓ ${newEvents.length} sismos importados (total: ${eventos.length}). Ventana: ${boundsTxt}. Se ocultaron el enjambre original y la placa USGS (reactívalos arriba si quieres compararlos).${mapNote}`;
+            const fueraNote = fuera ? ' ⚠ Parte de estos sismos cae fuera de la caja fija de Colombia (0°-13°N, -80° a -70°) y no se verá dentro del cubo.' : '';
+            status.textContent = `✓ ${newEvents.length} sismos importados (total: ${eventos.length}). Zona de los datos: ${boundsTxt}.${fueraNote}`;
             document.getElementById('clearImportedBtn').style.display = 'block';
         } catch (err) {
             status.textContent = '⚠ Error al leer el archivo: ' + err.message;
@@ -1516,22 +1511,11 @@ document.getElementById('geojsonFileInput').addEventListener('change', (e) => {
     e.target.value = '';
 });
 
-document.getElementById('clearImportedBtn').addEventListener('click', async () => {
+document.getElementById('clearImportedBtn').addEventListener('click', () => {
     eventos = eventos.filter(ev => !ev.imported);
     importedCount = 0;
-
-    const status = document.getElementById('importStatus');
-    status.textContent = 'Restaurando ventana de mapa original…';
-    minLat = ORIGINAL_MAP_BOUNDS.minLat; maxLat = ORIGINAL_MAP_BOUNDS.maxLat;
-    minLon = ORIGINAL_MAP_BOUNDS.minLon; maxLon = ORIGINAL_MAP_BOUNDS.maxLon;
-    await reloadMap();
-
-    document.getElementById('showOriginalSwarm').checked = true;
-    document.getElementById('showPlate').checked = true;
-    plateMeshes.forEach(m => m.visible = true);
-
     refreshAfterEventChange();
-    status.textContent = 'Sismos importados eliminados. Mapa restaurado a la zona original (enjambre y placa reactivados).';
+    document.getElementById('importStatus').textContent = 'Sismos importados eliminados.';
     document.getElementById('clearImportedBtn').style.display = 'none';
 });
 
