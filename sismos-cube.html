@@ -449,10 +449,32 @@ let maxLat = ORIGINAL_MAP_BOUNDS.maxLat;
 let minLon = ORIGINAL_MAP_BOUNDS.minLon;
 let maxLon = ORIGINAL_MAP_BOUNDS.maxLon;
 
-const BOX_SIZE = 20;      // ancho/profundidad horizontal (lat/lon)
+const BOX_SIZE = 20;      // dimensión horizontal máxima (el lado más largo del cubo nunca supera esto)
+const BOX_SIZE_MIN = 7;   // dimensión horizontal mínima del lado más corto (evita una "lámina" degenerada)
 const BOX_HEIGHT = 14;    // alto (representa la profundidad 0-DEPTH_MAX)
 const DEPTH_MAX = 450;    // cubre el rango completo de sismicidad de la placa de Nazca en subducción
 const DEPTH_LEVELS = [0, 100, 200, 300, 400];
+
+// El cubo ya no es forzosamente cuadrado: planeWidth/planeDepth se recalculan según
+// la proporción real ancho/alto (lon/lat) de la ventana geográfica activa.
+let planeWidth = BOX_SIZE;
+let planeDepth = BOX_SIZE;
+
+function updatePlaneDimensions() {
+    // Usa los límites REALES ya cargados (mapBounds), no los solicitados,
+    // para que la forma del cubo siempre coincida exactamente con lo que se está proyectando.
+    const b = mapBounds || { west: minLon, east: maxLon, north: maxLat, south: minLat };
+    const lonSpan = Math.max(b.east - b.west, 0.001);
+    const latSpan = Math.max(b.north - b.south, 0.001);
+    if (lonSpan >= latSpan) {
+        planeWidth = BOX_SIZE;
+        planeDepth = Math.max(BOX_SIZE_MIN, BOX_SIZE * (latSpan / lonSpan));
+    } else {
+        planeDepth = BOX_SIZE;
+        planeWidth = Math.max(BOX_SIZE_MIN, BOX_SIZE * (lonSpan / latSpan));
+    }
+    console.log('[updatePlaneDimensions] lonSpan=', lonSpan.toFixed(2), 'latSpan=', latSpan.toFixed(2), '-> planeWidth=', planeWidth.toFixed(2), 'planeDepth=', planeDepth.toFixed(2));
+}
 
 function depthColor(d) {
     if (d < 30) return new THREE.Color(0x00ff00);
@@ -652,6 +674,9 @@ async function reloadMap() {
     console.log('[reloadMap] resultado: success=', success, 'bounds devueltos=', bounds);
     mapBounds = bounds;
     rawMapCanvas = canvas;
+    updatePlaneDimensions();
+    buildBoxAndGrid();
+    if (mapPlane) mapPlane.scale.set(planeWidth, planeDepth, 1);
     document.getElementById('attribution').textContent = MAP_ATTRIBUTIONS[mapType] || MAP_ATTRIBUTIONS.osm;
     applyMapOrientation();
     console.log('[reloadMap] applyMapOrientation() completado, mapBounds actual =', mapBounds);
@@ -746,8 +771,8 @@ function latLonDepthToPos(lat, lon, depth) {
     let v = (lat - mapBounds.north) / (mapBounds.south - mapBounds.north);
     if (ew) u = 1 - u;
     if (ns) v = 1 - v;
-    const x = (u - 0.5) * BOX_SIZE;
-    const z = (0.5 - v) * BOX_SIZE;
+    const x = (u - 0.5) * planeWidth;
+    const z = (0.5 - v) * planeDepth;
     const y = -(Math.min(depth, DEPTH_MAX) / DEPTH_MAX) * BOX_HEIGHT;
     return { x, y, z };
 }
@@ -821,7 +846,7 @@ function buildCompass() {
     const dN = new THREE.Vector2(nP.x - c.x, nP.z - c.z).normalize();
     const dE = new THREE.Vector2(eP.x - c.x, eP.z - c.z).normalize();
 
-    const R = BOX_SIZE / 2 + 1.7;
+    const R = Math.max(planeWidth, planeDepth) / 2 + 1.7;
     const y = -BOX_HEIGHT - 0.15;
 
     const segments = 64;
@@ -867,6 +892,50 @@ function makeTextSprite(text) {
     return sprite;
 }
 
+// Caja de alambre + cuadrícula de profundidad. Reconstruible: se llama de nuevo cada vez
+// que cambia la forma del cubo (planeWidth/planeDepth) al importar un GeoJSON.
+let boxAndGridObjects = [];
+
+function buildBoxAndGrid() {
+    boxAndGridObjects.forEach(o => {
+        scene.remove(o);
+        if (o.geometry) o.geometry.dispose();
+        if (o.material) { if (o.material.map) o.material.map.dispose(); o.material.dispose(); }
+    });
+    boxAndGridObjects = [];
+    gridLines = [];
+
+    const boxGeo = new THREE.BoxGeometry(planeWidth, BOX_HEIGHT, planeDepth);
+    const edges = new THREE.EdgesGeometry(boxGeo);
+    const boxLines = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0x64b5f6, transparent: true, opacity: 0.5 }));
+    boxLines.position.y = -BOX_HEIGHT / 2;
+    scene.add(boxLines);
+    boxAndGridObjects.push(boxLines);
+
+    const labelOffset = Math.max(planeWidth, planeDepth) / 2 + 1.6;
+    DEPTH_LEVELS.forEach(d => {
+        const y = -(d / DEPTH_MAX) * BOX_HEIGHT;
+        const pts = [
+            new THREE.Vector3(-planeWidth/2, y, -planeDepth/2),
+            new THREE.Vector3(planeWidth/2, y, -planeDepth/2),
+            new THREE.Vector3(planeWidth/2, y, planeDepth/2),
+            new THREE.Vector3(-planeWidth/2, y, planeDepth/2),
+            new THREE.Vector3(-planeWidth/2, y, -planeDepth/2)
+        ];
+        const lineGeo = new THREE.BufferGeometry().setFromPoints(pts);
+        const line = new THREE.Line(lineGeo, new THREE.LineBasicMaterial({ color: 0x3a5a7a, transparent: true, opacity: 0.4 }));
+        scene.add(line);
+        gridLines.push(line);
+        boxAndGridObjects.push(line);
+
+        const label = makeTextSprite(d + ' km');
+        label.position.set(labelOffset, y, labelOffset);
+        scene.add(label);
+        gridLines.push(label);
+        boxAndGridObjects.push(label);
+    });
+}
+
 async function init3D() {
     const canvasEl = document.getElementById('canvas3d');
     const wrap = document.getElementById('scene-wrap') || canvasEl.parentElement;
@@ -900,48 +969,23 @@ async function init3D() {
     dLight.position.set(15, 20, 10);
     scene.add(dLight);
 
-    // Caja (bordes) representando el volumen de la corteza
-    const boxGeo = new THREE.BoxGeometry(BOX_SIZE, BOX_HEIGHT, BOX_SIZE);
-    const edges = new THREE.EdgesGeometry(boxGeo);
-    const boxLines = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0x64b5f6, transparent: true, opacity: 0.5 }));
-    boxLines.position.y = -BOX_HEIGHT / 2;
-    scene.add(boxLines);
-
-    // Cuadrícula de profundidad (anillos horizontales + etiquetas)
-    DEPTH_LEVELS.forEach(d => {
-        const y = -(d / DEPTH_MAX) * BOX_HEIGHT;
-        const pts = [
-            new THREE.Vector3(-BOX_SIZE/2, y, -BOX_SIZE/2),
-            new THREE.Vector3(BOX_SIZE/2, y, -BOX_SIZE/2),
-            new THREE.Vector3(BOX_SIZE/2, y, BOX_SIZE/2),
-            new THREE.Vector3(-BOX_SIZE/2, y, BOX_SIZE/2),
-            new THREE.Vector3(-BOX_SIZE/2, y, -BOX_SIZE/2)
-        ];
-        const lineGeo = new THREE.BufferGeometry().setFromPoints(pts);
-        const line = new THREE.Line(lineGeo, new THREE.LineBasicMaterial({ color: 0x3a5a7a, transparent: true, opacity: 0.4 }));
-        scene.add(line);
-        gridLines.push(line);
-
-        const label = makeTextSprite(d + ' km');
-        label.position.set(BOX_SIZE/2 + 1.6, y, BOX_SIZE/2 + 1.6);
-        scene.add(label);
-        gridLines.push(label);
-    });
-
     // Mapa (cara superior del cubo) + datos de la placa, en paralelo
     const [{ canvas, bounds }] = await Promise.all([buildMapTexture('osm'), loadPlateData()]);
     mapBounds = bounds;
     rawMapCanvas = canvas;
+    updatePlaneDimensions();
+    buildBoxAndGrid();
 
     const texture = new THREE.CanvasTexture(canvas);
     texture.flipY = false;
     texture.needsUpdate = true;
 
-    const mapGeo = new THREE.PlaneGeometry(BOX_SIZE, BOX_SIZE);
+    const mapGeo = new THREE.PlaneGeometry(1, 1);
     const mapMat = new THREE.MeshBasicMaterial({ map: texture, transparent: true, opacity: 1, side: THREE.DoubleSide });
     mapPlane = new THREE.Mesh(mapGeo, mapMat);
     mapPlane.rotation.x = -Math.PI / 2;
     mapPlane.position.y = 0.01;
+    mapPlane.scale.set(planeWidth, planeDepth, 1);
     scene.add(mapPlane);
 
     document.getElementById('loading').style.display = 'none';
@@ -1034,8 +1078,8 @@ let profileMarkers = [];     // objetos 3D temporales (marcadores + línea)
 
 function posToLatLon(x, z) {
     const { ew, ns } = getFlipFlags();
-    let u = x / BOX_SIZE + 0.5;
-    let v = 0.5 - z / BOX_SIZE;
+    let u = x / planeWidth + 0.5;
+    let v = 0.5 - z / planeDepth;
     const u0 = ew ? 1 - u : u;
     const v0 = ns ? 1 - v : v;
     const lon = mapBounds.west + u0 * (mapBounds.east - mapBounds.west);
