@@ -10,10 +10,9 @@
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { font-family: Arial, sans-serif; background: #0a0e27; color: #e0e0e0; overflow: hidden; }
 
-    .container { display: flex; height: 100vh; gap: 10px; padding: 10px; }
-    .main-content { flex: 1; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+    .container { display: flex; flex-direction: column; height: 100vh; gap: 10px; padding: 10px; }
 
-    .scene-wrap { flex: 1; position: relative; border-radius: 8px; border: 1px solid #1e293b; background: #0a0e27; overflow: hidden; }
+    .scene-wrap { flex: 1; min-height: 0; position: relative; border-radius: 8px; border: 1px solid #1e293b; background: #0a0e27; overflow: hidden; }
     #canvas3d { width: 100%; height: 100%; display: block; }
 
     #loading {
@@ -35,7 +34,7 @@
     #eventInfo strong { color: #64b5f6; }
     #eventInfo .close { position: absolute; top: 4px; right: 8px; cursor: pointer; color: #90caf9; }
 
-    .timeline-container { background: #1a1f3a; padding: 12px; border-radius: 8px; border: 1px solid #1e293b; }
+    .timeline-container { background: #1a1f3a; padding: 12px; border-radius: 8px; border: 1px solid #1e293b; flex-shrink: 0; }
     .timeline-header { font-size: 12px; font-weight: bold; color: #64b5f6; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; }
     #playBtn { background: #64b5f6; color: #0a0e27; border: none; padding: 4px 12px; border-radius: 4px; font-weight: bold; font-size: 11px; cursor: pointer; }
     #playBtn:hover { background: #90caf9; }
@@ -43,10 +42,19 @@
     .timeline-info { display: flex; justify-content: space-between; font-size: 11px; color: #90caf9; margin-top: 8px; }
     #timeValue { color: #fff; font-weight: bold; }
 
-    .control-panel { width: 280px; background: #1a1f3a; border-radius: 8px; padding: 15px; border: 1px solid #1e293b; overflow-y: auto; max-height: 100vh; }
-    .panel-title { font-size: 14px; font-weight: bold; color: #64b5f6; margin-bottom: 15px; border-bottom: 2px solid #64b5f6; padding-bottom: 8px; }
-    .control-group { margin-bottom: 15px; padding-bottom: 12px; border-bottom: 1px solid #293548; }
-    .control-group:last-child { border-bottom: none; }
+    .control-panel {
+        width: 100%; flex-shrink: 0; background: #1a1f3a; border-radius: 8px;
+        padding: 12px 16px; border: 1px solid #1e293b; overflow-y: auto; max-height: 230px;
+        display: flex; flex-wrap: wrap; align-items: flex-start; gap: 0;
+    }
+    .control-logo { flex: 0 0 auto; display: flex; align-items: center; margin-right: 18px; padding-right: 18px; border-right: 1px solid #293548; }
+    .control-logo img { height: 48px; width: auto; filter: invert(1); }
+    .panel-title { display: none; }
+    .control-group {
+        flex: 0 0 auto; min-width: 175px; max-width: 230px;
+        margin: 0; padding: 0 18px; border-bottom: none; border-right: 1px solid #293548;
+    }
+    .control-group:last-child { border-right: none; }
     .group-title { font-size: 11px; font-weight: bold; color: #90caf9; margin-bottom: 8px; text-transform: uppercase; }
     .checkbox-item { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; font-size: 12px; }
     .checkbox-item input { cursor: pointer; width: 16px; height: 16px; accent-color: #64b5f6; }
@@ -108,38 +116,37 @@
 </head>
 <body>
 <div class="container">
-    <div class="main-content">
-        <div class="scene-wrap">
-            <canvas id="canvas3d"></canvas>
-            <div id="loading">Cargando mapa base y datos de la placa (4,983 sismos históricos)…</div>
-            <div id="attribution">Mapa: © OpenStreetMap contributors</div>
-            <div id="eventInfo">
-                <span class="close" id="closeInfo">✕</span>
-                <div id="eventInfoBody"></div>
-            </div>
-            <div id="profileBanner">
-                <span id="profileBannerText">Haz clic en el mapa para el punto INICIAL del perfil</span>
-                <button id="profileCancelBtn">Cancelar</button>
-            </div>
+    <div class="scene-wrap">
+        <canvas id="canvas3d"></canvas>
+        <div id="loading">Cargando mapa base y datos de la placa (4,983 sismos históricos)…</div>
+        <div id="attribution">Mapa: © OpenStreetMap contributors</div>
+        <div id="eventInfo">
+            <span class="close" id="closeInfo">✕</span>
+            <div id="eventInfoBody"></div>
         </div>
+        <div id="profileBanner">
+            <span id="profileBannerText">Haz clic en el mapa para el punto INICIAL del perfil</span>
+            <button id="profileCancelBtn">Cancelar</button>
+        </div>
+    </div>
 
-        <div class="timeline-container">
-            <div class="timeline-header">
-                <span>⏱️ Línea de tiempo (según fecha/hora real del sismo)</span>
-                <button id="playBtn">▶ Reproducir</button>
-            </div>
-            <input type="range" class="timeline-slider" id="timelineSlider" min="0" max="1000" value="1000">
-            <div class="timeline-info">
-                <span id="timeStart">-</span>
-                <span id="timeValue">Ahora</span>
-                <span id="timeEnd">-</span>
-            </div>
+    <div class="timeline-container">
+        <div class="timeline-header">
+            <span>⏱️ Línea de tiempo (según fecha/hora real del sismo)</span>
+            <button id="playBtn">▶ Reproducir</button>
+        </div>
+        <input type="range" class="timeline-slider" id="timelineSlider" min="0" max="1000" value="1000">
+        <div class="timeline-info">
+            <span id="timeStart">-</span>
+            <span id="timeValue">Ahora</span>
+            <span id="timeEnd">-</span>
         </div>
     </div>
 
     <div class="control-panel">
-        <img src="swtectonics-logo.png" alt="SWTectonics" style="display:block;width:100%;max-width:none;height:auto;margin:0 auto 14px auto;">
-        <div class="panel-title">⚙️ Controles</div>
+        <div class="control-logo">
+            <img src="swtectonics-logo.png" alt="SWTectonics">
+        </div>
 
         <div class="control-group">
             <div class="group-title">Capas</div>
@@ -225,28 +232,34 @@
             <button id="resetCam" style="width:100%;background:#293548;color:#90caf9;border:1px solid #64b5f6;border-radius:4px;padding:6px;font-size:11px;cursor:pointer;">Restablecer vista</button>
         </div>
 
-        <div class="info-box">
-            <strong>Total de eventos:</strong> <span id="totalEvents">0</span><br>
-            <strong>Mostrando:</strong> <span id="visibleEvents">0</span> eventos<br>
-            <strong>Magnitudes:</strong> 0.9 - 7.4<br>
-            <strong>Profundidades:</strong> 0 - 118 km<br>
-            <strong>Zona:</strong> Chocó, Colombia (datos reales SGC)
+        <div class="control-group">
+            <div class="info-box" style="margin-bottom:8px;">
+                <strong>Total de eventos:</strong> <span id="totalEvents">0</span><br>
+                <strong>Mostrando:</strong> <span id="visibleEvents">0</span> eventos<br>
+                <strong>Magnitudes:</strong> 0.9 - 7.4<br>
+                <strong>Profundidades:</strong> 0 - 118 km<br>
+                <strong>Zona:</strong> Chocó, Colombia (datos reales SGC)
+            </div>
         </div>
 
-        <div class="legend">
-            <div class="legend-title">Profundidad</div>
-            <div class="legend-item"><div class="legend-color" style="background-color:#00ff00;"></div><span>0-30 km</span></div>
-            <div class="legend-item"><div class="legend-color" style="background-color:#ffff00;"></div><span>30-60 km</span></div>
-            <div class="legend-item"><div class="legend-color" style="background-color:#ff8800;"></div><span>60-90 km</span></div>
-            <div class="legend-item"><div class="legend-color" style="background-color:#ff0000;"></div><span>90+ km</span></div>
+        <div class="control-group">
+            <div class="legend" style="margin-top:0;padding-top:0;border-top:none;">
+                <div class="legend-title">Profundidad (enjambre)</div>
+                <div class="legend-item"><div class="legend-color" style="background-color:#00ff00;"></div><span>0-30 km</span></div>
+                <div class="legend-item"><div class="legend-color" style="background-color:#ffff00;"></div><span>30-60 km</span></div>
+                <div class="legend-item"><div class="legend-color" style="background-color:#ff8800;"></div><span>60-90 km</span></div>
+                <div class="legend-item"><div class="legend-color" style="background-color:#ff0000;"></div><span>90+ km</span></div>
+            </div>
         </div>
 
-        <div class="hint">Arrastra para rotar · rueda para zoom · clic derecho para desplazar · clic en una esfera para ver el detalle del sismo.</div>
-
-        <div class="control-group" style="border-bottom:none;">
+        <div class="control-group">
             <div class="group-title">Perfil de profundidad</div>
             <button id="profileBtn" style="width:100%;background:#64b5f6;color:#0a0e27;border:none;border-radius:4px;padding:9px;font-size:12px;font-weight:bold;cursor:pointer;">📐 Trazar perfil (inicio → fin)</button>
-            <div class="hint">Elige dos puntos sobre el mapa para ver la sección de profundidad vs. distancia.</div>
+            <div class="hint">Elige dos puntos sobre el mapa para la sección de profundidad vs. distancia.</div>
+        </div>
+
+        <div class="control-group" style="border-right:none;">
+            <div class="hint" style="margin-top:0;">Arrastra para rotar · rueda para zoom · clic derecho para desplazar · clic en una esfera para ver el detalle del sismo.</div>
         </div>
     </div>
 </div>
