@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Enjambre del Chocó en 3D · sismicidad de la placa de Nazca</title>
+<link rel="icon" type="image/png" href="favicon.png">
 <meta name="description" content="Cubo 3D del enjambre sísmico del Chocó (SGC) sobre la sismicidad histórica de la placa de Nazca (USGS): hipocentros, línea de tiempo y secciones de profundidad.">
 <script src="https://cdn.jsdelivr.net/npm/three@0.140.0/build/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.140.0/examples/js/controls/OrbitControls.js"></script>
@@ -273,6 +274,13 @@ table.data td.n{text-align:right}
    ============================================================ */
 #profileChartWrap{position:relative;margin-top:10px}
 #profileChart{display:block;width:100%;height:230px;border-radius:8px;background:var(--plane)}
+.tiles{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px}
+.tile{background:var(--surface-2);border:1px solid var(--line);border-radius:8px;padding:9px 10px}
+.tile .k{font-size:10px;color:var(--ink-3);text-transform:uppercase;letter-spacing:.06em}
+.tile .v{font-size:19px;color:var(--ink);font-weight:600;margin-top:3px;line-height:1.15}
+.tile .v small{font-size:11px;color:var(--ink-3);font-weight:400}
+.chartcap{font-size:11px;color:var(--ink-3);line-height:1.5;margin-top:6px}
+canvas.an{display:block;width:100%;border-radius:6px;background:var(--plane)}
 .stat{display:flex;justify-content:space-between;font-size:11px;padding:5px 0;border-bottom:1px solid var(--line)}
 .stat:last-child{border-bottom:none}
 .stat span:first-child{color:var(--ink-3)}
@@ -426,6 +434,7 @@ table.data td.n{text-align:right}
     <div class="tabs" role="tablist">
       <button role="tab" aria-selected="true"  data-tab="datos">Datos</button>
       <button role="tab" aria-selected="false" data-tab="vista">Vista</button>
+      <button role="tab" aria-selected="false" data-tab="analisis">Análisis</button>
       <button role="tab" aria-selected="false" data-tab="perfil">Perfil</button>
     </div>
     <div class="tabpanes">
@@ -559,6 +568,9 @@ table.data td.n{text-align:right}
           <div class="row"><label class="sw"><input type="checkbox" id="showLabels" checked><i></i>Etiquetas y brújula</label></div>
           <div class="row"><label class="sw"><input type="checkbox" id="showMain" checked><i></i>Marcar el sismo principal</label></div>
           <div class="row"><label class="sw"><input type="checkbox" id="showNest" checked><i></i>Marcar el Nido de Bucaramanga</label></div>
+          <div class="row"><label class="sw"><input type="checkbox" id="showProj"><i></i>Proyecciones en las paredes</label></div>
+          <div class="row"><label class="sw"><input type="checkbox" id="showContours"><i></i>Contornos de profundidad</label></div>
+          <p class="hint">Las proyecciones vuelcan cada hipocentro sobre el piso y las dos paredes del fondo: se leen a la vez la planta y las dos secciones, sin girar la cámara. Los contornos interpolan la profundidad mediana del catálogo de referencia en celdas de 0,25° — son indicativos, no un modelo de slab.</p>
         </div>
 
         <div class="group">
@@ -577,6 +589,42 @@ table.data td.n{text-align:right}
             <button data-tz="UTC" aria-pressed="false">UTC</button>
           </div>
           <p class="hint">El catálogo viene en UTC. Para un público colombiano, un sismo «de las 12:34 UTC» ocurrió a las <b>7:34 a. m.</b>; mostrar sólo UTC desplaza toda la narración cinco horas.</p>
+        </div>
+      </div>
+
+      <!-- ══ ANÁLISIS ══ -->
+      <div class="pane" id="pane-analisis" role="tabpanel">
+
+        <div class="group">
+          <h3>Catálogo analizado</h3>
+          <div class="seg" role="group" aria-label="Catálogo del análisis">
+            <button data-an="swarm" aria-pressed="true">Enjambre</button>
+            <button data-an="plate" aria-pressed="false">Referencia</button>
+          </div>
+          <div class="tiles" style="margin-top:10px">
+            <div class="tile"><div class="k">Valor b</div><div class="v" id="tileB">–</div></div>
+            <div class="tile"><div class="k">Mc</div><div class="v" id="tileMc">–</div></div>
+            <div class="tile"><div class="k">Momento total</div><div class="v" id="tileM0">–</div></div>
+            <div class="tile"><div class="k">Equivale a</div><div class="v" id="tileEq">–</div></div>
+          </div>
+        </div>
+
+        <div class="group">
+          <h3>Distribución frecuencia-magnitud</h3>
+          <canvas id="fmdChart" class="an" style="height:200px"></canvas>
+          <p class="chartcap" id="fmdNote"></p>
+        </div>
+
+        <div class="group">
+          <h3>Ritmo de réplicas (ley de Omori)</h3>
+          <canvas id="omoriChart" class="an" style="height:190px"></canvas>
+          <p class="chartcap" id="omoriNote"></p>
+        </div>
+
+        <div class="group">
+          <h3>Sismos frente a energía liberada</h3>
+          <canvas id="cumChart" class="an" style="height:190px"></canvas>
+          <p class="chartcap" id="cumNote"></p>
         </div>
       </div>
 
@@ -760,8 +808,9 @@ const state = {
   filt:{magMin:0.9, depthMin:0, depthMax:450, onlySwarm:false},
   view:{vexag:3, base:150, magScale:1.3},
   layers:{map:true, mapOp:.55, events:true, plate:true, plateOp:.45, plateSize:1,
-          plateGray:false, grid:true, labels:true, main:true, nest:true, autoRot:false},
-  hist:'swarm',
+          plateGray:false, grid:true, labels:true, main:true, nest:true, autoRot:false,
+          proj:false, contours:false},
+  hist:'swarm', an:'swarm',
   prof:{a:null, b:null, swath:25, picking:null, trueScale:false},
   sel:null, hover:null
 };
@@ -1001,7 +1050,7 @@ async function init(){
   renderer.domElement.addEventListener('click', onClick);
 
   document.getElementById('loading').classList.add('off');
-  drawStrip(); drawHist(); fillTopTable();
+  drawStrip(); drawHist(); fillTopTable(); drawAnalysis();
   animate();
 }
 
@@ -1034,7 +1083,7 @@ async function setCatalog(key){
   ld.classList.remove('off'); bar.style.width='60%';
   document.getElementById('loadTxt').textContent='Cargando '+CATALOGS[key].label+'…';
   await loadPlate();
-  buildPlate(); refreshCatalogLabels(); drawHist(); drawProfile();
+  buildPlate(); refreshCatalogLabels(); drawHist(); drawProfile(); buildContours(); drawAnalysis();
   ld.classList.add('off');
 }
 function refreshCatalogLabels(){
@@ -1193,7 +1242,7 @@ function rebuildFrame(){
   scene.fog=new THREE.Fog(PLANE_COL, diag*0.75, diag*2.6);
 
   if(mapMesh) mapMesh.position.y=0.002;
-  updateSwarm(); updatePlate(); redrawSection();
+  updateSwarm(); updatePlate(); redrawSection(); buildContours(); buildProj();
   invalidate();
 }
 function updateMarkVisibility(){
@@ -1226,6 +1275,7 @@ function applyFilters(){
   const mx=visible.reduce((a,e)=>Math.max(a,e.mag),0);
   document.getElementById('chipMax').textContent=mx?nf(mx,1):'–';
   drawHist(); fillTopTable(); drawStrip();
+  drawAnalysis();
 }
 
 function updateSwarm(){
@@ -1273,6 +1323,7 @@ function updateSwarm(){
   swarmHalo.instanceMatrix.needsUpdate=true;
   if(swarmMesh.instanceColor) swarmMesh.instanceColor.needsUpdate=true;
   swarmMesh.visible=swarmHalo.visible=state.layers.events && n>0;
+  if(projMesh) updateProj(true);
   invalidate();
 }
 const eventAtInstance = i => instMap[i] || null;
@@ -1559,6 +1610,7 @@ function animate(now){
                 :           camera.position.x> -GEO.sx/2;
     });
   }
+  if(projMesh) updateProj(false);
   [markGroup,selGroup].forEach(g=>g.children.forEach(c=>{
     if(c.userData.billboard) c.quaternion.copy(camera.quaternion);
   }));
@@ -1962,6 +2014,398 @@ document.getElementById('clearImported').addEventListener('click',()=>{
   document.getElementById('importStatus').textContent='Importados eliminados.';
 });
 
+
+/* ==========================================================================
+   16b · ANÁLISIS SISMOLÓGICO
+   Tres estadísticos canónicos que el tablero original no calculaba:
+   Gutenberg-Richter (valor b), decaimiento de Omori y momento acumulado.
+   ========================================================================== */
+const M0J   = m => Math.pow(10, 1.5*m + 9.1);   // momento escalar, N·m — Hanks & Kanamori (1979)
+const ERAD  = m => Math.pow(10, 1.5*m + 4.8);   // energía radiada, J — Gutenberg & Richter (1956)
+const HIROSHIMA = 6.3e13;                        // J, referencia divulgativa (15 kt)
+
+function anList(){
+  return state.an==='swarm'
+    ? visible.map(e=>({mag:e.mag, prof:e.prof, t:e.t}))
+    : plateData.filter(q=>q[3]>=state.filt.magMin && q[2]>=state.filt.depthMin
+                        && q[2]<=state.filt.depthMax && q[2]<=state.view.base)
+               .map(q=>({mag:q[3], prof:q[2], t:null}));
+}
+
+/* Distribución frecuencia-magnitud + Mc por máxima curvatura + b por máxima
+   verosimilitud (Aki 1965, Utsu), con σ de Shi & Bolt (1982). */
+function fmd(list, bin){
+  bin = bin || 0.1;
+  if(list.length<10) return null;
+  let lo=Infinity, hi=-Infinity;
+  for(const e of list){ if(e.mag<lo) lo=e.mag; if(e.mag>hi) hi=e.mag; }
+  lo=Math.floor(lo/bin)*bin; hi=Math.ceil(hi/bin)*bin;
+  const nb=Math.max(2, Math.round((hi-lo)/bin)+1);
+  const bins=Array.from({length:nb},(_,i)=>lo+i*bin);
+  const nc=new Array(nb).fill(0);
+  for(const e of list){ nc[Math.max(0,Math.min(nb-1, Math.round((e.mag-lo)/bin)))]++; }
+  const cum=new Array(nb).fill(0);
+  for(let i=nb-1, acc=0; i>=0; i--){ acc+=nc[i]; cum[i]=acc; }
+
+  let iMax=0; for(let i=0;i<nb;i++) if(nc[i]>nc[iMax]) iMax=i;
+  const Mc=bins[iMax]+0.2;                                  // MAXC + corrección empírica
+
+  const sel=list.filter(e=>e.mag>=Mc-1e-9).map(e=>e.mag);
+  let b=null, sb=null, a=null;
+  if(sel.length>=15){
+    const mean=sel.reduce((x,m)=>x+m,0)/sel.length;
+    const den=mean-(Mc-bin/2);
+    if(den>0.05){
+      b=Math.LOG10E/den;
+      const v=sel.reduce((x,m)=>x+(m-mean)*(m-mean),0)/(sel.length*(sel.length-1));
+      sb=2.30*b*b*Math.sqrt(Math.max(v,0));
+      a=Math.log10(sel.length)+b*Mc;
+    }
+  }
+  return {bins, nc, cum, Mc, b, sb, a, nFit:sel.length, bin};
+}
+
+function drawFMD(F0){
+  const cv=document.getElementById('fmdChart'), ctx=cv.getContext('2d');
+  const r=sizeCanvas(cv,ctx); if(!r) return;
+  const W=r.width,H=r.height,mL=34,mR=12,mT=12,mB=26, pw=W-mL-mR, ph=H-mT-mB;
+  ctx.clearRect(0,0,W,H);
+  const F = F0!==undefined ? F0 : fmd(anList());
+  const note=document.getElementById('fmdNote');
+  if(!F){ ctx.fillStyle='#898781'; ctx.font='11px system-ui,sans-serif'; ctx.textAlign='center';
+    ctx.fillText('Se necesitan al menos 10 sismos.', W/2, H/2); note.textContent=''; return; }
+
+  const mMin=F.bins[0], mMax=F.bins[F.bins.length-1]+F.bin;
+  const yMax=Math.log10(Math.max(10,F.cum[0]))*1.05;
+  const X=m=>mL+((m-mMin)/(mMax-mMin))*pw;
+  const YL=v=>mT+ph-(v/yMax)*ph;                  // v ya viene en log10
+  const Y=n=>YL(Math.log10(Math.max(n,0.9)));
+
+  ctx.font='10px system-ui,sans-serif';
+  ctx.strokeStyle='#2c2c2a'; ctx.lineWidth=1; ctx.textAlign='right';
+  for(let e=0;e<=Math.ceil(yMax);e++){
+    const y=Math.round(Y(Math.pow(10,e)))+.5; if(y<mT) break;
+    ctx.beginPath(); ctx.moveTo(mL,y); ctx.lineTo(W-mR,y); ctx.stroke();
+    ctx.fillStyle='#898781'; ctx.fillText(Math.pow(10,e).toLocaleString('es-CO'), mL-6, y+3);
+  }
+  ctx.textAlign='center';
+  const mStep = (mMax-mMin)>5 ? 2 : 1;
+  for(let m=Math.ceil(mMin); m<=mMax; m+=mStep){
+    const x=Math.round(X(m))+.5;
+    ctx.strokeStyle='#2c2c2a'; ctx.beginPath(); ctx.moveTo(x,mT); ctx.lineTo(x,mT+ph); ctx.stroke();
+    ctx.fillStyle='#898781'; ctx.fillText('M'+m, x, H-9);
+  }
+  ctx.strokeStyle='#383835'; ctx.strokeRect(mL+.5,mT+.5,pw,ph);
+
+  ctx.save(); ctx.beginPath(); ctx.rect(mL,mT,pw,ph); ctx.clip();
+  // recta de Gutenberg-Richter
+  if(F.b!==null){
+    ctx.strokeStyle='rgba(255,255,255,.5)'; ctx.lineWidth=1.5; ctx.setLineDash([5,4]);
+    ctx.beginPath();                              // sin recortar: la pendiente ES −b
+    ctx.moveTo(X(F.Mc),  YL(F.a-F.b*F.Mc));
+    ctx.lineTo(X(mMax),  YL(F.a-F.b*mMax));
+    ctx.stroke(); ctx.setLineDash([]);
+  }
+  // magnitud de completitud
+  ctx.strokeStyle='#d95926'; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(Math.round(X(F.Mc))+.5,mT); ctx.lineTo(Math.round(X(F.Mc))+.5,mT+ph); ctx.stroke();
+  ctx.fillStyle='#d95926'; ctx.textAlign='left'; ctx.font='600 10px system-ui,sans-serif';
+  ctx.fillText('Mc', X(F.Mc)+4, mT+11);
+  // número acumulado
+  F.bins.forEach((m,i)=>{
+    if(F.cum[i]<1) return;
+    ctx.beginPath(); ctx.arc(X(m), Y(F.cum[i]), 2.6, 0, Math.PI*2);
+    ctx.fillStyle='#3987e5'; ctx.fill();
+    ctx.strokeStyle='#0d0d0d'; ctx.lineWidth=2; ctx.stroke();
+  });
+  ctx.restore();
+
+  if(F.b!==null){
+    ctx.fillStyle='#ffffff'; ctx.font='600 11px system-ui,sans-serif'; ctx.textAlign='right';
+    ctx.fillText(`b = ${nf(F.b,2)} ± ${nf(F.sb,2)}`, W-mR-6, mT+14);
+  }
+  note.innerHTML = F.b===null
+    ? 'Muy pocos sismos sobre Mc para ajustar el valor b.'
+    : `Número acumulado de sismos por magnitud, en escala logarítmica. <b>b = ${nf(F.b,2)}</b> sobre ${F.nFit} sismos con M ≥ ${nf(F.Mc,1)}. ${F.b<0.8 ? 'Por debajo de 0,8: esfuerzo diferencial alto, o un catálogo de pocos días todavía incompleto en magnitudes bajas.' : (F.b>1.2 ? 'Por encima de 1,2: típico de zonas con fluidos o de enjambres volcánicos.' : 'Cerca de 1, que es lo normal en corteza.')}`;
+}
+
+/* Decaimiento del ritmo de réplicas: bines logarítmicos desde el sismo principal
+   y ajuste log-log (equivale a la ley de Omori modificada con c ≈ 0). */
+function omoriSeries(){
+  if(state.an!=='swarm') return null;
+  const main=visible.reduce((a,e)=>(!a||e.mag>a.mag)?e:a, null);
+  if(!main) return null;
+  const post=visible.filter(e=>e.t>main.t).map(e=>(e.t-main.t)/3600e3);   // horas
+  if(post.length<12) return null;
+  const tEnd=Math.max(...post);
+  const t0=0.05, nb=9;
+  const edges=Array.from({length:nb+1},(_,i)=>t0*Math.pow(tEnd/t0, i/nb));
+  const pts=[];
+  for(let i=0;i<nb;i++){
+    const a=edges[i], b=edges[i+1];
+    const c=post.filter(t=>t>=a&&t<b).length;
+    if(c>0) pts.push({t:Math.sqrt(a*b), rate:c/(b-a), n:c});
+  }
+  if(pts.length<4) return null;
+  let sx=0,sy=0,sxx=0,sxy=0;
+  pts.forEach(q=>{ const X=Math.log10(q.t), Y=Math.log10(q.rate); sx+=X;sy+=Y;sxx+=X*X;sxy+=X*Y; });
+  const n=pts.length, den=n*sxx-sx*sx;
+  const slope=Math.abs(den)>1e-9 ? (n*sxy-sx*sy)/den : 0;
+  const inter=(sy-slope*sx)/n;
+  return {pts, p:-slope, inter, main, tEnd, total:pts.reduce((x,q)=>x+q.n,0), desde:t0};
+}
+function drawOmori(){
+  const cv=document.getElementById('omoriChart'), ctx=cv.getContext('2d');
+  const r=sizeCanvas(cv,ctx); if(!r) return;
+  const W=r.width,H=r.height,mL=40,mR=12,mT=12,mB=26, pw=W-mL-mR, ph=H-mT-mB;
+  ctx.clearRect(0,0,W,H);
+  const S=omoriSeries(), note=document.getElementById('omoriNote');
+  if(!S){ ctx.fillStyle='#898781'; ctx.font='11px system-ui,sans-serif'; ctx.textAlign='center';
+    ctx.fillText(state.an==='plate' ? 'Sólo aplica al enjambre.' : 'Faltan réplicas para el ajuste.', W/2, H/2);
+    note.textContent=''; return; }
+
+  const tMinL=Math.log10(0.05), tMaxL=Math.log10(S.tEnd);
+  const rates=S.pts.map(q=>q.rate);
+  const rMinL=Math.floor(Math.log10(Math.min(...rates)));
+  let rMaxL=Math.ceil(Math.log10(Math.max(...rates)));
+  if(rMaxL===rMinL) rMaxL=rMinL+1;
+  const X=t=>mL+((Math.log10(t)-tMinL)/(tMaxL-tMinL))*pw;
+  const Y=v=>mT+ph-((Math.log10(v)-rMinL)/(rMaxL-rMinL))*ph;
+
+  ctx.font='10px system-ui,sans-serif'; ctx.strokeStyle='#2c2c2a'; ctx.lineWidth=1;
+  ctx.textAlign='right';
+  for(let e=rMinL;e<=rMaxL;e++){
+    const y=Math.round(Y(Math.pow(10,e)))+.5;
+    ctx.beginPath(); ctx.moveTo(mL,y); ctx.lineTo(W-mR,y); ctx.stroke();
+    ctx.fillStyle='#898781';
+    ctx.fillText(e<0?Math.pow(10,e).toFixed(-e):String(Math.pow(10,e)), mL-6, y+3);
+  }
+  ctx.textAlign='center';
+  [0.1,1,10,100].forEach(t=>{ if(t<0.05||t>S.tEnd) return;
+    const x=Math.round(X(t))+.5;
+    ctx.strokeStyle='#2c2c2a'; ctx.beginPath(); ctx.moveTo(x,mT); ctx.lineTo(x,mT+ph); ctx.stroke();
+    ctx.fillStyle='#898781'; ctx.fillText(nf(t, t<1?1:0)+' h', x, H-9);
+  });
+  ctx.strokeStyle='#383835'; ctx.strokeRect(mL+.5,mT+.5,pw,ph);
+  ctx.save(); ctx.translate(11,mT+ph/2); ctx.rotate(-Math.PI/2);
+  ctx.fillStyle='#898781'; ctx.textAlign='center'; ctx.fillText('sismos / hora',0,0); ctx.restore();
+
+  ctx.save(); ctx.beginPath(); ctx.rect(mL,mT,pw,ph); ctx.clip();
+  ctx.strokeStyle='rgba(255,255,255,.5)'; ctx.lineWidth=1.5; ctx.setLineDash([5,4]);
+  ctx.beginPath();
+  ctx.moveTo(X(0.05), Y(Math.pow(10, S.inter - S.p*Math.log10(0.05))));
+  ctx.lineTo(X(S.tEnd), Y(Math.pow(10, S.inter - S.p*Math.log10(S.tEnd))));
+  ctx.stroke(); ctx.setLineDash([]);
+  S.pts.forEach(q=>{
+    ctx.beginPath(); ctx.arc(X(q.t), Y(q.rate), 3, 0, Math.PI*2);
+    ctx.fillStyle='#3987e5'; ctx.fill();
+    ctx.strokeStyle='#0d0d0d'; ctx.lineWidth=2; ctx.stroke();
+  });
+  ctx.restore();
+  ctx.fillStyle='#ffffff'; ctx.font='600 11px system-ui,sans-serif'; ctx.textAlign='right';
+  ctx.fillText(`p = ${nf(S.p,2)}`, W-mR-6, mT+14);
+  const lect = S.p<0.45
+    ? 'el ritmo casi no decae: se comporta como <b>enjambre</b>, no como una serie de réplicas clásica'
+    : (S.p<1.45 ? 'decaimiento propio de una <b>serie de réplicas</b>' : 'decaimiento <b>más rápido</b> de lo habitual');
+  note.innerHTML=`Ritmo de sismos posteriores al M${nf(S.main.mag,1)}, en bines logarítmicos desde ${nf(S.desde*60,0)} min (${S.total} eventos). Con <b>p = ${nf(S.p,2)}</b> (ajuste log-log, c ≈ 0) ${lect}. La ley de Omori modificada típica cae entre 0,8 y 1,2.`;
+}
+
+/* Número de sismos y momento liberado, ambos en % del total: un solo eje,
+   y así se ve que casi toda la energía la suelta un evento. */
+function drawCum(){
+  const cv=document.getElementById('cumChart'), ctx=cv.getContext('2d');
+  const r=sizeCanvas(cv,ctx); if(!r) return;
+  const W=r.width,H=r.height,mL=34,mR=62,mT=12,mB=26, pw=W-mL-mR, ph=H-mT-mB;
+  ctx.clearRect(0,0,W,H);
+  const note=document.getElementById('cumNote');
+  if(state.an!=='swarm' || visible.length<5){
+    ctx.fillStyle='#898781'; ctx.font='11px system-ui,sans-serif'; ctx.textAlign='center';
+    ctx.fillText(state.an!=='swarm' ? 'Sólo aplica al enjambre.' : 'Muy pocos sismos pasan los filtros.', W/2, H/2);
+    note.textContent=''; return;
+  }
+  const list=[...visible].sort((a,b)=>a.t-b.t);
+  const totN=list.length, totM=list.reduce((x,e)=>x+M0J(e.mag),0);
+  const X=t=>mL+((t-tMin)/(tMax-tMin))*pw;
+  const Y=pc=>mT+ph-(pc/100)*ph;
+
+  ctx.font='10px system-ui,sans-serif'; ctx.textAlign='right';
+  [0,25,50,75,100].forEach(pc=>{
+    const y=Math.round(Y(pc))+.5;
+    ctx.strokeStyle='#2c2c2a'; ctx.beginPath(); ctx.moveTo(mL,y); ctx.lineTo(W-mR,y); ctx.stroke();
+    ctx.fillStyle='#898781'; ctx.fillText(pc+'%', mL-6, y+3);
+  });
+  ctx.strokeStyle='#383835'; ctx.strokeRect(mL+.5,mT+.5,pw,ph);
+  ctx.textAlign='center'; ctx.fillStyle='#898781';
+  const d0=new Date(tMin); d0.setUTCHours(0,0,0,0);
+  const days=Math.max(1,Math.round((tMax-tMin)/86400e3));
+  const dStep=Math.max(1,Math.ceil(days/6));        // un catálogo de años traía miles de etiquetas
+  let di=0;
+  for(let t=d0.getTime(); t<=tMax; t+=86400e3){
+    if(t<tMin) continue;
+    if(di++ % dStep) continue;
+    ctx.fillText(fmtDT(t).split('·')[0].trim(), X(t), H-9);
+  }
+
+  const draw=(valFn,color)=>{
+    ctx.strokeStyle=color; ctx.lineWidth=2; ctx.beginPath();
+    let acc=0; ctx.moveTo(X(tMin), Y(0));
+    list.forEach(e=>{ const x=X(e.t); ctx.lineTo(x, Y(acc)); acc+=valFn(e); ctx.lineTo(x, Y(acc)); });
+    ctx.lineTo(X(tMax), Y(acc)); ctx.stroke();
+    return acc;
+  };
+  draw(()=>100/totN, '#3987e5');
+  draw(e=>100*M0J(e.mag)/totM, '#d95926');
+
+  ctx.font='600 10px system-ui,sans-serif'; ctx.textAlign='left';
+  ctx.fillStyle='#3987e5'; ctx.fillText('sismos', W-mR+5, Y(100)+22);
+  ctx.fillStyle='#d95926'; ctx.fillText('momento', W-mR+5, Y(100)+8);
+
+  const main=list.reduce((a,e)=>e.mag>a.mag?e:a);
+  const share=100*M0J(main.mag)/totM;
+  const txt = share>99.95 ? '&gt;99,9 %' : nf(share,1)+' %';
+  note.innerHTML=`Ambas curvas están en porcentaje del total, sobre un mismo eje. El M${nf(main.mag,1)} concentra el <b>${txt}</b> del momento sísmico siendo 1 de ${totN} eventos: contar sismos y medir energía son dos historias distintas.`;
+}
+
+function updateTiles(L,F){
+  document.getElementById('tileB').innerHTML = F&&F.b!==null
+    ? `${nf(F.b,2)} <small>± ${nf(F.sb,2)}</small>` : '–';
+  document.getElementById('tileMc').innerHTML = F ? `M ${nf(F.Mc,1)}` : '–';
+  const m0=L.reduce((x,e)=>x+M0J(e.mag),0);
+  const ej=L.reduce((x,e)=>x+ERAD(e.mag),0);
+  const exp=m0>0?Math.floor(Math.log10(m0)):0;
+  document.getElementById('tileM0').innerHTML = m0>0
+    ? `${nf(m0/Math.pow(10,exp),1)} <small>×10<sup>${exp}</sup> N·m</small>` : '–';
+  const h=ej/HIROSHIMA;
+  document.getElementById('tileEq').innerHTML = ej>0
+    ? (h>=1 ? `${nf(h,1)} <small>× Hiroshima</small>` : `${nf(ej/1e12,1)} <small>TJ</small>`) : '–';
+}
+function drawAnalysis(){
+  if(!document.getElementById('pane-analisis').classList.contains('on')) return;
+  const L=anList(), F=fmd(L);       // un solo recorrido para fichas y gráfico
+  updateTiles(L,F); drawFMD(F); drawOmori(); drawCum();
+}
+
+/* ==========================================================================
+   16c · CONTORNOS DE PROFUNDIDAD (marching squares sobre celdas de 0,25°)
+   ========================================================================== */
+let contourGroup=null;
+const MS_TABLE={1:[[3,2]],2:[[2,1]],3:[[3,1]],4:[[0,1]],5:[[3,0],[2,1]],6:[[0,2]],7:[[3,0]],
+                8:[[3,0]],9:[[0,2]],10:[[3,2],[0,1]],11:[[0,1]],12:[[3,1]],13:[[2,1]],14:[[3,2]]};
+function buildContours(){
+  if(contourGroup){ scene.remove(contourGroup);
+    contourGroup.children.forEach(c=>{c.geometry.dispose();c.material.dispose();}); contourGroup=null; }
+  if(!state.layers.contours || plateData.length<80) return;
+
+  const b=GEO.b, cell=0.25;
+  const nx=Math.max(3,Math.round((b.east-b.west)/cell));
+  const ny=Math.max(3,Math.round((b.north-b.south)/cell));
+  const acc=Array.from({length:nx*ny},()=>[]);
+  plateData.forEach(([lon,lat,d])=>{
+    const ix=Math.floor((lon-b.west)/(b.east-b.west)*nx);
+    const iy=Math.floor((b.north-lat)/(b.north-b.south)*ny);
+    if(ix<0||ix>=nx||iy<0||iy>=ny) return;
+    acc[iy*nx+ix].push(d);
+  });
+  let g=new Float64Array(nx*ny).fill(NaN);
+  acc.forEach((v,i)=>{ if(v.length>=3){ v.sort((a,b)=>a-b); g[i]=v[(v.length>>1)]; } });
+
+  const at=(gr,c,r)=>(c<0||c>=nx||r<0||r>=ny)?NaN:gr[r*nx+c];
+  const pass=(gr,fillGaps)=>{
+    const out=new Float64Array(nx*ny).fill(NaN);
+    for(let r=0;r<ny;r++) for(let c=0;c<nx;c++){
+      const self=at(gr,c,r);
+      if(isNaN(self) && !fillGaps){ continue; }
+      let s=0,n=0;
+      for(let dr=-1;dr<=1;dr++) for(let dc=-1;dc<=1;dc++){
+        const v=at(gr,c+dc,r+dr); if(!isNaN(v)){ s+=v; n++; }
+      }
+      if(n>=(isNaN(self)?4:2)) out[r*nx+c]=s/n;
+      else if(!isNaN(self)) out[r*nx+c]=self;
+    }
+    return out;
+  };
+  g=pass(g,true); g=pass(g,false);   // un relleno de huecos y un suavizado: más pasadas
+                                     // extienden los contornos sobre zonas sin sismos
+
+  let lo=Infinity, hi=-Infinity;
+  for(const v of g){ if(!isNaN(v)){ if(v<lo)lo=v; if(v>hi)hi=v; } }
+  const levels=[25,50,75,100,150,200].filter(l=>l>lo+3 && l<hi-3 && l<=state.view.base);
+  if(!levels.length) return;
+
+  const dLon=(b.east-b.west)/nx, dLat=(b.north-b.south)/ny;
+  const node=(gc,gr)=>({lon:b.west+(gc+0.5)*dLon, lat:b.north-(gr+0.5)*dLat});
+  contourGroup=new THREE.Group();
+  levels.forEach(lvl=>{
+    const pts=[];
+    for(let r=0;r<ny-1;r++) for(let c=0;c<nx-1;c++){
+      const tl=at(g,c,r), tr=at(g,c+1,r), br=at(g,c+1,r+1), bl=at(g,c,r+1);
+      if(isNaN(tl)||isNaN(tr)||isNaN(br)||isNaN(bl)) continue;
+      const idx=(tl>=lvl?8:0)|(tr>=lvl?4:0)|(br>=lvl?2:0)|(bl>=lvl?1:0);
+      const segs=MS_TABLE[idx]; if(!segs) continue;
+      const edge=k=>{
+        let t;
+        if(k===0){ t=(lvl-tl)/(tr-tl); return node(c+t, r); }
+        if(k===1){ t=(lvl-tr)/(br-tr); return node(c+1, r+t); }
+        if(k===2){ t=(lvl-bl)/(br-bl); return node(c+t, r+1); }
+        t=(lvl-tl)/(bl-tl); return node(c, r+t);
+      };
+      segs.forEach(([e1,e2])=>{
+        [edge(e1),edge(e2)].forEach(q=>{
+          const P=toScene(q.lat,q.lon,0);
+          pts.push(new THREE.Vector3(P.x, 0.05, P.z));
+        });
+      });
+    }
+    if(!pts.length) return;
+    const col=depthRGB(lvl);
+    const line=new THREE.LineSegments(
+      new THREE.BufferGeometry().setFromPoints(pts),
+      new THREE.LineBasicMaterial({color:(col[0]<<16)|(col[1]<<8)|col[2], transparent:true, opacity:.9}));
+    line.userData.level=lvl;
+    contourGroup.add(line);
+  });
+  if(contourGroup.children.length) scene.add(contourGroup); else contourGroup=null;
+  invalidate();
+}
+
+/* ==========================================================================
+   16d · PROYECCIONES ORTOGONALES (piso + dos paredes del fondo)
+   ========================================================================== */
+let projMesh=null, projSign={x:0,z:0};
+function buildProj(){
+  // sphereGeo es compartida con el enjambre: aquí sólo se libera la instancia
+  if(projMesh){ scene.remove(projMesh); projMesh.dispose(); projMesh.material.dispose(); projMesh=null; }
+  if(!state.layers.proj || !eventos.length) return;
+  projMesh=new THREE.InstancedMesh(sphereGeo,
+    new THREE.MeshBasicMaterial({color:0x7a7a74, transparent:true, opacity:.5, depthWrite:false, fog:false}),
+    eventos.length*3);
+  projMesh.frustumCulled=false; projMesh.renderOrder=0;
+  scene.add(projMesh);
+  projSign={x:0,z:0};
+  updateProj(true);
+}
+function updateProj(force){
+  if(!projMesh) return;
+  const sx = camera.position.x>=0 ? -1 : 1;
+  const sz = camera.position.z>=0 ? -1 : 1;
+  if(!force && sx===projSign.x && sz===projSign.z) return;
+  projSign={x:sx,z:sz};
+  const hx=GEO.sx/2*sx, hz=GEO.sz/2*sz, floor=-boxH()+0.03, rad=0.085;
+  let k=0;
+  for(const e of instMap){          // instMap = lo que el modo temporal deja a la vista
+    if(!e) continue;
+    const p=toScene(e.lat,e.lon,e.prof);
+    const trio=[[p.x,floor,p.z],[hx,p.y,p.z],[p.x,p.y,hz]];
+    for(const [x,y,z] of trio){
+      dummy.position.set(x,y,z); dummy.scale.setScalar(rad); dummy.updateMatrix();
+      projMesh.setMatrixAt(k++, dummy.matrix);
+    }
+  }
+  projMesh.count=k;
+  projMesh.instanceMatrix.needsUpdate=true;
+  invalidate();
+}
+
 /* ==========================================================================
    17 · CONTROLES
    ========================================================================== */
@@ -1974,6 +2418,7 @@ function showTab(k){
   document.querySelectorAll('.pane').forEach(p=>p.classList.toggle('on', p.id==='pane-'+k));
   if(k==='perfil') requestAnimationFrame(drawProfile);
   if(k==='datos') requestAnimationFrame(drawHist);
+  if(k==='analisis') requestAnimationFrame(drawAnalysis);
   if(window.innerWidth<=980) $('panel').classList.add('open');
 }
 document.querySelectorAll('[data-tab]').forEach(b=>b.addEventListener('click',()=>showTab(b.dataset.tab)));
@@ -1997,6 +2442,7 @@ segGroup('data-map', async k=>{ state.basemap=k; await reloadMap(); });
 segGroup('data-win', async k=>{ state.win=k; $('winNote').textContent=WINDOWS[k].note; await reloadMap(true); });
 segGroup('data-quick', k=>quickProfile(k));
 segGroup('data-cat', k=>setCatalog(k));
+segGroup('data-an', k=>{ state.an=k; drawAnalysis(); });
 $('winNote').textContent=WINDOWS.swarm.note;
 
 async function reloadMap(newWindow=false){
@@ -2067,6 +2513,8 @@ on('showGrid','change',e=>{ state.layers.grid=e.target.checked;
 on('showLabels','change',e=>{ state.layers.labels=e.target.checked; invalidate(); });
 on('showMain','change',e=>{ state.layers.main=e.target.checked; updateMarkVisibility(); });
 on('showNest','change',e=>{ state.layers.nest=e.target.checked; updateMarkVisibility(); });
+on('showProj','change',e=>{ state.layers.proj=e.target.checked; buildProj(); });
+on('showContours','change',e=>{ state.layers.contours=e.target.checked; buildContours(); });
 on('autoRot','change',e=>{ state.layers.autoRot=e.target.checked; invalidate(); });
 on('resetCam','click',()=>{ setView('iso'); select(null); });
 on('pngBtn','click',()=>{
@@ -2148,7 +2596,7 @@ addEventListener('keydown',ev=>{
   }
 });
 
-addEventListener('resize',()=>{ drawStrip(); drawHist(); drawProfile(); });
+addEventListener('resize',()=>{ drawStrip(); drawHist(); drawProfile(); drawAnalysis(); });
 
 /* ==========================================================================
    18 · ARRANQUE
