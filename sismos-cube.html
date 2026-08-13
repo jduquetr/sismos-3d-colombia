@@ -1496,9 +1496,16 @@ document.getElementById('geojsonFileInput').addEventListener('change', (e) => {
             minLat = b.minLat; maxLat = b.maxLat; minLon = b.minLon; maxLon = b.maxLon;
             const mapOk = await reloadMap();
 
+            // El enjambre original y la placa USGS están fijos en la zona de Chocó; si los datos
+            // importados están en otra región, dejarlos activos solo dispersaría puntos fuera del
+            // mapa nuevo. Se ocultan por defecto (el usuario los puede reactivar manualmente).
+            document.getElementById('showOriginalSwarm').checked = false;
+            document.getElementById('showPlate').checked = false;
+            plateMeshes.forEach(m => m.visible = false);
+
             refreshAfterEventChange();
             const mapNote = mapOk ? '' : ' ⚠ El mapa base no cargó para esta zona (los sismos sí están ubicados correctamente; revisa la consola para más detalle).';
-            status.textContent = `✓ ${newEvents.length} sismos importados (total: ${eventos.length}). Ventana: ${boundsTxt}.${mapNote}`;
+            status.textContent = `✓ ${newEvents.length} sismos importados (total: ${eventos.length}). Ventana: ${boundsTxt}. Se ocultaron el enjambre original y la placa USGS (reactívalos arriba si quieres compararlos).${mapNote}`;
             document.getElementById('clearImportedBtn').style.display = 'block';
         } catch (err) {
             status.textContent = '⚠ Error al leer el archivo: ' + err.message;
@@ -1519,8 +1526,12 @@ document.getElementById('clearImportedBtn').addEventListener('click', async () =
     minLon = ORIGINAL_MAP_BOUNDS.minLon; maxLon = ORIGINAL_MAP_BOUNDS.maxLon;
     await reloadMap();
 
+    document.getElementById('showOriginalSwarm').checked = true;
+    document.getElementById('showPlate').checked = true;
+    plateMeshes.forEach(m => m.visible = true);
+
     refreshAfterEventChange();
-    status.textContent = 'Sismos importados eliminados. Mapa restaurado a la zona original.';
+    status.textContent = 'Sismos importados eliminados. Mapa restaurado a la zona original (enjambre y placa reactivados).';
     document.getElementById('clearImportedBtn').style.display = 'none';
 });
 
