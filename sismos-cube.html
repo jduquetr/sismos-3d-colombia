@@ -193,6 +193,10 @@
                 <div class="slider-label"><span>Opacidad sismos</span><span class="slider-value" id="eventOpacityValue">100%</span></div>
                 <input type="range" id="eventOpacitySlider" min="0" max="100" value="100">
             </div>
+            <div class="checkbox-item">
+                <input type="checkbox" id="showOriginalSwarm" checked>
+                <label for="showOriginalSwarm">Sismos originales (Chocó ago 2026)</label>
+            </div>
 
             <div class="checkbox-item">
                 <input type="checkbox" id="showGrid" checked>
@@ -433,11 +437,13 @@ let minTime = eventos[0].time;
 let maxTime = eventos[eventos.length - 1].time;
 
 // ============ GEOMETRÍA DEL CUBO ============
-// Ventana de proyección del mapa fija (cubre el enjambre + la zona usada para la placa en subducción)
-const minLat = 1;
-const maxLat = 9.6;
-const minLon = -79.8;
-const maxLon = -71.8;
+// Ventana de proyección del mapa (por defecto cubre el enjambre de Chocó + la placa en subducción USGS).
+// Se reajusta automáticamente cuando el usuario importa un GeoJSON externo.
+const ORIGINAL_MAP_BOUNDS = { minLat: 1, maxLat: 9.6, minLon: -79.8, maxLon: -71.8 };
+let minLat = ORIGINAL_MAP_BOUNDS.minLat;
+let maxLat = ORIGINAL_MAP_BOUNDS.maxLat;
+let minLon = ORIGINAL_MAP_BOUNDS.minLon;
+let maxLon = ORIGINAL_MAP_BOUNDS.maxLon;
 
 const BOX_SIZE = 20;      // ancho/profundidad horizontal (lat/lon)
 const BOX_HEIGHT = 14;    // alto (representa la profundidad 0-DEPTH_MAX)
@@ -1234,13 +1240,18 @@ document.getElementById('timeEnd').textContent = formatDT(maxTime);
 function applyTimelineValue(val) {
     const percent = val / 1000;
     const selectedTime = new Date(minTime.getTime() + (maxTime.getTime() - minTime.getTime()) * percent);
-    visibleEventos = eventos.filter(ev => ev.time <= selectedTime);
+    const showOriginal = document.getElementById('showOriginalSwarm').checked;
+    visibleEventos = eventos.filter(ev => ev.time <= selectedTime && (showOriginal || ev.imported));
     document.getElementById('timeValue').textContent = formatDT(selectedTime);
     rebuildEvents();
 }
 
 document.getElementById('timelineSlider').addEventListener('input', e => {
     applyTimelineValue(parseFloat(e.target.value));
+});
+
+document.getElementById('showOriginalSwarm').addEventListener('change', () => {
+    applyTimelineValue(parseFloat(document.getElementById('timelineSlider').value));
 });
 
 let playing = false, playInterval = null;
@@ -1314,8 +1325,25 @@ function refreshAfterEventChange() {
     document.getElementById('timeStart').textContent = formatDT(minTime);
     document.getElementById('timeEnd').textContent = formatDT(maxTime);
     document.getElementById('timelineSlider').value = 1000;
-    visibleEventos = [...eventos];
-    rebuildEvents();
+    applyTimelineValue(1000);
+}
+
+// Calcula una ventana geográfica (con margen) que encuadre un conjunto de eventos
+function computeBoundsForEvents(events) {
+    const lats = events.map(e => e.lat);
+    const lons = events.map(e => e.lon);
+    const rawMinLat = Math.min(...lats), rawMaxLat = Math.max(...lats);
+    const rawMinLon = Math.min(...lons), rawMaxLon = Math.max(...lons);
+    const latSpan = Math.max(rawMaxLat - rawMinLat, 0.2);
+    const lonSpan = Math.max(rawMaxLon - rawMinLon, 0.2);
+    const padLat = Math.max(latSpan * 0.15, 0.15);
+    const padLon = Math.max(lonSpan * 0.15, 0.15);
+    return {
+        minLat: Math.max(-85, rawMinLat - padLat),
+        maxLat: Math.min(85, rawMaxLat + padLat),
+        minLon: Math.max(-180, rawMinLon - padLon),
+        maxLon: Math.min(180, rawMaxLon + padLon)
+    };
 }
 
 document.getElementById('geojsonFileInput').addEventListener('change', (e) => {
@@ -1325,7 +1353,7 @@ document.getElementById('geojsonFileInput').addEventListener('change', (e) => {
     status.textContent = 'Leyendo archivo…';
 
     const reader = new FileReader();
-    reader.onload = () => {
+    reader.onload = async () => {
         try {
             const json = JSON.parse(reader.result);
             const newEvents = parseGeoJSONEvents(json);
@@ -1335,8 +1363,14 @@ document.getElementById('geojsonFileInput').addEventListener('change', (e) => {
             }
             newEvents.forEach(ev => { importedCount++; ev.id = eventos.length + importedCount; });
             eventos.push(...newEvents);
+
+            status.textContent = 'Ajustando el mapa a los sismos importados…';
+            const b = computeBoundsForEvents(newEvents);
+            minLat = b.minLat; maxLat = b.maxLat; minLon = b.minLon; maxLon = b.maxLon;
+            await reloadMap();
+
             refreshAfterEventChange();
-            status.textContent = `✓ ${newEvents.length} sismos importados (total: ${eventos.length}).`;
+            status.textContent = `✓ ${newEvents.length} sismos importados (total: ${eventos.length}). Mapa ajustado a la nueva zona.`;
             document.getElementById('clearImportedBtn').style.display = 'block';
         } catch (err) {
             status.textContent = '⚠ Error al leer el archivo: ' + err.message;
@@ -1347,11 +1381,18 @@ document.getElementById('geojsonFileInput').addEventListener('change', (e) => {
     e.target.value = '';
 });
 
-document.getElementById('clearImportedBtn').addEventListener('click', () => {
+document.getElementById('clearImportedBtn').addEventListener('click', async () => {
     eventos = eventos.filter(ev => !ev.imported);
     importedCount = 0;
+
+    const status = document.getElementById('importStatus');
+    status.textContent = 'Restaurando ventana de mapa original…';
+    minLat = ORIGINAL_MAP_BOUNDS.minLat; maxLat = ORIGINAL_MAP_BOUNDS.maxLat;
+    minLon = ORIGINAL_MAP_BOUNDS.minLon; maxLon = ORIGINAL_MAP_BOUNDS.maxLon;
+    await reloadMap();
+
     refreshAfterEventChange();
-    document.getElementById('importStatus').textContent = 'Sismos importados eliminados.';
+    status.textContent = 'Sismos importados eliminados. Mapa restaurado a la zona original.';
     document.getElementById('clearImportedBtn').style.display = 'none';
 });
 
