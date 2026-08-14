@@ -3,9 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>Enjambre del Chocó en 3D · sismicidad de la placa de Nazca</title>
+<title>Secuencia sísmica del Chocó en 3D · visor sismológico</title>
 <link rel="icon" type="image/png" href="favicon.png">
-<meta name="description" content="Cubo 3D del enjambre sísmico del Chocó (SGC) sobre la sismicidad histórica de la placa de Nazca (USGS): hipocentros, línea de tiempo y secciones de profundidad.">
+<meta name="description" content="Visor 3D de la secuencia sísmica del Chocó registrada por el SGC, con contexto histórico USGS, línea de tiempo, perfiles y análisis exploratorios.">
 <script src="https://cdn.jsdelivr.net/npm/three@0.140.0/build/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.140.0/examples/js/controls/OrbitControls.js"></script>
 <style>
@@ -28,14 +28,17 @@
   --warning:#fab219;
   --critical:#d03b3b;
 
-  /* Rampa secuencial de PROFUNDIDAD (0 → 200+ km), un solo tono.
-     Validada contra la superficie oscura: L monótona, saltos ≥0.06,
-     extremo oscuro 3.6:1. Es la ÚNICA escala de profundidad del tablero. */
-  --d0:#cde2fb;  /* 0 km    */
-  --d1:#9ec5f4;  /* 50 km   */
-  --d2:#6da7ec;  /* 100 km  */
-  --d3:#3987e5;  /* 150 km  */
-  --d4:#256abf;  /* 200+ km */
+  /* DOS rampas secuenciales, una por ROL — que es lo que corresponde cuando hay
+     dos contextos secuenciales en pantalla. Ambas de un solo tono y validadas
+     contra la superficie oscura (L monótona, saltos >=0.06, extremo oscuro >=3:1).
+
+     Naranja = la capa que se ANALIZA (enjambre SGC + catálogos importados).
+     Azul    = la sismicidad histórica de REFERENCIA, sólo por debajo de 35 km. */
+  --o0:#fde0cc;  --o1:#f7b389;  --o2:#ef8348;  --o3:#d95926;  --o4:#a33f18;
+  --d0:#cde2fb;  --d1:#9ec5f4;  --d2:#6da7ec;  --d3:#3987e5;  --d4:#256abf;
+  /* <=35 km en el catálogo histórico es sismicidad CORTICAL: otra población,
+     no otro valor de profundidad, así que va en un neutro y no en la rampa. */
+  --crust:#8a8a86;
 
   --radius:10px;
   --font:system-ui,-apple-system,"Segoe UI",sans-serif;
@@ -96,6 +99,13 @@ button{cursor:pointer;background:none;border:none}
   display:grid;place-items:center;color:var(--ink-2);font-size:14px;flex-shrink:0
 }
 .iconbtn:hover{color:var(--ink);border-color:var(--axis)}
+.methodbtn{
+  min-height:30px;border-radius:8px;border:1px solid var(--line);background:var(--surface-2);
+  padding:5px 10px;color:var(--ink-2);font-size:11px;display:flex;align-items:center;gap:7px;
+  white-space:nowrap
+}
+.methodbtn:hover{color:var(--ink);border-color:var(--axis)}
+.methodbtn .info{width:16px;height:16px;border:1px solid currentColor;border-radius:50%;display:grid;place-items:center;font-weight:700}
 
 /* --- panel lateral --- */
 .tabs{display:flex;border-bottom:1px solid var(--line);flex-shrink:0}
@@ -121,6 +131,12 @@ button{cursor:pointer;background:none;border:none}
             font-size:12px;color:var(--ink-2)}
 .hint{font-size:11px;color:var(--ink-3);line-height:1.55;margin-top:7px}
 .hint b{color:var(--ink-2);font-weight:600}
+.scope{
+  border:1px solid #4c3718;background:#221c13;border-radius:8px;padding:10px 11px;
+  color:var(--ink-2);font-size:11px;line-height:1.5;margin-bottom:16px
+}
+.scope strong{display:block;color:var(--warning);font-size:11.5px;margin-bottom:2px}
+.scope button{color:var(--ink);text-decoration:underline;text-underline-offset:2px}
 
 /* switch */
 .sw{position:relative;display:inline-flex;align-items:center;gap:9px;cursor:pointer;font-size:12px;color:var(--ink-2)}
@@ -168,10 +184,16 @@ input[type="range"]::-moz-range-thumb{
 .rampTicks{display:flex;justify-content:space-between;font-size:10px;color:var(--ink-3);
            font-variant-numeric:tabular-nums;margin-top:4px}
 .keys{display:flex;flex-direction:column;gap:7px;font-size:11px;color:var(--ink-2)}
+.lgroup{margin-top:9px}
+.lgroup:first-of-type{margin-top:0}
+.ltitle{font-size:10px;color:var(--ink-2);margin-bottom:5px;line-height:1.3}
+.crustsw{display:inline-block;width:22px;height:9px;border-radius:2px;background:var(--crust);
+         vertical-align:middle;margin-right:6px}
+.lgroup .sub{font-size:10px;color:var(--ink-3);margin-bottom:5px}
 .key{display:flex;align-items:center;gap:8px}
 .mags{display:flex;align-items:flex-end;gap:14px;padding:4px 2px 0}
 .mags figure{display:flex;flex-direction:column;align-items:center;gap:5px}
-.mags .dot{border-radius:50%;background:var(--d2);box-shadow:0 0 0 2px var(--surface)}
+.mags .dot{border-radius:50%;background:var(--o2);box-shadow:0 0 0 2px var(--surface)}
 .mags figcaption{font-size:10px;color:var(--ink-3);font-variant-numeric:tabular-nums}
 
 /* tablas de datos */
@@ -239,6 +261,8 @@ table.data td.n{text-align:right}
 #credit{right:12px;top:12px;padding:6px 10px;font-size:10.5px;color:var(--ink-3)}
 #credit b{color:var(--ink-2);font-weight:600}
 #attrib{left:50%;transform:translateX(-50%);bottom:12px;padding:5px 9px;font-size:9.5px;color:var(--ink-3)}
+#attrib a,#credit a{color:inherit;text-decoration:none}
+#attrib a:hover,#credit a:hover{text-decoration:underline;color:var(--ink-2)}
 
 #loading{
   position:absolute;inset:0;display:grid;place-items:center;background:var(--plane);z-index:8;
@@ -286,6 +310,29 @@ canvas.an{display:block;width:100%;border-radius:6px;background:var(--plane)}
 .stat span:first-child{color:var(--ink-3)}
 .stat span:last-child{color:var(--ink);font-variant-numeric:tabular-nums}
 
+/* método, fuentes y ayuda */
+dialog{
+  width:min(760px,calc(100vw - 28px));max-height:min(82dvh,720px);margin:auto;
+  border:1px solid var(--axis);border-radius:14px;background:var(--surface);color:var(--ink-2);
+  box-shadow:0 24px 80px rgba(0,0,0,.72);padding:0
+}
+dialog::backdrop{background:rgba(0,0,0,.68);backdrop-filter:blur(3px)}
+.dlghead{position:sticky;top:0;z-index:2;display:flex;align-items:center;gap:12px;padding:14px 16px;
+         background:rgba(26,26,25,.96);border-bottom:1px solid var(--line)}
+.dlghead h2{font-size:15px;color:var(--ink);font-weight:650;flex:1}
+.dlgbody{padding:16px;display:grid;grid-template-columns:1fr 1fr;gap:18px 22px}
+.dlgbody section.wide{grid-column:1/-1}
+.dlgbody h3{font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--ink-3);margin-bottom:8px}
+.dlgbody p,.dlgbody li{font-size:12px;line-height:1.58}
+.dlgbody ul{padding-left:18px;display:grid;gap:6px}
+.dlgbody a{color:#8fc0fa;text-underline-offset:2px}
+.readgrid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.readitem{background:var(--surface-2);border:1px solid var(--line);border-radius:8px;padding:9px 10px}
+.readitem b{display:block;color:var(--ink);font-size:11.5px;margin-bottom:2px}
+.kbdgrid{display:grid;grid-template-columns:auto 1fr;gap:5px 10px}
+kbd{font:10px var(--font);color:var(--ink);background:var(--surface-2);border:1px solid var(--axis);border-radius:4px;padding:2px 5px;text-align:center}
+#panelScrim{display:none}
+
 /* ============================================================
    RESPONSIVE  ·  el original era inusable por debajo de 900px
    ============================================================ */
@@ -303,6 +350,8 @@ canvas.an{display:block;width:100%;border-radius:6px;background:var(--plane)}
     box-shadow:0 -12px 40px rgba(0,0,0,.6)
   }
   #panel.open{transform:translateY(0)}
+  #panelScrim{position:fixed;inset:0;z-index:29;background:rgba(0,0,0,.46)}
+  #panelScrim.on{display:block}
   #panelToggle{display:grid}
   #legendHud{width:150px;padding:8px 10px}
   #legendHud .keys,#legendHud .mags{display:none}
@@ -314,6 +363,11 @@ canvas.an{display:block;width:100%;border-radius:6px;background:var(--plane)}
   #topbar{padding:8px 10px;gap:8px}
   .chips .chip.opt{display:none}
   #scalebar{display:none}
+  .methodbtn .long{display:none}
+  .methodbtn{width:30px;padding:0;justify-content:center}
+  .dlgbody{grid-template-columns:1fr}
+  .dlgbody section.wide{grid-column:auto}
+  .readgrid{grid-template-columns:1fr}
 }
 @media (prefers-reduced-motion:reduce){*{transition-duration:.01ms!important}}
 </style>
@@ -325,8 +379,8 @@ canvas.an{display:block;width:100%;border-radius:6px;background:var(--plane)}
   <!-- ─────────── BARRA SUPERIOR ─────────── -->
   <header id="topbar">
     <div class="brand">
-      <h1>Enjambre del Chocó en 3D</h1>
-      <span class="sub">hipocentros SGC sobre la sismicidad histórica de Nazca (USGS)</span>
+      <h1>Secuencia sísmica del Chocó · 3D</h1>
+      <span class="sub">corte SGC al 13 ago 2026 · contexto histórico USGS</span>
     </div>
 
     <div class="seg" role="group" aria-label="Vistas predefinidas">
@@ -346,33 +400,43 @@ canvas.an{display:block;width:100%;border-radius:6px;background:var(--plane)}
       <span class="chip alert" id="chipErr" hidden>sin datos de placa</span>
     </div>
 
-    <button class="iconbtn" id="helpBtn" title="Atajos de teclado" aria-label="Atajos de teclado">?</button>
+    <button class="methodbtn" id="methodBtn" aria-haspopup="dialog" aria-controls="methodDialog"><span class="info">i</span><span class="long">Cómo leer + método</span></button>
     <button class="iconbtn" id="panelToggle" aria-label="Abrir controles" aria-expanded="false">☰</button>
   </header>
 
   <!-- ─────────── ESCENA ─────────── -->
   <main id="sceneWrap">
-    <canvas id="c3d"></canvas>
+    <canvas id="c3d" role="img" aria-label="Volumen 3D interactivo de hipocentros. Arrastra para rotar, usa la rueda para acercar y abre Cómo leer para conocer los supuestos."></canvas>
     <div id="overlay"></div>
 
     <div class="hud" id="legendHud">
       <h4>Profundidad <span style="text-transform:none;letter-spacing:0">km</span></h4>
-      <div class="ramp">
-        <span style="background:var(--d0)"></span><span style="background:var(--d1)"></span>
-        <span style="background:var(--d2)"></span><span style="background:var(--d3)"></span>
-        <span style="background:var(--d4)"></span>
+      <div class="lgroup">
+        <div class="ltitle">En análisis · secuencia SGC + importados</div>
+        <div class="ramp">
+          <span style="background:var(--o0)"></span><span style="background:var(--o1)"></span>
+          <span style="background:var(--o2)"></span><span style="background:var(--o3)"></span>
+          <span style="background:var(--o4)"></span>
+        </div>
+        <div class="rampTicks"><span>0</span><span>50</span><span>100</span><span>150</span><span>200+</span></div>
       </div>
-      <div class="rampTicks"><span>0</span><span>50</span><span>100</span><span>150</span><span>200+</span></div>
+      <div class="lgroup">
+        <div class="ltitle" id="keyPlate">Referencia histórica</div>
+        <div class="sub"><span class="crustsw"></span>≤35 km · somero (umbral visual)</div>
+        <div class="ramp">
+          <span style="background:var(--d0)"></span><span style="background:var(--d1)"></span>
+          <span style="background:var(--d2)"></span><span style="background:var(--d3)"></span>
+          <span style="background:var(--d4)"></span>
+        </div>
+        <div class="rampTicks"><span>35</span><span>75</span><span>120</span><span>160</span><span>200+</span></div>
+        <div class="sub" style="margin:4px 0 0">&gt;35 km · profundo</div>
+      </div>
       <div class="mags" aria-label="Escala de magnitud">
         <figure><div class="dot" style="width:6px;height:6px"></div><figcaption>M2</figcaption></figure>
         <figure><div class="dot" style="width:13px;height:13px"></div><figcaption>M4</figcaption></figure>
         <figure><div class="dot" style="width:29px;height:29px"></div><figcaption>M6</figcaption></figure>
       </div>
-      <div class="keys">
-        <div class="key"><span style="width:10px;height:10px;border-radius:50%;background:var(--d2);box-shadow:0 0 0 2px var(--plane)"></span>Enjambre (SGC, 3 días)</div>
-        <div class="key"><span style="width:5px;height:5px;border-radius:50%;background:var(--d3);opacity:.75"></span><span id="keyPlate">Referencia (USGS)</span></div>
-        <div class="key" id="keyImported" hidden><span style="width:10px;height:10px;border-radius:50%;background:var(--accent-2)"></span>Importados</div>
-      </div>
+
     </div>
 
     <div class="hud" id="scalebar"><div class="bar" id="scaleBarLine" style="width:80px"></div><span id="scaleBarTxt">100 km</span></div>
@@ -387,8 +451,8 @@ canvas.an{display:block;width:100%;border-radius:6px;background:var(--plane)}
       </svg>
     </div>
     <div class="hud" id="coordHud">–</div>
-    <div class="hud" id="credit">Datos SGC + USGS · <b>SWTectonics</b> — José Fernando Duque T.</div>
-    <div class="hud" id="attrib">© OpenStreetMap contributors © CARTO</div>
+    <div class="hud" id="credit">Datos <a href="https://www2.sgc.gov.co/sgc/sismos/Paginas/catalogo-sismico.aspx" target="_blank" rel="noopener">SGC</a> + <a href="https://earthquake.usgs.gov/fdsnws/event/1/" target="_blank" rel="noopener">USGS</a> · <b>SWTectonics</b> — José Fernando Duque T.</div>
+    <div class="hud" id="attrib">© OpenStreetMap · CARTO</div>
 
     <div id="tooltip" role="status"></div>
 
@@ -397,7 +461,7 @@ canvas.an{display:block;width:100%;border-radius:6px;background:var(--plane)}
       <button id="pickCancel">Cancelar</button>
     </div>
 
-    <div id="loading">
+    <div id="loading" role="status" aria-live="polite">
       <div class="box">
         <div class="bar"><i id="loadBar"></i></div>
         <p id="loadTxt">Cargando mapa base…</p>
@@ -521,11 +585,13 @@ canvas.an{display:block;width:100%;border-radius:6px;background:var(--plane)}
         <div class="group">
           <h3>Mapa base</h3>
           <div class="seg" style="margin-bottom:10px" role="group" aria-label="Mapa base">
-            <button data-map="relief" aria-pressed="true">Relieve</button>
+            <button data-map="geo" aria-pressed="true">Geológico</button>
+            <button data-map="relief" aria-pressed="false">Relieve</button>
             <button data-map="dark" aria-pressed="false">Oscuro</button>
             <button data-map="osm" aria-pressed="false">Calles</button>
             <button data-map="sat" aria-pressed="false">Satélite</button>
           </div>
+          <p class="hint" style="margin:0 0 10px">Unidades litoestratigráficas y fallas, compuestas sobre el relieve sombreado. Viaja como raster en el repo, no como servicio: el «Mapa Geológico de Colombia» V2023 del SGC se cae por <i>timeout</i> a los 60 s en cada recorte, y las teselas de Macrostrat mandan CORS de forma inconsistente. Armado una vez fuera de línea, carga instantáneo.</p>
           <div class="row"><label class="sw"><input type="checkbox" id="showMap" checked><i></i>Mostrar mapa</label></div>
           <div class="field">
             <div class="cap"><label for="mapOp">Opacidad</label><span class="val" id="mapOpVal">55 %</span></div>
@@ -559,7 +625,7 @@ canvas.an{display:block;width:100%;border-radius:6px;background:var(--plane)}
             <input type="range" id="plateSize" min="30" max="300" value="100">
           </div>
           <div class="row"><label class="sw"><input type="checkbox" id="plateGray"><i></i>Atenuar la placa a gris</label></div>
-          <p class="hint">La versión original pintaba el catálogo de referencia con una <b>segunda</b> escala de profundidad (azul→negro→blanco) distinta a la del enjambre: dos leyendas para la misma variable, y los puntos negros desaparecían sobre el fondo. Aquí ambas capas comparten una sola rampa y se distinguen por forma.</p>
+          <p class="hint">Cada capa lleva su propia rampa, para que lo que se analiza no se confunda con el fondo histórico: <b>naranja</b> lo analizado (enjambre e importados), <b>azul</b> la referencia. En la referencia se conserva el corte físico de los <b>35 km</b>: por encima, sismicidad cortical en un neutro —es otra población, no otro valor de profundidad—; por debajo, la placa en subducción con la rampa. El corte va en gris claro y no en negro para que no se pierda sobre el fondo oscuro.</p>
         </div>
 
         <div class="group">
@@ -568,6 +634,7 @@ canvas.an{display:block;width:100%;border-radius:6px;background:var(--plane)}
           <div class="row"><label class="sw"><input type="checkbox" id="showLabels" checked><i></i>Etiquetas y brújula</label></div>
           <div class="row"><label class="sw"><input type="checkbox" id="showMain" checked><i></i>Marcar el sismo principal</label></div>
           <div class="row"><label class="sw"><input type="checkbox" id="showNest" checked><i></i>Marcar el Nido de Bucaramanga</label></div>
+          <div class="row"><label class="sw"><input type="checkbox" id="showMoho" checked><i></i>Plano de 35 km (base de la corteza)</label></div>
           <div class="row"><label class="sw"><input type="checkbox" id="showProj"><i></i>Proyecciones en las paredes</label></div>
           <div class="row"><label class="sw"><input type="checkbox" id="showContours"><i></i>Contornos de profundidad</label></div>
           <p class="hint">Las proyecciones vuelcan cada hipocentro sobre el piso y las dos paredes del fondo: se leen a la vez la planta y las dos secciones, sin girar la cámara. Los contornos interpolan la profundidad mediana del catálogo de referencia en celdas de 0,25° — son indicativos, no un modelo de slab.</p>
@@ -803,13 +870,13 @@ const catCache = new Map();
    2 · ESTADO
    ========================================================================== */
 const state = {
-  win:'swarm', basemap:'relief', tz:'COT', catalog:'nazca',
+  win:'swarm', basemap:'geo', tz:'COT', catalog:'nazca',
   tMode:'all', tPos:1, playing:false, speed:1, loop:false, windowH:12,
   filt:{magMin:0.9, depthMin:0, depthMax:450, onlySwarm:false},
   view:{vexag:3, base:150, magScale:1.3},
   layers:{map:true, mapOp:.55, events:true, plate:true, plateOp:.45, plateSize:1,
           plateGray:false, grid:true, labels:true, main:true, nest:true, autoRot:false,
-          proj:false, contours:false},
+          proj:false, contours:false, moho:true},
   hist:'swarm', an:'swarm',
   prof:{a:null, b:null, swath:25, picking:null, trueScale:false},
   sel:null, hover:null
@@ -827,27 +894,27 @@ const NEST = {lat:6.70, lon:-73.14, depth:160, label:'Nido de Bucaramanga'};
 /* ==========================================================================
    3 · ESCALAS  ·  una sola rampa de profundidad para todo el tablero
    ========================================================================== */
-const DEPTH_STOPS = [
-  {d:0,   c:[0xcd,0xe2,0xfb]},
-  {d:50,  c:[0x9e,0xc5,0xf4]},
-  {d:100, c:[0x6d,0xa7,0xec]},
-  {d:150, c:[0x39,0x87,0xe5]},
-  {d:200, c:[0x25,0x6a,0xbf]}
-];
-function depthRGB(d){
-  if(d<=0) return DEPTH_STOPS[0].c;
-  if(d>=200) return DEPTH_STOPS[4].c;
-  for(let i=0;i<DEPTH_STOPS.length-1;i++){
-    const a=DEPTH_STOPS[i], b=DEPTH_STOPS[i+1];
-    if(d<=b.d){
-      const k=(d-a.d)/(b.d-a.d);
-      return [0,1,2].map(j=>Math.round(a.c[j]+(b.c[j]-a.c[j])*k));
-    }
-  }
-  return DEPTH_STOPS[4].c;
-}
-const depthCss = d => `rgb(${depthRGB(d).join(',')})`;
+/* Por debajo de ~35 km la sismicidad deja de ser cortical y pasa a ser de la
+   placa en subducción: son dos poblaciones distintas, y se pintan distinto. */
+const MOHO = 35;
+const CRUST_RGB = [0x8a,0x8a,0x86];
 const GRAY = [0x6d,0x6d,0x70];
+
+const RAMP_AN  = [[0xfd,0xe0,0xcc],[0xf7,0xb3,0x89],[0xef,0x83,0x48],[0xd9,0x59,0x26],[0xa3,0x3f,0x18]];
+const RAMP_REF = [[0xcd,0xe2,0xfb],[0x9e,0xc5,0xf4],[0x6d,0xa7,0xec],[0x39,0x87,0xe5],[0x25,0x6a,0xbf]];
+
+function rampAt(ramp, t){
+  t=Math.max(0,Math.min(1,t))*(ramp.length-1);
+  const i=Math.min(ramp.length-2, Math.floor(t)), k=t-i;
+  return [0,1,2].map(j=>Math.round(ramp[i][j]+(ramp[i+1][j]-ramp[i][j])*k));
+}
+const anRGB  = d => rampAt(RAMP_AN, d/200);                                  // capa en análisis: 0 → 200+ km
+const refRGB = d => d<=MOHO ? CRUST_RGB : rampAt(RAMP_REF, (d-MOHO)/(200-MOHO));  // referencia: corteza + placa
+
+const depthRGB = anRGB;
+const anCss  = d => `rgb(${anRGB(d).join(',')})`;
+const refCss = d => `rgb(${refRGB(d).join(',')})`;
+const depthCss = anCss;
 
 /* Radio en KILÓMETROS, exponencial en la magnitud (que es logarítmica en energía),
    con un piso para que un M1 siga siendo visible. La ley se declara en la leyenda
@@ -916,15 +983,29 @@ function kmBetween(aLat,aLon,bLat,bLon){
 /* ==========================================================================
    6 · MAPA BASE  (teselas con CORS, caché por ventana+estilo)
    ========================================================================== */
+/* MAPA GEOLÓGICO — por qué es un raster local y no un servicio.
+   1. El SGC publica el «Mapa Geológico de Colombia» V2023 en srvags.sgc.gov.co,
+      y su servidor sí manda CORS. Pero es un MapServer DINÁMICO sin caché: un
+      export de 1024 px de la capa de unidades cronoestratigráficas (id 733)
+      se cae por timeout a los 60 s. No puede alimentar una capa viva.
+   2. Macrostrat sí tiene teselas geológicas, pero manda `access-control-allow-origin`
+      de forma inconsistente según el nodo de Varnish que responda: en el navegador
+      41 de 42 teselas fallan con crossOrigin='anonymous'.
+   Así que el mosaico se arma una sola vez fuera de línea y viaja como PNG en el
+   repo — carga instantánea, sin CORS y sin depender de que el servicio esté arriba.
+   Se compone sobre el relieve sombreado para conservar el modelado del terreno. */
 const BASEMAPS = {
-  dark:  {url:(x,y,z)=>`https://a.basemaps.cartocdn.com/dark_all/${z}/${x}/${y}.png`,
-          attr:'© OpenStreetMap contributors © CARTO'},
-  osm:   {url:(x,y,z)=>`https://tile.openstreetmap.org/${z}/${x}/${y}.png`,
-          attr:'© OpenStreetMap contributors'},
   relief:{url:(x,y,z)=>`https://server.arcgisonline.com/ArcGIS/rest/services/World_Shaded_Relief/MapServer/tile/${z}/${y}/${x}`,
-          attr:'Relieve: © Esri'},
+          attr:'Relieve: © Esri', size:256},
+  geo:   {images:{swarm:'geologia-choco.png', wide:'geologia-region.png'},
+          attr:'Geología: Macrostrat · macrostrat.org — Relieve: © Esri',
+          under:'relief', alpha:0.88},
+  dark:  {url:(x,y,z)=>`https://a.basemaps.cartocdn.com/dark_all/${z}/${x}/${y}.png`,
+          attr:'© OpenStreetMap contributors © CARTO', size:256},
+  osm:   {url:(x,y,z)=>`https://tile.openstreetmap.org/${z}/${x}/${y}.png`,
+          attr:'© OpenStreetMap contributors', size:256},
   sat:   {url:(x,y,z)=>`https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${y}/${x}`,
-          attr:'Imagen: © Esri, Maxar, Earthstar Geographics'}
+          attr:'Imagen: © Esri, Maxar, Earthstar Geographics', size:256}
 };
 const lon2x=(lon,z)=>(lon+180)/360*Math.pow(2,z);
 const lat2y=(lat,z)=>{const r=lat*Math.PI/180;
@@ -943,25 +1024,52 @@ function loadImg(url){
 async function buildBasemap(winKey, styleKey, onProgress){
   const ck=winKey+'|'+styleKey;
   if(tileCache.has(ck)) return tileCache.get(ck);
-  const W=WINDOWS[winKey], z=W.zoom, src=BASEMAPS[styleKey].url;
+  const B=BASEMAPS[styleKey];
+  const W=WINDOWS[winKey], z=W.zoom, src=B.url, TS=B.size||256;
+  // capa servida como un único raster local (el mapa geológico)
+  if(B.images){
+    const base=await buildBasemap(winKey, B.under, onProgress);
+    const cv2=document.createElement('canvas');
+    cv2.width=base.canvas.width; cv2.height=base.canvas.height;
+    const c2=cv2.getContext('2d');
+    c2.fillStyle='#12161c'; c2.fillRect(0,0,cv2.width,cv2.height);
+    if(base.ok) c2.drawImage(base.canvas,0,0,cv2.width,cv2.height);
+    let ok2=0;
+    try{
+      const im=await loadImg(B.images[winKey]);
+      c2.globalAlpha=B.alpha; c2.drawImage(im,0,0,cv2.width,cv2.height); c2.globalAlpha=1;
+      ok2=1;
+    }catch(e){ console.warn('no se pudo cargar el raster geológico', e); }
+    const outG={canvas:cv2, ok:base.ok||ok2, bounds:base.bounds};
+    tileCache.set(ck,outG);
+    return outG;
+  }
   const x0=Math.floor(lon2x(W.west,z)), x1=Math.floor(lon2x(W.east,z));
   const y0=Math.floor(lat2y(W.north,z)), y1=Math.floor(lat2y(W.south,z));
   const nx=x1-x0+1, ny=y1-y0+1, total=nx*ny;
 
   const cv=document.createElement('canvas');
-  cv.width=nx*256; cv.height=ny*256;
+  cv.width=nx*TS; cv.height=ny*TS;
   const ctx=cv.getContext('2d');
   ctx.fillStyle='#12161c'; ctx.fillRect(0,0,cv.width,cv.height);
 
+  // capa de abajo (el relieve bajo la geología), reescalada al mismo lienzo
+  if(B.under){
+    const base=await buildBasemap(winKey, B.under, null);
+    if(base.ok) ctx.drawImage(base.canvas, 0, 0, cv.width, cv.height);
+  }
+
   let done=0, ok=0;
   const jobs=[];
+  ctx.globalAlpha = B.alpha!==undefined ? B.alpha : 1;
   for(let ty=0;ty<ny;ty++) for(let tx=0;tx<nx;tx++){
     jobs.push(loadImg(src(x0+tx,y0+ty,z))
-      .then(im=>{ ctx.drawImage(im,tx*256,ty*256,256,256); ok++; })
+      .then(im=>{ ctx.drawImage(im,tx*TS,ty*TS,TS,TS); ok++; })
       .catch(()=>{})                                  // una tesela caída no tumba el mapa
       .finally(()=>{ done++; onProgress && onProgress(done,total); }));
   }
   await Promise.all(jobs);
+  ctx.globalAlpha=1;
 
   if(ok===0){                                          // sin red: retícula honesta
     ctx.strokeStyle='#242a33';
@@ -1153,7 +1261,7 @@ function updatePlate(){
     const p=toScene(lat,lon,d);
     const hidden = d>state.view.base || d<depthMin || d>depthMax;
     pos[k]=p.x; pos[k+1]=hidden?1e6:p.y; pos[k+2]=p.z;
-    const c = state.layers.plateGray ? GRAY : depthRGB(d);
+    const c = state.layers.plateGray ? GRAY : refRGB(d);
     col[k]=c[0]/255; col[k+1]=c[1]/255; col[k+2]=c[2]/255;
     k+=3;
   }
@@ -1228,6 +1336,22 @@ function rebuildFrame(){
   drop.computeLineDistances(); drop.userData.tag='main';
   markGroup.add(drop);
 
+  // plano de 35 km: separa la sismicidad cortical de la de la placa en subducción
+  if(state.view.base>MOHO){
+    const yM=uY(MOHO), hxm=GEO.sx/2, hzm=GEO.sz/2;
+    const pl=new THREE.Mesh(new THREE.PlaneGeometry(GEO.sx, GEO.sz),
+      new THREE.MeshBasicMaterial({color:0x8a8a86, transparent:true, opacity:.055,
+                                   side:THREE.DoubleSide, depthWrite:false}));
+    pl.rotation.x=-Math.PI/2; pl.position.y=yM; pl.userData.tag='moho';
+    markGroup.add(pl);
+    const ring=new THREE.Line(new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(-hxm,yM,-hzm),new THREE.Vector3(hxm,yM,-hzm),
+        new THREE.Vector3(hxm,yM,hzm),new THREE.Vector3(-hxm,yM,hzm),new THREE.Vector3(-hxm,yM,-hzm)]),
+      new THREE.LineBasicMaterial({color:0x8a8a86, transparent:true, opacity:.55}));
+    ring.userData.tag='moho';
+    markGroup.add(ring);
+  }
+
   if(inWindow(NEST.lat,NEST.lon)){
     const np=toScene(NEST.lat,NEST.lon,NEST.depth);
     const nr=new THREE.Mesh(new THREE.RingGeometry(0.75,0.85,40),
@@ -1247,7 +1371,8 @@ function rebuildFrame(){
 }
 function updateMarkVisibility(){
   markGroup.children.forEach(c=>{
-    c.visible = c.userData.tag==='main' ? state.layers.main : state.layers.nest;
+    const t=c.userData.tag;
+    c.visible = t==='main' ? state.layers.main : (t==='moho' ? state.layers.moho : state.layers.nest);
   });
   invalidate();
 }
@@ -1308,7 +1433,7 @@ function updateSwarm(){
     dummy.scale.setScalar(r*1.28); dummy.updateMatrix();
     swarmHalo.setMatrixAt(n, dummy.matrix);
 
-    const base = e.imported ? [0xd9,0x59,0x26] : depthRGB(e.prof);
+    const base = anRGB(e.prof);      // enjambre e importados son la misma capa: la que se analiza
     // el envejecimiento se codifica mezclando hacia el fondo: nada de alfa,
     // así no hay artefactos de orden de dibujo en el punto de nube
     const f = state.tMode==='all' ? 1 : fade;
@@ -1379,6 +1504,12 @@ function updateLabels(){
       el.textContent=`M${nf(m.mag,1)} · ${fmtDT(m.t)}`;
       project(p.x,p.y,p.z,el);
     }
+    // plano de 35 km
+    if(state.layers.moho && state.view.base>MOHO){
+      const el=getLabel(i++); el.className='lbl axis'; el.style.color='var(--crust)';
+      el.textContent='35 km · base de la corteza';
+      project(-hx*1.06, uY(MOHO), hz*1.06, el);
+    }
     // nido de Bucaramanga
     if(state.layers.nest && inWindow(NEST.lat,NEST.lon)){
       const p=toScene(NEST.lat,NEST.lon,NEST.depth);
@@ -1427,7 +1558,7 @@ function setHover(i){
   const e=eventAtInstance(i);
   if(!e){ tooltip.classList.remove('on'); return; }
   tooltip.innerHTML=`
-    <div class="hd"><span class="sw3" style="background:${e.imported?'var(--accent-2)':depthCss(e.prof)}"></span>M ${nf(e.mag,1)}</div>
+    <div class="hd"><span class="sw3" style="background:${anCss(e.prof)}"></span>M ${nf(e.mag,1)}</div>
     <dl>
       <dt>Profundidad</dt><dd>${nf(e.prof,0)} km</dd>
       <dt>Fecha</dt><dd>${fmtFull(e.t)}</dd>
@@ -1683,7 +1814,7 @@ function drawStrip(){
     const shown = vis.has(e) && (state.tMode==='all' || e.t<=now);
     const past  = e.t<=now;
     sctx.strokeStyle = !vis.has(e) ? 'rgba(137,135,129,.22)'
-                     : shown ? (e.imported?'#d95926':depthCss(e.prof))
+                     : shown ? anCss(e.prof)
                      : 'rgba(137,135,129,.35)';
     sctx.lineWidth = shown?2:1;
     sctx.beginPath(); sctx.moveTo(x,mT+ph); sctx.lineTo(x,y); sctx.stroke();
@@ -1757,7 +1888,7 @@ function drawHist(){
     const y=mT+i*bh;
     hctx.fillStyle='rgba(137,135,129,.20)';
     hctx.fillRect(mL, y+1, (tot[i]/mx)*pw, bh-2);            // 2px de aire entre barras
-    hctx.fillStyle=depthCss(i*bin+bin/2);
+    hctx.fillStyle = isSwarm ? anCss(i*bin+bin/2) : refCss(i*bin+bin/2);
     hctx.fillRect(mL, y+1, (fil[i]/mx)*pw, bh-2);
     if(i%(isSwarm?3:2)===0){
       hctx.fillStyle='#898781';
@@ -1792,7 +1923,7 @@ function fillTopTable(){
   tb.innerHTML = top.length ? top.map(e=>`
     <tr data-id="${e.sgcId}">
       <td>${fmtDT(e.t)}</td>
-      <td class="n" style="color:${e.imported?'var(--accent-2)':depthCss(e.prof)}">${nf(e.mag,1)}</td>
+      <td class="n" style="color:${anCss(e.prof)}">${nf(e.mag,1)}</td>
       <td class="n">${nf(e.prof,0)}</td>
     </tr>`).join('') : '<tr><td colspan="3" style="color:var(--ink-3)">Ningún evento pasa los filtros.</td></tr>';
   tb.querySelectorAll('tr[data-id]').forEach(tr=>tr.addEventListener('click',()=>{
@@ -1932,7 +2063,7 @@ function drawProfile(){
 
   // contexto primero
   S.plate.forEach(p=>{
-    const c=state.layers.plateGray?GRAY:depthRGB(p.d);
+    const c=state.layers.plateGray?GRAY:refRGB(p.d);
     pctx.fillStyle=`rgba(${c[0]},${c[1]},${c[2]},.42)`;
     pctx.beginPath(); pctx.arc(X(p.t),Y(p.d), Math.max(1.1,0.7+(p.m-2.5)*0.45), 0, Math.PI*2); pctx.fill();
   });
@@ -1947,7 +2078,7 @@ function drawProfile(){
   }
   // enjambre encima, con aro de separación
   S.swarm.forEach(p=>{
-    const c=p.imp?[0xd9,0x59,0x26]:depthRGB(p.d);
+    const c=anRGB(p.d);
     const rr=Math.max(2.4, 1.4+Math.pow(p.m,1.7)*0.42);
     pctx.beginPath(); pctx.arc(X(p.t),Y(p.d),rr,0,Math.PI*2);
     pctx.fillStyle=`rgb(${c.join(',')})`; pctx.fill();
@@ -1996,7 +2127,6 @@ document.getElementById('fileIn').addEventListener('change',ev=>{
       eventos=eventos.concat(nuevos).sort((a,b)=>a.t-b.t);
       tMin=eventos[0].t; tMax=eventos[eventos.length-1].t;
       buildSwarm(); applyFilters(); drawStrip();
-      document.getElementById('keyImported').hidden=false;
       document.getElementById('clearImported').hidden=false;
       st.innerHTML=`✓ <b>${nuevos.length}</b> sismos importados · total ${eventos.length}.`;
     }catch(e){ st.textContent='⚠ Error al leer el archivo: '+e.message; }
@@ -2009,7 +2139,6 @@ document.getElementById('clearImported').addEventListener('click',()=>{
   eventos=eventos.filter(e=>!e.imported).sort((a,b)=>a.t-b.t);
   tMin=eventos[0].t; tMax=eventos[eventos.length-1].t;
   buildSwarm(); applyFilters(); drawStrip();
-  document.getElementById('keyImported').hidden=true;
   document.getElementById('clearImported').hidden=true;
   document.getElementById('importStatus').textContent='Importados eliminados.';
 });
@@ -2020,6 +2149,7 @@ document.getElementById('clearImported').addEventListener('click',()=>{
    Tres estadísticos canónicos que el tablero original no calculaba:
    Gutenberg-Richter (valor b), decaimiento de Omori y momento acumulado.
    ========================================================================== */
+const AN_COL = () => state.an==='swarm' ? '#ef8348' : '#3987e5';   // el gráfico se tiñe del catálogo que analiza
 const M0J   = m => Math.pow(10, 1.5*m + 9.1);   // momento escalar, N·m — Hanks & Kanamori (1979)
 const ERAD  = m => Math.pow(10, 1.5*m + 4.8);   // energía radiada, J — Gutenberg & Richter (1956)
 const HIROSHIMA = 6.3e13;                        // J, referencia divulgativa (15 kt)
@@ -2115,7 +2245,7 @@ function drawFMD(F0){
   F.bins.forEach((m,i)=>{
     if(F.cum[i]<1) return;
     ctx.beginPath(); ctx.arc(X(m), Y(F.cum[i]), 2.6, 0, Math.PI*2);
-    ctx.fillStyle='#3987e5'; ctx.fill();
+    ctx.fillStyle=AN_COL(); ctx.fill();
     ctx.strokeStyle='#0d0d0d'; ctx.lineWidth=2; ctx.stroke();
   });
   ctx.restore();
@@ -2198,7 +2328,7 @@ function drawOmori(){
   ctx.stroke(); ctx.setLineDash([]);
   S.pts.forEach(q=>{
     ctx.beginPath(); ctx.arc(X(q.t), Y(q.rate), 3, 0, Math.PI*2);
-    ctx.fillStyle='#3987e5'; ctx.fill();
+    ctx.fillStyle=AN_COL(); ctx.fill();
     ctx.strokeStyle='#0d0d0d'; ctx.lineWidth=2; ctx.stroke();
   });
   ctx.restore();
@@ -2253,11 +2383,11 @@ function drawCum(){
     ctx.lineTo(X(tMax), Y(acc)); ctx.stroke();
     return acc;
   };
-  draw(()=>100/totN, '#3987e5');
+  draw(()=>100/totN, '#ef8348');
   draw(e=>100*M0J(e.mag)/totM, '#d95926');
 
   ctx.font='600 10px system-ui,sans-serif'; ctx.textAlign='left';
-  ctx.fillStyle='#3987e5'; ctx.fillText('sismos', W-mR+5, Y(100)+22);
+  ctx.fillStyle='#ef8348'; ctx.fillText('sismos', W-mR+5, Y(100)+22);
   ctx.fillStyle='#d95926'; ctx.fillText('momento', W-mR+5, Y(100)+8);
 
   const main=list.reduce((a,e)=>e.mag>a.mag?e:a);
@@ -2329,7 +2459,7 @@ function buildContours(){
 
   let lo=Infinity, hi=-Infinity;
   for(const v of g){ if(!isNaN(v)){ if(v<lo)lo=v; if(v>hi)hi=v; } }
-  const levels=[25,50,75,100,150,200].filter(l=>l>lo+3 && l<hi-3 && l<=state.view.base);
+  const levels=[MOHO,50,75,100,150,200].filter(l=>l>lo+3 && l<hi-3 && l<=state.view.base);
   if(!levels.length) return;
 
   const dLon=(b.east-b.west)/nx, dLat=(b.north-b.south)/ny;
@@ -2357,10 +2487,11 @@ function buildContours(){
       });
     }
     if(!pts.length) return;
-    const col=depthRGB(lvl);
+    const col=refRGB(lvl);
     const line=new THREE.LineSegments(
       new THREE.BufferGeometry().setFromPoints(pts),
-      new THREE.LineBasicMaterial({color:(col[0]<<16)|(col[1]<<8)|col[2], transparent:true, opacity:.9}));
+      new THREE.LineBasicMaterial({color:(col[0]<<16)|(col[1]<<8)|col[2],
+        transparent:true, opacity: lvl===MOHO ? 1 : .8}));
     line.userData.level=lvl;
     contourGroup.add(line);
   });
@@ -2513,6 +2644,7 @@ on('showGrid','change',e=>{ state.layers.grid=e.target.checked;
 on('showLabels','change',e=>{ state.layers.labels=e.target.checked; invalidate(); });
 on('showMain','change',e=>{ state.layers.main=e.target.checked; updateMarkVisibility(); });
 on('showNest','change',e=>{ state.layers.nest=e.target.checked; updateMarkVisibility(); });
+on('showMoho','change',e=>{ state.layers.moho=e.target.checked; updateMarkVisibility(); });
 on('showProj','change',e=>{ state.layers.proj=e.target.checked; buildProj(); });
 on('showContours','change',e=>{ state.layers.contours=e.target.checked; buildContours(); });
 on('autoRot','change',e=>{ state.layers.autoRot=e.target.checked; invalidate(); });
