@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>Secuencia sísmica del Chocó en 3D · visor sismológico</title>
+<title>Enjambre del Chocó en 3D · visor sismológico</title>
 <link rel="icon" type="image/png" href="favicon.png">
 <meta name="description" content="Visor 3D de la secuencia sísmica del Chocó registrada por el SGC, con contexto histórico USGS, línea de tiempo, perfiles y análisis exploratorios.">
 <script src="https://cdn.jsdelivr.net/npm/three@0.140.0/build/three.min.js"></script>
@@ -337,6 +337,38 @@ kbd{font:10px var(--font);color:var(--ink);background:var(--surface-2);border:1p
    RESPONSIVE  ·  el original era inusable por debajo de 900px
    ============================================================ */
 #panelToggle{display:none}
+dialog#methodDlg{border:none;padding:0;background:transparent;max-width:none;max-height:none}
+dialog#methodDlg::backdrop{background:rgba(5,5,5,.72);backdrop-filter:blur(3px)}
+.dlg{background:var(--surface);border:1px solid var(--axis);border-radius:14px;
+     width:min(92vw,640px);max-height:86vh;display:flex;flex-direction:column;
+     box-shadow:0 24px 70px rgba(0,0,0,.65)}
+.dlg header{display:flex;align-items:center;justify-content:space-between;
+            padding:16px 18px 12px;border-bottom:1px solid var(--line)}
+.dlg h2{font-size:15px;color:var(--ink);font-weight:650}
+.dlgbody{overflow-y:auto;padding:14px 18px 20px}
+.dlgbody section{margin-bottom:16px}
+.dlgbody section:last-child{margin-bottom:0}
+.dlgbody h3{font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--ink-3);
+            margin-bottom:6px;font-weight:600}
+.dlgbody p{font-size:12px;line-height:1.65;color:var(--ink-2);margin-bottom:6px}
+.dlgbody p:last-child{margin-bottom:0}
+.dlgbody b{color:var(--ink);font-weight:600}
+.dlgbody .cite{color:var(--ink-3);font-size:11px}
+
+#emptyState{left:50%;top:46%;transform:translate(-50%,-50%);padding:16px 18px;text-align:center;
+            display:flex;flex-direction:column;gap:10px;align-items:center;z-index:4;max-width:280px}
+#emptyState strong{font-size:13px;color:var(--ink);font-weight:600}
+#emptyState span{font-size:11.5px;color:var(--ink-3);line-height:1.5}
+#emptyState .btn{width:auto;padding:7px 14px}
+
+#vignette{position:absolute;inset:0;pointer-events:none;z-index:1;
+          background:radial-gradient(ellipse 78% 68% at 50% 46%, transparent 40%, rgba(0,0,0,.5) 100%)}
+
+#legendHud h4{align-items:center}
+#legendHud h4 .tg{color:var(--ink-3);font-size:14px;line-height:1;padding:0 3px;margin-left:6px}
+#legendHud h4 .tg:hover{color:var(--ink)}
+#legendHud.collapsed .lgroup,#legendHud.collapsed .mags{display:none}
+
 @media (max-width:980px){
   #app{
     grid-template-columns:minmax(0,1fr);
@@ -374,12 +406,56 @@ kbd{font:10px var(--font);color:var(--ink);background:var(--surface-2);border:1p
 </head>
 <body>
 
+<dialog id="methodDlg" aria-labelledby="methodTitle">
+  <div class="dlg">
+    <header>
+      <h2 id="methodTitle">Fuentes y método</h2>
+      <button class="iconbtn" id="methodClose" aria-label="Cerrar">✕</button>
+    </header>
+    <div class="dlgbody">
+      <section>
+        <h3>Datos</h3>
+        <p><b>Capa en análisis</b> — catálogo del Servicio Geológico Colombiano descargado de archive.sgc.gov.co: 101 eventos entre el 10 de agosto 12:34 UTC y el 13 de agosto 04:31 UTC de 2026, magnitudes 0,9 a 7,4 y profundidades 0 a 118 km. Se le suma cualquier GeoJSON que se importe.</p>
+        <p><b>Referencia histórica</b> — catálogos del USGS: subducción de Nazca 1960–2026 (4.983 hipocentros) e histórico de Colombia 1900–2026 (5.786). Se recortan a la ventana geográfica activa.</p>
+        <p class="cite">Es una instantánea de tres días, no un monitoreo en vivo.</p>
+      </section>
+      <section>
+        <h3>Escala de profundidad</h3>
+        <p>Dos rampas secuenciales de un solo tono, una por función. <b>Naranja</b>, la capa en análisis, continua de 0 a 200+ km. <b>Azul</b>, la referencia, sólo por debajo de los 35 km.</p>
+        <p>Los <b>35 km</b> son un corte físico, no un escalón de color: por encima la sismicidad es cortical y por debajo pertenece a la placa en subducción. Son dos poblaciones distintas, así que la corteza va en un neutro y no en la rampa. Criterio de <b>SWTectonics</b>.</p>
+      </section>
+      <section>
+        <h3>Geometría del bloque</h3>
+        <p>La caja respeta la proporción real en kilómetros de la ventana. La <b>exageración vertical</b> es un parámetro del usuario y se muestra siempre como ×N: ninguna vista la lleva escondida.</p>
+      </section>
+      <section>
+        <h3>Estadísticos</h3>
+        <p>Magnitud de completitud <b>Mc</b> por máxima curvatura con la corrección empírica de +0,2. Valor <b>b</b> por máxima verosimilitud <span class="cite">(Aki 1965; Utsu 1965)</span> con incertidumbre de <span class="cite">Shi &amp; Bolt 1982</span>. Exponente <b>p</b> por ajuste log-log del ritmo de réplicas, con c ≈ 0.</p>
+        <p>Momento sísmico M₀ = 10<sup>1,5M+9,1</sup> N·m <span class="cite">(Hanks &amp; Kanamori 1979)</span>; energía radiada E = 10<sup>1,5M+4,8</sup> J <span class="cite">(Gutenberg &amp; Richter 1956)</span>. La equivalencia usa 6,3 × 10¹³ J por Hiroshima.</p>
+      </section>
+      <section>
+        <h3>Contornos y buzamiento</h3>
+        <p>Los contornos salen de la profundidad mediana del catálogo de referencia en celdas de 0,25°, con una pasada de relleno de huecos y una de suavizado, y <i>marching squares</i> sobre ese campo. El buzamiento aparente es una regresión lineal sobre los hipocentros dentro de la banda del perfil. <b>Ambos son indicativos: no son un modelo de slab.</b></p>
+      </section>
+      <section>
+        <h3>Mapa base</h3>
+        <p>Relieve sombreado de Esri. La geología son unidades litoestratigráficas y fallas de <b>Macrostrat</b>, pre-renderizadas como raster.</p>
+        <p class="cite">El «Mapa Geológico de Colombia» V2023 del SGC sería la fuente canónica, pero su MapServer es dinámico y sin caché: cada recorte se cae por timeout a los 60 s. Las teselas de Macrostrat mandan CORS de forma inconsistente según el nodo de caché. Por eso el mosaico se arma una vez fuera de línea.</p>
+      </section>
+      <section>
+        <h3>Créditos</h3>
+        <p>Cubo 3D de sismos de <b>SWTectonics</b> — José Fernando Duque T. Datos del SGC y del USGS.</p>
+      </section>
+    </div>
+  </div>
+</dialog>
+
 <div id="app">
 
   <!-- ─────────── BARRA SUPERIOR ─────────── -->
   <header id="topbar">
     <div class="brand">
-      <h1>Secuencia sísmica del Chocó · 3D</h1>
+      <h1>Enjambre del Chocó · 3D</h1>
       <span class="sub">corte SGC al 13 ago 2026 · contexto histórico USGS</span>
     </div>
 
@@ -400,19 +476,28 @@ kbd{font:10px var(--font);color:var(--ink);background:var(--surface-2);border:1p
       <span class="chip alert" id="chipErr" hidden>sin datos de placa</span>
     </div>
 
-    <button class="methodbtn" id="methodBtn" aria-haspopup="dialog" aria-controls="methodDialog"><span class="info">i</span><span class="long">Cómo leer + método</span></button>
+    <button class="methodbtn" id="methodBtn" aria-haspopup="dialog" aria-controls="methodDlg"><span class="info">i</span><span class="long">Fuentes y método</span></button>
+    <button class="iconbtn" id="helpBtn" title="Atajos de teclado" aria-label="Atajos de teclado">?</button>
     <button class="iconbtn" id="panelToggle" aria-label="Abrir controles" aria-expanded="false">☰</button>
   </header>
 
   <!-- ─────────── ESCENA ─────────── -->
   <main id="sceneWrap">
-    <canvas id="c3d" role="img" aria-label="Volumen 3D interactivo de hipocentros. Arrastra para rotar, usa la rueda para acercar y abre Cómo leer para conocer los supuestos."></canvas>
+    <canvas id="c3d" role="img" aria-label="Volumen 3D interactivo de hipocentros. Arrastra para rotar, usa la rueda para acercar y abre Fuentes y método para conocer los supuestos."></canvas>
+    <div id="vignette"></div>
     <div id="overlay"></div>
 
+    <div class="hud" id="emptyState" hidden>
+      <strong>Ningún evento pasa los filtros</strong>
+      <span>Baja la magnitud mínima o amplía el rango de profundidad.</span>
+      <button class="btn" id="resetFilters">Restablecer filtros</button>
+    </div>
+
     <div class="hud" id="legendHud">
-      <h4>Profundidad <span style="text-transform:none;letter-spacing:0">km</span></h4>
+      <h4>Profundidad <span style="text-transform:none;letter-spacing:0;margin-left:auto">km</span>
+        <button class="tg" id="legendToggle" aria-label="Plegar la leyenda" aria-expanded="true">–</button></h4>
       <div class="lgroup">
-        <div class="ltitle">En análisis · secuencia SGC + importados</div>
+        <div class="ltitle">En análisis · SGC + importados</div>
         <div class="ramp">
           <span style="background:var(--o0)"></span><span style="background:var(--o1)"></span>
           <span style="background:var(--o2)"></span><span style="background:var(--o3)"></span>
@@ -422,14 +507,14 @@ kbd{font:10px var(--font);color:var(--ink);background:var(--surface-2);border:1p
       </div>
       <div class="lgroup">
         <div class="ltitle" id="keyPlate">Referencia histórica</div>
-        <div class="sub"><span class="crustsw"></span>≤35 km · somero (umbral visual)</div>
+        <div class="sub"><span class="crustsw"></span>≤35 km · corteza</div>
         <div class="ramp">
           <span style="background:var(--d0)"></span><span style="background:var(--d1)"></span>
           <span style="background:var(--d2)"></span><span style="background:var(--d3)"></span>
           <span style="background:var(--d4)"></span>
         </div>
         <div class="rampTicks"><span>35</span><span>75</span><span>120</span><span>160</span><span>200+</span></div>
-        <div class="sub" style="margin:4px 0 0">&gt;35 km · profundo</div>
+        <div class="sub" style="margin:4px 0 0">&gt;35 km · placa en subducción</div>
       </div>
       <div class="mags" aria-label="Escala de magnitud">
         <figure><div class="dot" style="width:6px;height:6px"></div><figcaption>M2</figcaption></figure>
@@ -522,7 +607,7 @@ kbd{font:10px var(--font);color:var(--ink);background:var(--surface-2);border:1p
           <div class="row">
             <label class="sw"><input type="checkbox" id="onlySwarm"><i></i>Sólo el enjambre del Chocó</label>
           </div>
-          <p class="hint">El catálogo de estos tres días trae además eventos lejanos (Urabá ~7°N, Tolima, Valle) que estiran la nube. Este filtro deja sólo los que están a menos de 60 km del centro del enjambre.</p>
+          <p class="hint">Deja sólo los eventos a ≤60 km del centro. El catálogo también trae sismos de Urabá, Tolima y Valle.</p>
         </div>
 
         <div class="group">
@@ -541,15 +626,15 @@ kbd{font:10px var(--font);color:var(--ink);background:var(--surface-2);border:1p
             <thead><tr><th>Fecha</th><th class="n">M</th><th class="n">km</th></tr></thead>
             <tbody id="topTable"></tbody>
           </table>
-          <p class="hint">Haz clic en una fila para centrar la cámara en ese hipocentro.</p>
         </div>
 
         <div class="group">
           <h3>Importar catálogo propio</h3>
           <input type="file" id="fileIn" accept=".geojson,.json" class="sr">
           <label for="fileIn" class="btn" style="cursor:pointer">Cargar GeoJSON…</label>
+          <button class="btn" id="csvBtn">Descargar selección (CSV)</button>
           <button class="btn danger" id="clearImported" hidden>Quitar importados</button>
-          <p class="hint" id="importStatus">Acepta GeoJSON del SGC o del USGS: lee <b>lat/lon/profundidad/magnitud/fecha</b> desde las propiedades o desde la geometría.</p>
+          <p class="hint" id="importStatus">GeoJSON del SGC o del USGS: lat, lon, profundidad, magnitud y fecha.</p>
         </div>
       </div>
 
@@ -570,7 +655,6 @@ kbd{font:10px var(--font);color:var(--ink);background:var(--surface-2);border:1p
               <button data-base="450" aria-pressed="false">450 km</button>
             </div>
           </div>
-          <p class="hint">El bloque original llegaba a 450 km con datos hasta 118 km: el enjambre quedaba aplastado en el 26 % superior. Aquí la base se ajusta y <b>la exageración se declara</b> en vez de quedar escondida en el código.</p>
         </div>
 
         <div class="group">
@@ -591,7 +675,7 @@ kbd{font:10px var(--font);color:var(--ink);background:var(--surface-2);border:1p
             <button data-map="osm" aria-pressed="false">Calles</button>
             <button data-map="sat" aria-pressed="false">Satélite</button>
           </div>
-          <p class="hint" style="margin:0 0 10px">Unidades litoestratigráficas y fallas, compuestas sobre el relieve sombreado. Viaja como raster en el repo, no como servicio: el «Mapa Geológico de Colombia» V2023 del SGC se cae por <i>timeout</i> a los 60 s en cada recorte, y las teselas de Macrostrat mandan CORS de forma inconsistente. Armado una vez fuera de línea, carga instantáneo.</p>
+          <p class="hint" style="margin:0 0 10px">Unidades litoestratigráficas y fallas sobre relieve sombreado.</p>
           <div class="row"><label class="sw"><input type="checkbox" id="showMap" checked><i></i>Mostrar mapa</label></div>
           <div class="field">
             <div class="cap"><label for="mapOp">Opacidad</label><span class="val" id="mapOpVal">55 %</span></div>
@@ -625,7 +709,6 @@ kbd{font:10px var(--font);color:var(--ink);background:var(--surface-2);border:1p
             <input type="range" id="plateSize" min="30" max="300" value="100">
           </div>
           <div class="row"><label class="sw"><input type="checkbox" id="plateGray"><i></i>Atenuar la placa a gris</label></div>
-          <p class="hint">Cada capa lleva su propia rampa, para que lo que se analiza no se confunda con el fondo histórico: <b>naranja</b> lo analizado (enjambre e importados), <b>azul</b> la referencia. En la referencia se conserva el corte físico de los <b>35 km</b>: por encima, sismicidad cortical en un neutro —es otra población, no otro valor de profundidad—; por debajo, la placa en subducción con la rampa. El corte va en gris claro y no en negro para que no se pierda sobre el fondo oscuro.</p>
         </div>
 
         <div class="group">
@@ -637,7 +720,7 @@ kbd{font:10px var(--font);color:var(--ink);background:var(--surface-2);border:1p
           <div class="row"><label class="sw"><input type="checkbox" id="showMoho" checked><i></i>Plano de 35 km (base de la corteza)</label></div>
           <div class="row"><label class="sw"><input type="checkbox" id="showProj"><i></i>Proyecciones en las paredes</label></div>
           <div class="row"><label class="sw"><input type="checkbox" id="showContours"><i></i>Contornos de profundidad</label></div>
-          <p class="hint">Las proyecciones vuelcan cada hipocentro sobre el piso y las dos paredes del fondo: se leen a la vez la planta y las dos secciones, sin girar la cámara. Los contornos interpolan la profundidad mediana del catálogo de referencia en celdas de 0,25° — son indicativos, no un modelo de slab.</p>
+          <p class="hint">Los contornos interpolan la profundidad mediana en celdas de 0,25°: son indicativos, no un modelo de slab.</p>
         </div>
 
         <div class="group">
@@ -655,7 +738,6 @@ kbd{font:10px var(--font);color:var(--ink);background:var(--surface-2);border:1p
             <button data-tz="COT" aria-pressed="true">Hora Colombia</button>
             <button data-tz="UTC" aria-pressed="false">UTC</button>
           </div>
-          <p class="hint">El catálogo viene en UTC. Para un público colombiano, un sismo «de las 12:34 UTC» ocurrió a las <b>7:34 a. m.</b>; mostrar sólo UTC desplaza toda la narración cinco horas.</p>
         </div>
       </div>
 
@@ -715,7 +797,7 @@ kbd{font:10px var(--font);color:var(--ink);background:var(--surface-2);border:1p
         </div>
 
         <div class="group" id="profileEmpty">
-          <p class="hint" style="margin-top:0">Aún no hay sección. La banda elegida se dibuja también <b>dentro del cubo</b>, para que el corte 2D y el volumen 3D se lean como la misma cosa.</p>
+          <p class="hint" style="margin-top:0">Elige A y B sobre el mapa, o usa una sección rápida. La banda se dibuja también dentro del cubo.</p>
         </div>
 
         <div class="group" id="profileBody" hidden>
@@ -727,7 +809,7 @@ kbd{font:10px var(--font);color:var(--ink);background:var(--surface-2);border:1p
             <div class="stat"><span>Sismos en la banda</span><span id="pfN">–</span></div>
             <div class="stat"><span>Buzamiento aparente (ajuste)</span><span id="pfDip">–</span></div>
           </div>
-          <p class="hint">El buzamiento sale de una regresión lineal sobre los hipocentros de la placa dentro de la banda: es indicativo, no una superficie de slab.</p>
+          <p class="hint">Regresión lineal sobre los hipocentros de referencia en la banda. Indicativo.</p>
           <div class="btnrow" style="margin-top:10px">
             <button class="btn" id="profPng">Exportar PNG</button>
             <button class="btn" id="profClear">Borrar sección</button>
@@ -884,9 +966,9 @@ const state = {
 
 const WINDOWS = {
   swarm:{ west:-78.6, east:-74.6, south:3.2,  north:7.4,  zoom:9,
-          note:'Ventana ceñida al enjambre: 4,0° × 4,2°, ~2 km por píxel de mapa.' },
+          note:'4,0° × 4,2°, ceñida al enjambre.' },
   wide: { west:-80.2, east:-71.7, south:0.9,  north:9.7,  zoom:8,
-          note:'Ventana regional: incluye el Nido de Bucaramanga (6,7°N 73,1°O), donde se concentra el 38 % del catálogo histórico a 140–180 km.' }
+          note:'Incluye el Nido de Bucaramanga (6,7°N 73,1°O).' }
 };
 
 const NEST = {lat:6.70, lon:-73.14, depth:160, label:'Nido de Bucaramanga'};
@@ -1399,6 +1481,10 @@ function applyFilters(){
   document.getElementById('cntEvents').textContent=visible.length;
   const mx=visible.reduce((a,e)=>Math.max(a,e.mag),0);
   document.getElementById('chipMax').textContent=mx?nf(mx,1):'–';
+  const es=document.getElementById('emptyState');
+  if(es) es.hidden = visible.length>0;
+  const cb=document.getElementById('csvBtn');
+  if(cb) cb.disabled = visible.length===0;
   drawHist(); fillTopTable(); drawStrip();
   drawAnalysis();
 }
@@ -1905,11 +1991,11 @@ function drawHist(){
   const note=document.getElementById('histNote');
   if(isSwarm){
     const deep=eventos.filter(e=>e.prof>=70).length;
-    note.innerHTML=`El enjambre es <b>bimodal</b>: un pico cortical bajo 60 km y otro hacia 80–100 km. ${deep} de ${eventos.length} eventos están por debajo de 70 km.`;
+    note.innerHTML=`Distribución <b>bimodal</b>: ${deep} de ${eventos.length} eventos por debajo de 70 km.`;
   }else{
     const nest=plateData.filter(p=>p[2]>=140&&p[2]<=180).length;
     note.innerHTML = nest>50
-      ? `El pico de 140–180 km son <b>${nest.toLocaleString('es-CO')}</b> sismos del Nido de Bucaramanga (6,7°N 73,1°O), a ~600 km del Chocó: no es la misma estructura que el enjambre.`
+      ? `El pico de 140–180 km son <b>${nest.toLocaleString('es-CO')}</b> sismos del Nido de Bucaramanga, a ~600 km del Chocó.`
       : `${CATALOGS[state.catalog].label} (${CATALOGS[state.catalog].years}), recortado a la ventana geográfica activa.`;
   }
 }
@@ -2256,7 +2342,7 @@ function drawFMD(F0){
   }
   note.innerHTML = F.b===null
     ? 'Muy pocos sismos sobre Mc para ajustar el valor b.'
-    : `Número acumulado de sismos por magnitud, en escala logarítmica. <b>b = ${nf(F.b,2)}</b> sobre ${F.nFit} sismos con M ≥ ${nf(F.Mc,1)}. ${F.b<0.8 ? 'Por debajo de 0,8: esfuerzo diferencial alto, o un catálogo de pocos días todavía incompleto en magnitudes bajas.' : (F.b>1.2 ? 'Por encima de 1,2: típico de zonas con fluidos o de enjambres volcánicos.' : 'Cerca de 1, que es lo normal en corteza.')}`;
+    : `<b>b = ${nf(F.b,2)}</b> sobre ${F.nFit} sismos con M ≥ ${nf(F.Mc,1)}. ${F.b<0.8 ? 'Por debajo de 0,8: esfuerzo diferencial alto, o catálogo incompleto en magnitudes bajas.' : (F.b>1.2 ? 'Por encima de 1,2: típico de zonas con fluidos.' : 'Cerca de 1, lo normal en corteza.')}`;
 }
 
 /* Decaimiento del ritmo de réplicas: bines logarítmicos desde el sismo principal
@@ -2337,7 +2423,7 @@ function drawOmori(){
   const lect = S.p<0.45
     ? 'el ritmo casi no decae: se comporta como <b>enjambre</b>, no como una serie de réplicas clásica'
     : (S.p<1.45 ? 'decaimiento propio de una <b>serie de réplicas</b>' : 'decaimiento <b>más rápido</b> de lo habitual');
-  note.innerHTML=`Ritmo de sismos posteriores al M${nf(S.main.mag,1)}, en bines logarítmicos desde ${nf(S.desde*60,0)} min (${S.total} eventos). Con <b>p = ${nf(S.p,2)}</b> (ajuste log-log, c ≈ 0) ${lect}. La ley de Omori modificada típica cae entre 0,8 y 1,2.`;
+  note.innerHTML=`${S.total} eventos posteriores al M${nf(S.main.mag,1)}, en bines desde ${nf(S.desde*60,0)} min. Con <b>p = ${nf(S.p,2)}</b>, ${lect}.`;
 }
 
 /* Número de sismos y momento liberado, ambos en % del total: un solo eje,
@@ -2393,7 +2479,7 @@ function drawCum(){
   const main=list.reduce((a,e)=>e.mag>a.mag?e:a);
   const share=100*M0J(main.mag)/totM;
   const txt = share>99.95 ? '&gt;99,9 %' : nf(share,1)+' %';
-  note.innerHTML=`Ambas curvas están en porcentaje del total, sobre un mismo eje. El M${nf(main.mag,1)} concentra el <b>${txt}</b> del momento sísmico siendo 1 de ${totN} eventos: contar sismos y medir energía son dos historias distintas.`;
+  note.innerHTML=`El M${nf(main.mag,1)} concentra el <b>${txt}</b> del momento sísmico, siendo 1 de ${totN} eventos.`;
 }
 
 function updateTiles(L,F){
@@ -2547,9 +2633,8 @@ const on=(id,ev,fn)=>$(id).addEventListener(ev,fn);
 function showTab(k){
   document.querySelectorAll('[data-tab]').forEach(b=>b.setAttribute('aria-selected',String(b.dataset.tab===k)));
   document.querySelectorAll('.pane').forEach(p=>p.classList.toggle('on', p.id==='pane-'+k));
-  if(k==='perfil') requestAnimationFrame(drawProfile);
-  if(k==='datos') requestAnimationFrame(drawHist);
-  if(k==='analisis') requestAnimationFrame(drawAnalysis);
+  const paint = k==='perfil' ? drawProfile : (k==='datos' ? drawHist : (k==='analisis' ? drawAnalysis : null));
+  if(paint){ paint(); requestAnimationFrame(()=>paint()); }   // ya, y otra vez cuando el lienzo tenga medidas
   if(window.innerWidth<=980) $('panel').classList.add('open');
 }
 document.querySelectorAll('[data-tab]').forEach(b=>b.addEventListener('click',()=>showTab(b.dataset.tab)));
@@ -2698,11 +2783,55 @@ on('panelToggle','click',()=>{
 });
 
 // atajos
+/* ── diálogo de fuentes ── */
+const dlg=$('methodDlg');
+on('methodBtn','click',()=>dlg.showModal());
+on('methodClose','click',()=>dlg.close());
+dlg.addEventListener('click',e=>{ if(e.target===dlg) dlg.close(); });
+
+/* ── leyenda plegable ── */
+on('legendToggle','click',e=>{
+  const l=$('legendHud'), col=l.classList.toggle('collapsed');
+  e.target.textContent = col ? '+' : '–';
+  e.target.setAttribute('aria-expanded', String(!col));
+  e.target.setAttribute('aria-label', col ? 'Desplegar la leyenda' : 'Plegar la leyenda');
+});
+
+/* ── exportar la selección visible ── */
+function toCSV(){
+  const q=v=>/[",;\n]/.test(String(v)) ? '"'+String(v).replace(/"/g,'""')+'"' : v;
+  const head=['id','fecha_utc','fecha_local_utc-5','magnitud','profundidad_km','latitud','longitud','origen'];
+  const rows=visible.map(e=>{
+    const u=new Date(e.t).toISOString().replace('.000','');
+    const l=new Date(e.t-5*3600e3).toISOString().replace('.000','').replace('Z','-05:00');
+    return [e.sgcId,u,l,nf(e.mag,1),nf(e.prof,1),e.lat.toFixed(5),e.lon.toFixed(5),
+            e.imported?'importado':'SGC'].map(q).join(',');
+  });
+  return head.join(',')+'\n'+rows.join('\n');
+}
+on('csvBtn','click',()=>{
+  if(!visible.length) return;
+  const url=URL.createObjectURL(new Blob(['\ufeff'+toCSV()],{type:'text/csv;charset=utf-8'}));
+  const a=document.createElement('a');
+  a.href=url; a.download='enjambre-choco-seleccion.csv'; a.click();
+  URL.revokeObjectURL(url);
+});
+
+/* ── restablecer filtros desde el estado vacío ── */
+on('resetFilters','click',()=>{
+  state.filt={magMin:0.9, depthMin:0, depthMax:state.view.base, onlySwarm:false};
+  $('magMin').value=0.9; $('magMinVal').textContent='M0,9';
+  $('depthMin').value=0; $('depthMax').value=state.view.base;
+  $('onlySwarm').checked=false;
+  updateDepthLabel(); applyFilters(); updatePlate();
+});
+
 const HELP=`Espacio  reproducir / pausar
 ← →      mover la línea de tiempo
 1…5      vistas predefinidas
 G        retícula      M  mapa
 L        etiquetas     P  trazar sección
+F        fuentes y método
 R        restablecer   Esc  cerrar selección`;
 on('helpBtn','click',()=>alert('Atajos de teclado\n\n'+HELP));
 addEventListener('keydown',ev=>{
@@ -2720,6 +2849,7 @@ addEventListener('keydown',ev=>{
   else if(k==='m'){ $('showMap').click(); }
   else if(k==='l'){ $('showLabels').click(); }
   else if(k==='p'){ $('pickBtn').click(); }
+  else if(k==='f'){ dlg.open ? dlg.close() : dlg.showModal(); }
   else if(k==='r'){ setView('iso'); select(null); }
   else if(ev.key==='Escape'){
     select(null);
