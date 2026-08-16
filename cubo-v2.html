@@ -1,0 +1,2873 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Enjambre del Chocó en 3D · visor sismológico</title>
+<link rel="icon" type="image/png" href="favicon.png">
+<meta name="description" content="Visor 3D de la secuencia sísmica del Chocó registrada por el SGC, con contexto histórico USGS, línea de tiempo, perfiles y análisis exploratorios.">
+<script src="https://cdn.jsdelivr.net/npm/three@0.140.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.140.0/examples/js/controls/OrbitControls.js"></script>
+<style>
+/* ============================================================
+   TOKENS  ·  superficie oscura neutra (la superficie con tinte azul
+   le robaba saturación a los datos; en neutro el azul del dato canta)
+   ============================================================ */
+:root{
+  color-scheme: dark;
+  --plane:#0d0d0d;         /* plano de página / fondo 3D */
+  --surface:#1a1a19;       /* paneles */
+  --surface-2:#232322;     /* controles */
+  --line:#2c2c2a;          /* retícula hairline */
+  --axis:#383835;          /* ejes / línea base */
+  --ink:#ffffff;
+  --ink-2:#c3c2b7;
+  --ink-3:#898781;         /* etiquetas de eje */
+  --accent:#3987e5;        /* serie 1 · foco interactivo */
+  --accent-2:#d95926;      /* serie 2 · importados y marcadores del perfil */
+  --warning:#fab219;
+  --critical:#d03b3b;
+
+  /* DOS rampas secuenciales, una por ROL — que es lo que corresponde cuando hay
+     dos contextos secuenciales en pantalla. Ambas de un solo tono y validadas
+     contra la superficie oscura (L monótona, saltos >=0.06, extremo oscuro >=3:1).
+
+     Naranja = la capa que se ANALIZA (enjambre SGC + catálogos importados).
+     Azul    = la sismicidad histórica de REFERENCIA, sólo por debajo de 35 km. */
+  --o0:#fde0cc;  --o1:#f7b389;  --o2:#ef8348;  --o3:#d95926;  --o4:#a33f18;
+  --d0:#cde2fb;  --d1:#9ec5f4;  --d2:#6da7ec;  --d3:#3987e5;  --d4:#256abf;
+  /* <=35 km en el catálogo histórico es sismicidad CORTICAL: otra población,
+     no otro valor de profundidad, así que va en un neutro y no en la rampa. */
+  --crust:#8a8a86;
+
+  --radius:10px;
+  --font:system-ui,-apple-system,"Segoe UI",sans-serif;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%}
+body{
+  font-family:var(--font);
+  background:var(--plane);
+  color:var(--ink-2);
+  font-size:13px;
+  overflow:hidden;
+  -webkit-font-smoothing:antialiased;
+}
+button,input,select{font:inherit;color:inherit}
+button{cursor:pointer;background:none;border:none}
+[hidden]{display:none!important}   /* las reglas .chip/.key/.btn ganaban al atributo hidden */
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+
+/* ============================================================
+   ESTRUCTURA
+   ============================================================ */
+#app{
+  display:grid;
+  height:100dvh;
+  grid-template-columns:minmax(0,1fr) 340px;
+  grid-template-rows:auto minmax(0,1fr) auto;
+  grid-template-areas:"top top" "scene panel" "time panel";
+  gap:1px;
+  background:var(--line);
+}
+#topbar{grid-area:top;background:var(--surface);display:flex;align-items:center;gap:14px;padding:9px 14px;flex-wrap:wrap}
+#sceneWrap{grid-area:scene;position:relative;background:var(--plane);overflow:hidden;min-height:0}
+#timeWrap{grid-area:time;background:var(--surface);padding:8px 14px 10px}
+#panel{grid-area:panel;background:var(--surface);display:flex;flex-direction:column;min-height:0}
+
+/* --- barra superior --- */
+.brand{display:flex;align-items:baseline;gap:9px;min-width:0}
+.brand h1{font-size:14px;font-weight:650;color:var(--ink);letter-spacing:-.01em;white-space:nowrap}
+.brand .sub{font-size:11px;color:var(--ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.spacer{flex:1}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{
+  background:var(--surface-2);border:1px solid var(--line);border-radius:999px;
+  padding:4px 10px;font-size:11px;color:var(--ink-2);display:flex;align-items:center;gap:6px;
+  font-variant-numeric:tabular-nums;
+}
+.chip b{color:var(--ink);font-weight:600}
+.chip.alert{border-color:#5a3a1a;color:var(--warning)}
+.seg{display:flex;background:var(--surface-2);border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.seg button{padding:5px 10px;font-size:11px;color:var(--ink-3);border-right:1px solid var(--line)}
+.seg button:last-child{border-right:none}
+.seg button[aria-pressed="true"]{background:var(--accent);color:#fff;font-weight:600}
+.seg button:hover:not([aria-pressed="true"]){color:var(--ink);background:#2b2b2a}
+.iconbtn{
+  width:30px;height:30px;border-radius:8px;border:1px solid var(--line);background:var(--surface-2);
+  display:grid;place-items:center;color:var(--ink-2);font-size:14px;flex-shrink:0
+}
+.iconbtn:hover{color:var(--ink);border-color:var(--axis)}
+.methodbtn{
+  min-height:30px;border-radius:8px;border:1px solid var(--line);background:var(--surface-2);
+  padding:5px 10px;color:var(--ink-2);font-size:11px;display:flex;align-items:center;gap:7px;
+  white-space:nowrap
+}
+.methodbtn:hover{color:var(--ink);border-color:var(--axis)}
+.methodbtn .info{width:16px;height:16px;border:1px solid currentColor;border-radius:50%;display:grid;place-items:center;font-weight:700}
+
+/* --- panel lateral --- */
+.tabs{display:flex;border-bottom:1px solid var(--line);flex-shrink:0}
+.tabs button{flex:1;padding:11px 4px;font-size:12px;color:var(--ink-3);border-bottom:2px solid transparent}
+.tabs button[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--accent);font-weight:600}
+.tabpanes{flex:1;overflow-y:auto;overscroll-behavior:contain}
+.pane{display:none;padding:14px}
+.pane.on{display:block}
+.group{margin-bottom:18px}
+.group:last-child{margin-bottom:4px}
+.group>h3{
+  font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--ink-3);
+  margin-bottom:9px;font-weight:600
+}
+.row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:9px}
+.row:last-child{margin-bottom:0}
+.row label{font-size:12px;color:var(--ink-2);cursor:pointer}
+.val{font-size:11px;color:var(--ink);font-variant-numeric:tabular-nums;background:var(--surface-2);
+     border-radius:5px;padding:2px 7px;min-width:52px;text-align:center}
+.field{margin-bottom:12px}
+.field:last-child{margin-bottom:0}
+.field .cap{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;
+            font-size:12px;color:var(--ink-2)}
+.hint{font-size:11px;color:var(--ink-3);line-height:1.55;margin-top:7px}
+.hint b{color:var(--ink-2);font-weight:600}
+.scope{
+  border:1px solid #4c3718;background:#221c13;border-radius:8px;padding:10px 11px;
+  color:var(--ink-2);font-size:11px;line-height:1.5;margin-bottom:16px
+}
+.scope strong{display:block;color:var(--warning);font-size:11.5px;margin-bottom:2px}
+.scope button{color:var(--ink);text-decoration:underline;text-underline-offset:2px}
+
+/* switch */
+.sw{position:relative;display:inline-flex;align-items:center;gap:9px;cursor:pointer;font-size:12px;color:var(--ink-2)}
+.sw input{position:absolute;opacity:0;width:0;height:0}
+.sw i{width:32px;height:18px;border-radius:999px;background:var(--axis);position:relative;transition:background .15s;flex-shrink:0}
+.sw i::after{content:'';position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;
+             background:var(--ink-2);transition:transform .15s,background .15s}
+.sw input:checked + i{background:var(--accent)}
+.sw input:checked + i::after{transform:translateX(14px);background:#fff}
+.sw input:focus-visible + i{outline:2px solid var(--accent);outline-offset:2px}
+
+/* range */
+input[type="range"]{
+  -webkit-appearance:none;appearance:none;width:100%;height:20px;background:transparent;cursor:pointer
+}
+input[type="range"]::-webkit-slider-runnable-track{height:3px;border-radius:2px;background:var(--axis)}
+input[type="range"]::-moz-range-track{height:3px;border-radius:2px;background:var(--axis)}
+input[type="range"]::-webkit-slider-thumb{
+  -webkit-appearance:none;width:14px;height:14px;border-radius:50%;background:var(--ink);
+  margin-top:-5.5px;border:2px solid var(--surface);box-shadow:0 0 0 1px var(--axis)
+}
+input[type="range"]::-moz-range-thumb{
+  width:14px;height:14px;border-radius:50%;background:var(--ink);border:2px solid var(--surface);
+  box-shadow:0 0 0 1px var(--axis)
+}
+.dual{display:flex;flex-direction:column;gap:0;margin-top:-4px}
+.dual input{margin:0}
+
+.btn{
+  display:block;width:100%;text-align:center;background:var(--surface-2);border:1px solid var(--line);
+  border-radius:8px;padding:9px;font-size:12px;color:var(--ink-2)
+}
+.btn:hover{color:var(--ink);border-color:var(--axis)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+.btn.primary:hover{background:#4a93e8}
+.btn.danger{color:var(--critical);border-color:#40201f}
+.btn+.btn{margin-top:7px}
+.btnrow{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+.btnrow .btn+.btn{margin-top:0}
+
+/* leyenda */
+.legend{display:flex;flex-direction:column;gap:9px}
+.ramp{display:flex;height:9px;border-radius:3px;overflow:hidden}
+.ramp span{flex:1}
+.rampTicks{display:flex;justify-content:space-between;font-size:10px;color:var(--ink-3);
+           font-variant-numeric:tabular-nums;margin-top:4px}
+.keys{display:flex;flex-direction:column;gap:7px;font-size:11px;color:var(--ink-2)}
+.lgroup{margin-top:9px}
+.lgroup:first-of-type{margin-top:0}
+.ltitle{font-size:10px;color:var(--ink-2);margin-bottom:5px;line-height:1.3}
+.crustsw{display:inline-block;width:22px;height:9px;border-radius:2px;background:var(--crust);
+         vertical-align:middle;margin-right:6px}
+.lgroup .sub{font-size:10px;color:var(--ink-3);margin-bottom:5px}
+.key{display:flex;align-items:center;gap:8px}
+.mags{display:flex;align-items:flex-end;gap:14px;padding:4px 2px 0}
+.mags figure{display:flex;flex-direction:column;align-items:center;gap:5px}
+.mags .dot{border-radius:50%;background:var(--o2);box-shadow:0 0 0 2px var(--surface)}
+.mags figcaption{font-size:10px;color:var(--ink-3);font-variant-numeric:tabular-nums}
+
+/* tablas de datos */
+table.data{width:100%;border-collapse:collapse;font-size:11px;font-variant-numeric:tabular-nums}
+table.data th{text-align:left;color:var(--ink-3);font-weight:500;padding:5px 6px 5px 0;
+              border-bottom:1px solid var(--line)}
+table.data td{padding:5px 6px 5px 0;border-bottom:1px solid var(--line);color:var(--ink-2)}
+table.data tr:hover td{color:var(--ink);background:#212120}
+table.data tbody tr{cursor:pointer}
+table.data td.n{text-align:right}
+
+/* ============================================================
+   ESCENA 3D + capa de anotaciones HTML
+   ============================================================ */
+#c3d{width:100%;height:100%;display:block}
+#overlay{position:absolute;inset:0;pointer-events:none;overflow:hidden}
+.lbl{
+  position:absolute;transform:translate(-50%,-50%);font-size:10px;color:var(--ink-3);
+  white-space:nowrap;font-variant-numeric:tabular-nums;
+  text-shadow:0 0 4px var(--plane),0 0 8px var(--plane)
+}
+.lbl.axis{transform:translate(-100%,-50%);padding-right:9px}
+.lbl.cardinal{
+  font-size:11px;font-weight:700;color:var(--ink-2);letter-spacing:.05em;
+  background:rgba(13,13,13,.72);border:1px solid var(--line);border-radius:999px;padding:2px 8px
+}
+.lbl.cardinal.n{color:var(--ink);border-color:var(--axis)}
+.lbl.main{
+  font-size:11px;font-weight:650;color:var(--ink);background:rgba(13,13,13,.82);
+  border:1px solid var(--axis);border-radius:6px;padding:3px 8px;transform:translate(-50%,-160%)
+}
+
+#tooltip{
+  position:absolute;pointer-events:none;background:rgba(13,13,13,.94);border:1px solid var(--axis);
+  border-radius:8px;padding:9px 11px;font-size:11.5px;line-height:1.65;color:var(--ink-2);
+  box-shadow:0 6px 24px rgba(0,0,0,.55);max-width:230px;opacity:0;transition:opacity .1s;
+  font-variant-numeric:tabular-nums;z-index:5
+}
+#tooltip.on{opacity:1}
+#tooltip b{color:var(--ink);font-weight:600}
+#tooltip .hd{display:flex;align-items:center;gap:7px;margin-bottom:5px;font-size:13px;color:var(--ink);font-weight:650}
+#tooltip .sw3{width:10px;height:10px;border-radius:50%;flex-shrink:0;box-shadow:0 0 0 2px var(--plane)}
+#tooltip dl{display:grid;grid-template-columns:auto 1fr;gap:1px 10px}
+#tooltip dt{color:var(--ink-3)}
+#tooltip dd{color:var(--ink-2);text-align:right}
+
+.hud{position:absolute;background:rgba(13,13,13,.78);border:1px solid var(--line);border-radius:8px;
+     backdrop-filter:blur(6px);pointer-events:auto}
+#legendHud{left:12px;top:12px;padding:10px 12px;width:186px}
+#legendHud h4{font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--ink-3);
+              margin-bottom:7px;font-weight:600;display:flex;justify-content:space-between;align-items:center}
+#legendHud .keys{font-size:10.5px;margin-top:9px}
+#scalebar{left:12px;bottom:12px;padding:6px 9px;display:flex;flex-direction:column;gap:4px}
+#scalebar .bar{height:3px;background:var(--ink-2);border-left:1px solid var(--ink-2);
+               border-right:1px solid var(--ink-2);position:relative}
+#scalebar .bar::before,#scalebar .bar::after{content:'';position:absolute;top:-3px;width:1px;height:9px;background:var(--ink-2)}
+#scalebar .bar::before{left:0}#scalebar .bar::after{right:0}
+#scalebar span{font-size:10px;color:var(--ink-3);font-variant-numeric:tabular-nums;text-align:center}
+#compass{right:12px;bottom:52px;padding:4px;line-height:0}
+#compass svg{overflow:visible}
+#cRose{transform-origin:22px 22px;transition:transform .06s linear}
+#coordHud{right:12px;bottom:12px;padding:6px 10px;font-size:10.5px;color:var(--ink-3);
+          font-variant-numeric:tabular-nums;pointer-events:none;opacity:0;transition:opacity .12s}
+#coordHud.on{opacity:1}
+#credit{right:12px;top:12px;padding:6px 10px;font-size:10.5px;color:var(--ink-3)}
+#credit b{color:var(--ink-2);font-weight:600}
+#attrib{left:50%;transform:translateX(-50%);bottom:12px;padding:5px 9px;font-size:9.5px;color:var(--ink-3)}
+#attrib a,#credit a{color:inherit;text-decoration:none}
+#attrib a:hover,#credit a:hover{text-decoration:underline;color:var(--ink-2)}
+
+#loading{
+  position:absolute;inset:0;display:grid;place-items:center;background:var(--plane);z-index:8;
+  transition:opacity .35s;text-align:center
+}
+#loading.off{opacity:0;pointer-events:none}
+#loading .box{display:flex;flex-direction:column;align-items:center;gap:12px}
+#loading .bar{width:190px;height:2px;background:var(--axis);border-radius:2px;overflow:hidden}
+#loading .bar i{display:block;height:100%;width:0;background:var(--accent);transition:width .25s}
+#loading p{font-size:11.5px;color:var(--ink-3)}
+
+#pickBanner{
+  position:absolute;top:12px;left:50%;transform:translateX(-50%);z-index:6;
+  background:var(--accent);color:#fff;border-radius:999px;padding:7px 8px 7px 16px;font-size:12px;
+  display:none;align-items:center;gap:12px;box-shadow:0 6px 20px rgba(0,0,0,.5)
+}
+#pickBanner.on{display:flex}
+#pickBanner button{background:rgba(255,255,255,.16);border-radius:999px;padding:4px 11px;font-size:11px;color:#fff}
+
+/* ============================================================
+   TIRA DE TIEMPO
+   ============================================================ */
+#timeHead{display:flex;align-items:center;gap:10px;margin-bottom:5px;flex-wrap:wrap}
+#timeHead .t{font-size:11px;color:var(--ink-3);text-transform:uppercase;letter-spacing:.06em;font-weight:600}
+#playhead{font-size:12px;color:var(--ink);font-variant-numeric:tabular-nums;font-weight:600}
+#stripWrap{position:relative;cursor:ew-resize;touch-action:none}
+#strip{display:block;width:100%;height:78px}
+#stripLabels{display:flex;justify-content:space-between;font-size:10px;color:var(--ink-3);
+             margin-top:2px;font-variant-numeric:tabular-nums}
+
+/* ============================================================
+   PERFIL
+   ============================================================ */
+#profileChartWrap{position:relative;margin-top:10px}
+#profileChart{display:block;width:100%;height:230px;border-radius:8px;background:var(--plane)}
+.tiles{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px}
+.tile{background:var(--surface-2);border:1px solid var(--line);border-radius:8px;padding:9px 10px}
+.tile .k{font-size:10px;color:var(--ink-3);text-transform:uppercase;letter-spacing:.06em}
+.tile .v{font-size:19px;color:var(--ink);font-weight:600;margin-top:3px;line-height:1.15}
+.tile .v small{font-size:11px;color:var(--ink-3);font-weight:400}
+.chartcap{font-size:11px;color:var(--ink-3);line-height:1.5;margin-top:6px}
+canvas.an{display:block;width:100%;border-radius:6px;background:var(--plane)}
+.stat{display:flex;justify-content:space-between;font-size:11px;padding:5px 0;border-bottom:1px solid var(--line)}
+.stat:last-child{border-bottom:none}
+.stat span:first-child{color:var(--ink-3)}
+.stat span:last-child{color:var(--ink);font-variant-numeric:tabular-nums}
+
+/* método, fuentes y ayuda */
+dialog{
+  width:min(760px,calc(100vw - 28px));max-height:min(82dvh,720px);margin:auto;
+  border:1px solid var(--axis);border-radius:14px;background:var(--surface);color:var(--ink-2);
+  box-shadow:0 24px 80px rgba(0,0,0,.72);padding:0
+}
+dialog::backdrop{background:rgba(0,0,0,.68);backdrop-filter:blur(3px)}
+.dlghead{position:sticky;top:0;z-index:2;display:flex;align-items:center;gap:12px;padding:14px 16px;
+         background:rgba(26,26,25,.96);border-bottom:1px solid var(--line)}
+.dlghead h2{font-size:15px;color:var(--ink);font-weight:650;flex:1}
+.dlgbody{padding:16px;display:grid;grid-template-columns:1fr 1fr;gap:18px 22px}
+.dlgbody section.wide{grid-column:1/-1}
+.dlgbody h3{font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--ink-3);margin-bottom:8px}
+.dlgbody p,.dlgbody li{font-size:12px;line-height:1.58}
+.dlgbody ul{padding-left:18px;display:grid;gap:6px}
+.dlgbody a{color:#8fc0fa;text-underline-offset:2px}
+.readgrid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.readitem{background:var(--surface-2);border:1px solid var(--line);border-radius:8px;padding:9px 10px}
+.readitem b{display:block;color:var(--ink);font-size:11.5px;margin-bottom:2px}
+.kbdgrid{display:grid;grid-template-columns:auto 1fr;gap:5px 10px}
+kbd{font:10px var(--font);color:var(--ink);background:var(--surface-2);border:1px solid var(--axis);border-radius:4px;padding:2px 5px;text-align:center}
+#panelScrim{display:none}
+
+/* ============================================================
+   RESPONSIVE  ·  el original era inusable por debajo de 900px
+   ============================================================ */
+#panelToggle{display:none}
+dialog#methodDlg{border:none;padding:0;background:transparent;max-width:none;max-height:none}
+dialog#methodDlg::backdrop{background:rgba(5,5,5,.72);backdrop-filter:blur(3px)}
+.dlg{background:var(--surface);border:1px solid var(--axis);border-radius:14px;
+     width:min(92vw,640px);max-height:86vh;display:flex;flex-direction:column;
+     box-shadow:0 24px 70px rgba(0,0,0,.65)}
+.dlg header{display:flex;align-items:center;justify-content:space-between;
+            padding:16px 18px 12px;border-bottom:1px solid var(--line)}
+.dlg h2{font-size:15px;color:var(--ink);font-weight:650}
+.dlgbody{overflow-y:auto;padding:14px 18px 20px}
+.dlgbody section{margin-bottom:16px}
+.dlgbody section:last-child{margin-bottom:0}
+.dlgbody h3{font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--ink-3);
+            margin-bottom:6px;font-weight:600}
+.dlgbody p{font-size:12px;line-height:1.65;color:var(--ink-2);margin-bottom:6px}
+.dlgbody p:last-child{margin-bottom:0}
+.dlgbody b{color:var(--ink);font-weight:600}
+.dlgbody .cite{color:var(--ink-3);font-size:11px}
+
+#emptyState{left:50%;top:46%;transform:translate(-50%,-50%);padding:16px 18px;text-align:center;
+            display:flex;flex-direction:column;gap:10px;align-items:center;z-index:4;max-width:280px}
+#emptyState strong{font-size:13px;color:var(--ink);font-weight:600}
+#emptyState span{font-size:11.5px;color:var(--ink-3);line-height:1.5}
+#emptyState .btn{width:auto;padding:7px 14px}
+
+#vignette{position:absolute;inset:0;pointer-events:none;z-index:1;
+          background:radial-gradient(ellipse 78% 68% at 50% 46%, transparent 40%, rgba(0,0,0,.5) 100%)}
+
+#legendHud h4{align-items:center}
+#legendHud h4 .tg{color:var(--ink-3);font-size:14px;line-height:1;padding:0 3px;margin-left:6px}
+#legendHud h4 .tg:hover{color:var(--ink)}
+#legendHud.collapsed .lgroup,#legendHud.collapsed .mags{display:none}
+
+@media (max-width:980px){
+  #app{
+    grid-template-columns:minmax(0,1fr);
+    grid-template-rows:auto minmax(0,1fr) auto;
+    grid-template-areas:"top" "scene" "time";
+  }
+  #panel{
+    position:fixed;inset:auto 0 0 0;height:min(70dvh,540px);z-index:30;
+    border-top:1px solid var(--axis);border-radius:16px 16px 0 0;
+    transform:translateY(100%);transition:transform .25s ease;
+    box-shadow:0 -12px 40px rgba(0,0,0,.6)
+  }
+  #panel.open{transform:translateY(0)}
+  #panelScrim{position:fixed;inset:0;z-index:29;background:rgba(0,0,0,.46)}
+  #panelScrim.on{display:block}
+  #panelToggle{display:grid}
+  #legendHud{width:150px;padding:8px 10px}
+  #legendHud .keys,#legendHud .mags{display:none}
+  .brand .sub{display:none}
+  #credit{display:none}
+  #strip{height:62px}
+}
+@media (max-width:620px){
+  #topbar{padding:8px 10px;gap:8px}
+  .chips .chip.opt{display:none}
+  #scalebar{display:none}
+  .methodbtn .long{display:none}
+  .methodbtn{width:30px;padding:0;justify-content:center}
+  .dlgbody{grid-template-columns:1fr}
+  .dlgbody section.wide{grid-column:auto}
+  .readgrid{grid-template-columns:1fr}
+}
+@media (prefers-reduced-motion:reduce){*{transition-duration:.01ms!important}}
+</style>
+</head>
+<body>
+
+<dialog id="methodDlg" aria-labelledby="methodTitle">
+  <div class="dlg">
+    <header>
+      <h2 id="methodTitle">Fuentes y método</h2>
+      <button class="iconbtn" id="methodClose" aria-label="Cerrar">✕</button>
+    </header>
+    <div class="dlgbody">
+      <section>
+        <h3>Datos</h3>
+        <p><b>Capa en análisis</b> — catálogo del Servicio Geológico Colombiano descargado de archive.sgc.gov.co: 101 eventos entre el 10 de agosto 12:34 UTC y el 13 de agosto 04:31 UTC de 2026, magnitudes 0,9 a 7,4 y profundidades 0 a 118 km. Se le suma cualquier GeoJSON que se importe.</p>
+        <p><b>Referencia histórica</b> — catálogos del USGS: subducción de Nazca 1960–2026 (4.983 hipocentros) e histórico de Colombia 1900–2026 (5.786). Se recortan a la ventana geográfica activa.</p>
+        <p class="cite">Es una instantánea de tres días, no un monitoreo en vivo.</p>
+      </section>
+      <section>
+        <h3>Escala de profundidad</h3>
+        <p>Dos rampas secuenciales de un solo tono, una por función. <b>Naranja</b>, la capa en análisis, continua de 0 a 200+ km. <b>Azul</b>, la referencia, sólo por debajo de los 35 km.</p>
+        <p>Los <b>35 km</b> son un corte físico, no un escalón de color: por encima la sismicidad es cortical y por debajo pertenece a la placa en subducción. Son dos poblaciones distintas, así que la corteza va en un neutro y no en la rampa. Criterio de <b>SWTectonics</b>.</p>
+      </section>
+      <section>
+        <h3>Geometría del bloque</h3>
+        <p>La caja respeta la proporción real en kilómetros de la ventana. La <b>exageración vertical</b> es un parámetro del usuario y se muestra siempre como ×N: ninguna vista la lleva escondida.</p>
+      </section>
+      <section>
+        <h3>Estadísticos</h3>
+        <p>Magnitud de completitud <b>Mc</b> por máxima curvatura con la corrección empírica de +0,2. Valor <b>b</b> por máxima verosimilitud <span class="cite">(Aki 1965; Utsu 1965)</span> con incertidumbre de <span class="cite">Shi &amp; Bolt 1982</span>. Exponente <b>p</b> por ajuste log-log del ritmo de réplicas, con c ≈ 0.</p>
+        <p>Momento sísmico M₀ = 10<sup>1,5M+9,1</sup> N·m <span class="cite">(Hanks &amp; Kanamori 1979)</span>; energía radiada E = 10<sup>1,5M+4,8</sup> J <span class="cite">(Gutenberg &amp; Richter 1956)</span>. La equivalencia usa 6,3 × 10¹³ J por Hiroshima.</p>
+      </section>
+      <section>
+        <h3>Contornos y buzamiento</h3>
+        <p>Los contornos salen de la profundidad mediana del catálogo de referencia en celdas de 0,25°, con una pasada de relleno de huecos y una de suavizado, y <i>marching squares</i> sobre ese campo. El buzamiento aparente es una regresión lineal sobre los hipocentros dentro de la banda del perfil. <b>Ambos son indicativos: no son un modelo de slab.</b></p>
+      </section>
+      <section>
+        <h3>Mapa base</h3>
+        <p>Relieve sombreado de Esri. La geología son unidades litoestratigráficas y fallas de <b>Macrostrat</b>, pre-renderizadas como raster.</p>
+        <p class="cite">El «Mapa Geológico de Colombia» V2023 del SGC sería la fuente canónica, pero su MapServer es dinámico y sin caché: cada recorte se cae por timeout a los 60 s. Las teselas de Macrostrat mandan CORS de forma inconsistente según el nodo de caché. Por eso el mosaico se arma una vez fuera de línea.</p>
+      </section>
+      <section>
+        <h3>Créditos</h3>
+        <p>Cubo 3D de sismos de <b>SWTectonics</b> — José Fernando Duque T. Datos del SGC y del USGS.</p>
+      </section>
+    </div>
+  </div>
+</dialog>
+
+<div id="app">
+
+  <!-- ─────────── BARRA SUPERIOR ─────────── -->
+  <header id="topbar">
+    <div class="brand">
+      <h1>Enjambre del Chocó · 3D</h1>
+      <span class="sub">corte SGC al 13 ago 2026 · contexto histórico USGS</span>
+    </div>
+
+    <div class="seg" role="group" aria-label="Vistas predefinidas">
+      <button data-view="iso" aria-pressed="true">Isométrica</button>
+      <button data-view="plan">Planta</button>
+      <button data-view="we">Corte E–O</button>
+      <button data-view="ns">Corte N–S</button>
+      <button data-view="zoom">Al enjambre</button>
+    </div>
+
+    <span class="spacer"></span>
+
+    <div class="chips" aria-live="polite">
+      <span class="chip"><b id="chipVisible">0</b> visibles<span style="color:var(--ink-3)">/ <span id="chipTotal">0</span></span></span>
+      <span class="chip opt">M<b id="chipMax">–</b> máx.</span>
+      <span class="chip opt" id="chipPlate">ref. <b>–</b></span>
+      <span class="chip alert" id="chipErr" hidden>sin datos de placa</span>
+    </div>
+
+    <button class="methodbtn" id="methodBtn" aria-haspopup="dialog" aria-controls="methodDlg"><span class="info">i</span><span class="long">Fuentes y método</span></button>
+    <button class="iconbtn" id="helpBtn" title="Atajos de teclado" aria-label="Atajos de teclado">?</button>
+    <button class="iconbtn" id="panelToggle" aria-label="Abrir controles" aria-expanded="false">☰</button>
+  </header>
+
+  <!-- ─────────── ESCENA ─────────── -->
+  <main id="sceneWrap">
+    <canvas id="c3d" role="img" aria-label="Volumen 3D interactivo de hipocentros. Arrastra para rotar, usa la rueda para acercar y abre Fuentes y método para conocer los supuestos."></canvas>
+    <div id="vignette"></div>
+    <div id="overlay"></div>
+
+    <div class="hud" id="emptyState" hidden>
+      <strong>Ningún evento pasa los filtros</strong>
+      <span>Baja la magnitud mínima o amplía el rango de profundidad.</span>
+      <button class="btn" id="resetFilters">Restablecer filtros</button>
+    </div>
+
+    <div class="hud" id="legendHud">
+      <h4>Profundidad <span style="text-transform:none;letter-spacing:0;margin-left:auto">km</span>
+        <button class="tg" id="legendToggle" aria-label="Plegar la leyenda" aria-expanded="true">–</button></h4>
+      <div class="lgroup">
+        <div class="ltitle">En análisis · SGC + importados</div>
+        <div class="ramp">
+          <span style="background:var(--o0)"></span><span style="background:var(--o1)"></span>
+          <span style="background:var(--o2)"></span><span style="background:var(--o3)"></span>
+          <span style="background:var(--o4)"></span>
+        </div>
+        <div class="rampTicks"><span>0</span><span>50</span><span>100</span><span>150</span><span>200+</span></div>
+      </div>
+      <div class="lgroup">
+        <div class="ltitle" id="keyPlate">Referencia histórica</div>
+        <div class="sub"><span class="crustsw"></span>≤35 km · corteza</div>
+        <div class="ramp">
+          <span style="background:var(--d0)"></span><span style="background:var(--d1)"></span>
+          <span style="background:var(--d2)"></span><span style="background:var(--d3)"></span>
+          <span style="background:var(--d4)"></span>
+        </div>
+        <div class="rampTicks"><span>35</span><span>75</span><span>120</span><span>160</span><span>200+</span></div>
+        <div class="sub" style="margin:4px 0 0">&gt;35 km · placa en subducción</div>
+      </div>
+      <div class="mags" aria-label="Escala de magnitud">
+        <figure><div class="dot" style="width:6px;height:6px"></div><figcaption>M2</figcaption></figure>
+        <figure><div class="dot" style="width:13px;height:13px"></div><figcaption>M4</figcaption></figure>
+        <figure><div class="dot" style="width:29px;height:29px"></div><figcaption>M6</figcaption></figure>
+      </div>
+
+    </div>
+
+    <div class="hud" id="scalebar"><div class="bar" id="scaleBarLine" style="width:80px"></div><span id="scaleBarTxt">100 km</span></div>
+    <div class="hud" id="compass" aria-label="Orientación">
+      <svg viewBox="0 0 44 44" width="40" height="40" aria-hidden="true">
+        <circle cx="22" cy="22" r="17" fill="none" stroke="#383835" stroke-width="1"/>
+        <g id="cRose">
+          <path d="M22 5 L27 24 L22 20 L17 24 Z" fill="#ffffff"/>
+          <path d="M22 39 L17 20 L22 24 L27 20 Z" fill="#4a4a46"/>
+          <text x="22" y="3.4" text-anchor="middle" font-size="7" font-weight="700" fill="#ffffff" font-family="system-ui,sans-serif">N</text>
+        </g>
+      </svg>
+    </div>
+    <div class="hud" id="coordHud">–</div>
+    <div class="hud" id="credit">Datos <a href="https://www2.sgc.gov.co/sgc/sismos/Paginas/catalogo-sismico.aspx" target="_blank" rel="noopener">SGC</a> + <a href="https://earthquake.usgs.gov/fdsnws/event/1/" target="_blank" rel="noopener">USGS</a> · <b>SWTectonics</b> — José Fernando Duque T.</div>
+    <div class="hud" id="attrib">© OpenStreetMap · CARTO</div>
+
+    <div id="tooltip" role="status"></div>
+
+    <div id="pickBanner">
+      <span id="pickText">Haz clic sobre el mapa para el punto <b>A</b></span>
+      <button id="pickCancel">Cancelar</button>
+    </div>
+
+    <div id="loading" role="status" aria-live="polite">
+      <div class="box">
+        <div class="bar"><i id="loadBar"></i></div>
+        <p id="loadTxt">Cargando mapa base…</p>
+      </div>
+    </div>
+  </main>
+
+  <!-- ─────────── TIRA DE TIEMPO ─────────── -->
+  <section id="timeWrap" aria-label="Línea de tiempo">
+    <div id="timeHead">
+      <button class="iconbtn" id="playBtn" aria-label="Reproducir">▶</button>
+      <span id="playhead">–</span>
+      <div class="seg" role="group" aria-label="Modo temporal">
+        <button data-tmode="all" aria-pressed="true">Todos</button>
+        <button data-tmode="trail" aria-pressed="false">Estela</button>
+        <button data-tmode="window" aria-pressed="false">Ventana</button>
+      </div>
+      <div class="seg" role="group" aria-label="Velocidad">
+        <button data-speed="0.5" aria-pressed="false">0,5×</button>
+        <button data-speed="1" aria-pressed="true">1×</button>
+        <button data-speed="2" aria-pressed="false">2×</button>
+        <button data-speed="4" aria-pressed="false">4×</button>
+      </div>
+      <label class="sw" title="Repetir la reproducción"><input type="checkbox" id="loopChk"><i></i>Bucle</label>
+      <span class="spacer"></span>
+      <span class="t" id="tzLabel">hora local (UTC−5)</span>
+    </div>
+    <div id="stripWrap"><canvas id="strip"></canvas></div>
+    <div id="stripLabels"><span id="tStart">–</span><span id="tEnd">–</span></div>
+  </section>
+
+  <!-- ─────────── PANEL ─────────── -->
+  <aside id="panel">
+    <div class="tabs" role="tablist">
+      <button role="tab" aria-selected="true"  data-tab="datos">Datos</button>
+      <button role="tab" aria-selected="false" data-tab="vista">Vista</button>
+      <button role="tab" aria-selected="false" data-tab="analisis">Análisis</button>
+      <button role="tab" aria-selected="false" data-tab="perfil">Perfil</button>
+    </div>
+    <div class="tabpanes">
+
+      <!-- ══ DATOS ══ -->
+      <div class="pane on" id="pane-datos" role="tabpanel">
+
+        <div class="group">
+          <h3>Filtros</h3>
+          <div class="field">
+            <div class="cap"><label for="magMin">Magnitud mínima</label><span class="val" id="magMinVal">M0,9</span></div>
+            <input type="range" id="magMin" min="0.9" max="7.4" step="0.1" value="0.9">
+          </div>
+          <div class="field">
+            <div class="cap"><span>Profundidad</span><span class="val" id="depthVal">0–150 km</span></div>
+            <div class="dual">
+              <input type="range" id="depthMin" min="0" max="450" step="5" value="0" aria-label="Profundidad mínima">
+              <input type="range" id="depthMax" min="0" max="450" step="5" value="450" aria-label="Profundidad máxima">
+            </div>
+          </div>
+          <div class="row">
+            <label class="sw"><input type="checkbox" id="onlySwarm"><i></i>Sólo el enjambre del Chocó</label>
+          </div>
+          <p class="hint">Deja sólo los eventos a ≤60 km del centro. El catálogo también trae sismos de Urabá, Tolima y Valle.</p>
+        </div>
+
+        <div class="group">
+          <h3>Distribución en profundidad</h3>
+          <div class="seg" style="margin-bottom:9px" role="group" aria-label="Fuente del histograma">
+            <button data-hist="swarm" aria-pressed="true">Enjambre</button>
+            <button data-hist="plate" aria-pressed="false">Referencia</button>
+          </div>
+          <canvas id="histChart" style="width:100%;height:190px;display:block"></canvas>
+          <p class="hint" id="histNote"></p>
+        </div>
+
+        <div class="group">
+          <h3>Eventos mayores</h3>
+          <table class="data">
+            <thead><tr><th>Fecha</th><th class="n">M</th><th class="n">km</th></tr></thead>
+            <tbody id="topTable"></tbody>
+          </table>
+        </div>
+
+        <div class="group">
+          <h3>Importar catálogo propio</h3>
+          <input type="file" id="fileIn" accept=".geojson,.json" class="sr">
+          <label for="fileIn" class="btn" style="cursor:pointer">Cargar GeoJSON…</label>
+          <button class="btn" id="csvBtn">Descargar selección (CSV)</button>
+          <button class="btn danger" id="clearImported" hidden>Quitar importados</button>
+          <p class="hint" id="importStatus">GeoJSON del SGC o del USGS: lat, lon, profundidad, magnitud y fecha.</p>
+        </div>
+      </div>
+
+      <!-- ══ VISTA ══ -->
+      <div class="pane" id="pane-vista" role="tabpanel">
+
+        <div class="group">
+          <h3>Geometría del bloque</h3>
+          <div class="field">
+            <div class="cap"><label for="vexag">Exageración vertical</label><span class="val" id="vexagVal">×3,0</span></div>
+            <input type="range" id="vexag" min="1" max="12" step="0.5" value="3">
+          </div>
+          <div class="field">
+            <div class="cap"><span>Base del bloque</span></div>
+            <div class="seg" role="group" aria-label="Profundidad máxima del bloque">
+              <button data-base="150" aria-pressed="true">150 km</button>
+              <button data-base="250" aria-pressed="false">250 km</button>
+              <button data-base="450" aria-pressed="false">450 km</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="group">
+          <h3>Ventana geográfica</h3>
+          <div class="seg" role="group" aria-label="Ventana geográfica">
+            <button data-win="swarm" aria-pressed="true">Chocó</button>
+            <button data-win="wide" aria-pressed="false">Región</button>
+          </div>
+          <p class="hint" id="winNote"></p>
+        </div>
+
+        <div class="group">
+          <h3>Mapa base</h3>
+          <div class="seg" style="margin-bottom:10px" role="group" aria-label="Mapa base">
+            <button data-map="geo" aria-pressed="true">Geológico</button>
+            <button data-map="relief" aria-pressed="false">Relieve</button>
+            <button data-map="dark" aria-pressed="false">Oscuro</button>
+            <button data-map="osm" aria-pressed="false">Calles</button>
+            <button data-map="sat" aria-pressed="false">Satélite</button>
+          </div>
+          <p class="hint" style="margin:0 0 10px">Unidades litoestratigráficas y fallas sobre relieve sombreado.</p>
+          <div class="row"><label class="sw"><input type="checkbox" id="showMap" checked><i></i>Mostrar mapa</label></div>
+          <div class="field">
+            <div class="cap"><label for="mapOp">Opacidad</label><span class="val" id="mapOpVal">55 %</span></div>
+            <input type="range" id="mapOp" min="0" max="100" value="55">
+          </div>
+        </div>
+
+        <div class="group">
+          <h3>Capas</h3>
+          <div class="row"><label class="sw"><input type="checkbox" id="showEvents" checked><i></i>Enjambre</label>
+            <span class="val" id="cntEvents">0</span></div>
+          <div class="field">
+            <div class="cap"><label for="magScale">Escala de magnitud</label><span class="val" id="magScaleVal">130 %</span></div>
+            <input type="range" id="magScale" min="40" max="260" value="130">
+          </div>
+          <div class="field">
+            <div class="cap"><span>Catálogo de referencia</span></div>
+            <div class="seg" role="group" aria-label="Catálogo de referencia">
+              <button data-cat="nazca" aria-pressed="true">Nazca 1960</button>
+              <button data-cat="colombia" aria-pressed="false">Colombia 1900</button>
+            </div>
+          </div>
+          <div class="row"><label class="sw"><input type="checkbox" id="showPlate" checked><i></i><span id="layerPlateLabel">Subducción Nazca</span></label>
+            <span class="val" id="cntPlate">0</span></div>
+          <div class="field">
+            <div class="cap"><label for="plateOp">Opacidad placa</label><span class="val" id="plateOpVal">45 %</span></div>
+            <input type="range" id="plateOp" min="0" max="100" value="45">
+          </div>
+          <div class="field">
+            <div class="cap"><label for="plateSize">Tamaño de punto</label><span class="val" id="plateSizeVal">100 %</span></div>
+            <input type="range" id="plateSize" min="30" max="300" value="100">
+          </div>
+          <div class="row"><label class="sw"><input type="checkbox" id="plateGray"><i></i>Atenuar la placa a gris</label></div>
+        </div>
+
+        <div class="group">
+          <h3>Referencias</h3>
+          <div class="row"><label class="sw"><input type="checkbox" id="showGrid" checked><i></i>Retícula y ejes</label></div>
+          <div class="row"><label class="sw"><input type="checkbox" id="showLabels" checked><i></i>Etiquetas y brújula</label></div>
+          <div class="row"><label class="sw"><input type="checkbox" id="showMain" checked><i></i>Marcar el sismo principal</label></div>
+          <div class="row"><label class="sw"><input type="checkbox" id="showNest" checked><i></i>Marcar el Nido de Bucaramanga</label></div>
+          <div class="row"><label class="sw"><input type="checkbox" id="showMoho" checked><i></i>Plano de 35 km (base de la corteza)</label></div>
+          <div class="row"><label class="sw"><input type="checkbox" id="showProj"><i></i>Proyecciones en las paredes</label></div>
+          <div class="row"><label class="sw"><input type="checkbox" id="showContours"><i></i>Contornos de profundidad</label></div>
+          <p class="hint">Los contornos interpolan la profundidad mediana en celdas de 0,25°: son indicativos, no un modelo de slab.</p>
+        </div>
+
+        <div class="group">
+          <h3>Cámara</h3>
+          <div class="row"><label class="sw"><input type="checkbox" id="autoRot"><i></i>Rotación automática</label></div>
+          <div class="btnrow">
+            <button class="btn" id="resetCam">Restablecer</button>
+            <button class="btn" id="pngBtn">Exportar PNG</button>
+          </div>
+        </div>
+
+        <div class="group">
+          <h3>Formato</h3>
+          <div class="seg" role="group" aria-label="Zona horaria">
+            <button data-tz="COT" aria-pressed="true">Hora Colombia</button>
+            <button data-tz="UTC" aria-pressed="false">UTC</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══ ANÁLISIS ══ -->
+      <div class="pane" id="pane-analisis" role="tabpanel">
+
+        <div class="group">
+          <h3>Catálogo analizado</h3>
+          <div class="seg" role="group" aria-label="Catálogo del análisis">
+            <button data-an="swarm" aria-pressed="true">Enjambre</button>
+            <button data-an="plate" aria-pressed="false">Referencia</button>
+          </div>
+          <div class="tiles" style="margin-top:10px">
+            <div class="tile"><div class="k">Valor b</div><div class="v" id="tileB">–</div></div>
+            <div class="tile"><div class="k">Mc</div><div class="v" id="tileMc">–</div></div>
+            <div class="tile"><div class="k">Momento total</div><div class="v" id="tileM0">–</div></div>
+            <div class="tile"><div class="k">Equivale a</div><div class="v" id="tileEq">–</div></div>
+          </div>
+        </div>
+
+        <div class="group">
+          <h3>Distribución frecuencia-magnitud</h3>
+          <canvas id="fmdChart" class="an" style="height:200px"></canvas>
+          <p class="chartcap" id="fmdNote"></p>
+        </div>
+
+        <div class="group">
+          <h3>Ritmo de réplicas (ley de Omori)</h3>
+          <canvas id="omoriChart" class="an" style="height:190px"></canvas>
+          <p class="chartcap" id="omoriNote"></p>
+        </div>
+
+        <div class="group">
+          <h3>Sismos frente a energía liberada</h3>
+          <canvas id="cumChart" class="an" style="height:190px"></canvas>
+          <p class="chartcap" id="cumNote"></p>
+        </div>
+      </div>
+
+      <!-- ══ PERFIL ══ -->
+      <div class="pane" id="pane-perfil" role="tabpanel">
+        <div class="group">
+          <h3>Trazar una sección</h3>
+          <button class="btn primary" id="pickBtn">Elegir A y B sobre el mapa</button>
+          <div class="btnrow" style="margin-top:7px">
+            <button class="btn" data-quick="trench">⟂ a la fosa (N75°E)</button>
+            <button class="btn" data-quick="ns">N–S por el enjambre</button>
+          </div>
+          <div class="field" style="margin-top:12px">
+            <div class="cap"><label for="swath">Ancho de banda</label><span class="val" id="swathVal">±25 km</span></div>
+            <input type="range" id="swath" min="5" max="150" step="5" value="25">
+          </div>
+          <div class="row">
+            <label class="sw"><input type="checkbox" id="profTrue"><i></i>Escala real 1:1</label>
+            <span class="val" id="profExagVal">×2,0</span>
+          </div>
+        </div>
+
+        <div class="group" id="profileEmpty">
+          <p class="hint" style="margin-top:0">Elige A y B sobre el mapa, o usa una sección rápida. La banda se dibuja también dentro del cubo.</p>
+        </div>
+
+        <div class="group" id="profileBody" hidden>
+          <h3>Sección de profundidad</h3>
+          <div id="profileChartWrap"><canvas id="profileChart"></canvas></div>
+          <div style="margin-top:10px">
+            <div class="stat"><span>Longitud del perfil</span><span id="pfLen">–</span></div>
+            <div class="stat"><span>Azimut</span><span id="pfAz">–</span></div>
+            <div class="stat"><span>Sismos en la banda</span><span id="pfN">–</span></div>
+            <div class="stat"><span>Buzamiento aparente (ajuste)</span><span id="pfDip">–</span></div>
+          </div>
+          <p class="hint">Regresión lineal sobre los hipocentros de referencia en la banda. Indicativo.</p>
+          <div class="btnrow" style="margin-top:10px">
+            <button class="btn" id="profPng">Exportar PNG</button>
+            <button class="btn" id="profClear">Borrar sección</button>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </aside>
+</div>
+
+<script>
+"use strict";
+/* ==========================================================================
+   1 · DATOS
+   Catálogo SGC descargado por el autor original (archive.sgc.gov.co),
+   10 ago 2026 07:34 UTC → 13 ago 2026 04:31 UTC.
+   [id, magnitud, profundidad (negativa = bajo superficie), lat, lon, tiempo UTC]
+   ========================================================================== */
+const RAW = [
+['SGC2026pqqmro',7.4,-99.0,4.976333333333333,-76.319,'2026-08-10T12:34:29+00:00'],
+['SGC2026pqryij',4.8,-88.0,4.8785,-76.44483333333334,'2026-08-10T13:18:10+00:00'],
+['SGC2026pqrtud',2.8,-48.0,4.6935,-76.53,'2026-08-10T13:12:56+00:00'],
+['SGC2026pqueew',2.4,-100.0,4.829,-76.4715,'2026-08-10T14:25:20+00:00'],
+['SGC2026pquomq',2.4,-88.0,4.529666666666667,-76.485,'2026-08-10T14:37:17+00:00'],
+['SGC2026pqvjkv',3.8,-88.0,4.844166666666666,-76.4095,'2026-08-10T15:01:31+00:00'],
+['SGC2026pqzirp',1.2,-2.0,4.894833333333334,-75.3035,'2026-08-10T17:01:24+00:00'],
+['SGC2026pqzkxc',1.6,-91.0,4.803166666666667,-76.46533333333333,'2026-08-10T17:03:58+00:00'],
+['SGC2026prxwtq',1.8,-99.0,4.849833333333334,-76.373,'2026-08-11T05:21:52+00:00'],
+['SGC2026prygxr',1.7,-50.0,4.485966454503836,-76.5584266358237,'2026-08-11T05:33:37+00:00'],
+['SGC2026pryhvk',2.2,-86.0,4.754577845921141,-76.49367658062563,'2026-08-11T05:34:43+00:00'],
+['SGC2026pryqsr',2.2,-89.0,4.396076815643714,-76.6570911805299,'2026-08-11T05:45:02+00:00'],
+['SGC2026pryvci',1.9,-115.0,4.637333333333333,-76.60283333333334,'2026-08-11T05:50:07+00:00'],
+['SGC2026pryyzh',2.8,-93.0,4.87725076483613,-76.37061639705767,'2026-08-11T05:54:36+00:00'],
+['SGC2026psairi',1.7,-52.0,4.397134340806774,-76.71783400499024,'2026-08-11T06:36:00+00:00'],
+['SGC2026psbkof',1.8,-73.0,4.502833333333333,-76.64116666666666,'2026-08-11T07:08:24+00:00'],
+['SGC2026psbmmf',2.0,-86.0,4.7545,-76.38083333333333,'2026-08-11T07:10:38+00:00'],
+['SGC2026pscvzk',1.7,-102.0,4.954,-76.22316666666667,'2026-08-11T07:51:50+00:00'],
+['SGC2026psegmm',1.9,-90.0,4.812741729889455,-76.37562571554031,'2026-08-11T08:34:12+00:00'],
+['SGC2026psejsw',2.2,-79.0,4.661515631571838,-76.54224353137778,'2026-08-11T08:37:56+00:00'],
+['SGC2026psfqyb',1.9,-79.0,4.824374506683117,-76.33196873563637,'2026-08-11T09:16:29+00:00'],
+['SGC2026psfwvr',1.3,-15.0,4.7425,-74.73883333333333,'2026-08-11T09:23:20+00:00'],
+['SGC2026psgbtm',1.8,-60.0,4.232833333333334,-76.80466666666666,'2026-08-11T09:29:03+00:00'],
+['SGC2026psgdra',3.0,-97.0,4.769383198203984,-76.49375178620645,'2026-08-11T09:31:15+00:00'],
+['SGC2026psgwmn',2.8,-92.0,4.957622677228709,-76.33903044430849,'2026-08-11T09:53:04+00:00'],
+['SGC2026psilow',2.1,-39.0,4.568453417222536,-76.64409808129886,'2026-08-11T10:40:46+00:00'],
+['SGC2026psjvaq',2.0,-50.0,4.091509568682361,-76.77494582653708,'2026-08-11T11:21:54+00:00'],
+['SGC2026pskwdg',2.9,-51.0,4.323107579392556,-76.68550375098089,'2026-08-11T11:53:24+00:00'],
+['SGC2026pslemw',2.2,-75.0,4.446838023470606,-76.70423005124084,'2026-08-11T12:03:04+00:00'],
+['SGC2026pslrde',2.3,-34.0,4.574798568200897,-76.62920870490056,'2026-08-11T12:17:43+00:00'],
+['SGC2026psnlel',1.9,-96.0,4.048333333333333,-76.62566666666666,'2026-08-11T13:11:11+00:00'],
+['SGC2026psofms',1.9,-31.0,4.7115,-76.808,'2026-08-11T13:34:46+00:00'],
+['SGC2026pssmqj',3.9,-92.0,4.899987555841926,-76.36699863508608,'2026-08-11T15:43:39+00:00'],
+['SGC2026pstwsc',2.4,-24.0,6.998646241934998,-76.25945535279558,'2026-08-11T16:25:33+00:00'],
+['SGC2026pstxgo',2.1,-41.0,4.483851404177715,-76.67990588007494,'2026-08-11T16:26:13+00:00'],
+['SGC2026psudyk',2.7,-88.0,4.865617988042467,-76.4078778234393,'2026-08-11T16:33:59+00:00'],
+['SGC2026psugkp',2.1,-55.0,4.222642688901832,-76.80114170644936,'2026-08-11T16:36:50+00:00'],
+['SGC2026psukuu',2.2,-42.0,4.549417964287451,-76.66318584081816,'2026-08-11T16:41:55+00:00'],
+['SGC2026psurnp',1.7,-18.0,4.540666666666667,-76.60133333333333,'2026-08-11T16:49:46+00:00'],
+['SGC2026psveng',2.4,-86.0,4.813799255052515,-76.43000700587649,'2026-08-11T17:04:48+00:00'],
+['SGC2026psvrno',2.1,-36.0,4.655170480593476,-76.68078539105079,'2026-08-11T17:19:54+00:00'],
+['SGC2026pswpeq',2.0,-78.0,4.75140527043196,-76.4627436016782,'2026-08-11T17:47:23+00:00'],
+['SGC2026psyoii',2.2,-88.0,4.873020664183889,-76.31941323637395,'2026-08-11T18:46:43+00:00'],
+['SGC2026pszhjh',1.6,-17.0,7.007106443239481,-76.26165533460698,'2026-08-11T19:08:47+00:00'],
+['SGC2026ptcclg',2.0,-45.0,4.640365128310633,-76.47391762913513,'2026-08-11T20:34:20+00:00'],
+['SGC2026ptcyyy',2.6,-19.0,6.849006431361972,-76.26858745568784,'2026-08-11T20:59:43+00:00'],
+['SGC2026pteuwz',1.8,-41.0,4.433090196350823,-76.76916411230532,'2026-08-11T21:55:21+00:00'],
+['SGC2026ptevqq',2.5,-38.0,4.41828484406798,-76.73498944020298,'2026-08-11T21:56:16+00:00'],
+['SGC2026ptfbph',2.2,-79.0,4.440492872492245,-76.7319046783016,'2026-08-11T22:03:10+00:00'],
+['SGC2026ptfsko',2.6,-52.0,4.181399207542483,-76.78070051976948,'2026-08-11T22:22:39+00:00'],
+['SGC2026ptftuf',3.5,-91.0,4.896286217771214,-76.37284479538661,'2026-08-11T22:24:02+00:00'],
+['SGC2026pthkcm',1.8,-10.0,4.346166666666667,-76.62733333333334,'2026-08-11T23:13:23+00:00'],
+['SGC2026ptiila',2.2,-81.0,4.860330362227166,-76.32574825937475,'2026-08-11T23:41:35+00:00'],
+['SGC2026ptinaf',2.4,0.0,5.129666666666667,-77.3055,'2026-08-11T23:46:56+00:00'],
+['SGC2026ptkska',1.6,-12.0,6.956873997994118,-76.24471525416936,'2026-08-12T00:53:31+00:00'],
+['SGC2026ptlgrq',2.1,-81.0,4.828604607335358,-76.37037343352907,'2026-08-12T01:10:05+00:00'],
+['SGC2026ptmlnp',2.3,-52.0,4.21418248759735,-76.83945169844228,'2026-08-12T01:45:52+00:00'],
+['SGC2026ptmpxy',1.5,-40.0,4.745333333333333,-76.58,'2026-08-12T01:51:00+00:00'],
+['SGC2026ptnnqj',1.8,-55.0,4.538842712656848,-76.41587149509841,'2026-08-12T02:18:29+00:00'],
+['SGC2026ptnteg',0.9,-13.0,5.556181919520812,-74.89691244593047,'2026-08-12T02:24:56+00:00'],
+['SGC2026ptnthf',1.6,-76.0,4.858215311901045,-76.38758130076022,'2026-08-12T02:25:04+00:00'],
+['SGC2026ptnwqc',1.6,-79.0,4.789476176302129,-76.37337827135342,'2026-08-12T02:28:57+00:00'],
+['SGC2026ptoqvy',1.5,-43.0,5.245269521581097,-76.38320343861812,'2026-08-12T02:52:24+00:00'],
+['SGC2026ptpcea',1.8,-84.0,4.858215311901045,-76.27455701255582,'2026-08-12T03:05:32+00:00'],
+['SGC2026ptphix',1.5,-85.0,4.984060806305216,-76.22078644635323,'2026-08-12T03:11:33+00:00'],
+['SGC2026ptplbk',1.7,-38.0,4.5028868571128,-76.6714761532248,'2026-08-12T03:15:52+00:00'],
+['SGC2026ptprtg',1.5,-80.0,4.783333333333333,-76.555,'2026-08-12T03:23:38+00:00'],
+['SGC2026ptrdtd',3.1,-50.0,4.814856780215575,-76.49718284960191,'2026-08-12T04:07:38+00:00'],
+['SGC2026ptrfev',3.2,-95.0,4.957093914647179,-76.28943901441835,'2026-08-12T04:09:23+00:00'],
+['SGC2026ptrhki',2.0,-15.0,6.929907106336081,-76.39490008803475,'2026-08-12T04:11:57+00:00'],
+['SGC2026ptsags',1.5,-80.0,4.857157786737985,-76.33959405306453,'2026-08-12T04:33:52+00:00'],
+['SGC2026ptvjxd',2.5,-53.0,4.094682144171542,-76.75046221900335,'2026-08-12T06:15:33+00:00'],
+['SGC2026ptwfjy',2.1,-53.0,4.151788502976795,-76.7613840156657,'2026-08-12T06:40:26+00:00'],
+['SGC2026ptwqny',2.7,-92.0,4.765153097551742,-76.50012700132966,'2026-08-12T06:53:25+00:00'],
+['SGC2026pufaqh',1.3,-17.0,6.87,-76.34916666666666,'2026-08-12T11:06:31+00:00'],
+['SGC2026puijhg',2.6,-54.0,4.0873333333333335,-76.761,'2026-08-12T12:47:05+00:00'],
+['SGC2026pungro',1.6,-43.0,4.557878165591933,-76.72717732001469,'2026-08-12T15:14:53+00:00'],
+['SGC2026punstc',1.8,-40.0,4.570568467548656,-76.74003312789621,'2026-08-12T15:28:53+00:00'],
+['SGC2026puoioy',1.8,-70.0,4.285666666666667,-76.6965,'2026-08-12T15:47:19+00:00'],
+['SGC2026purrga',2.5,-86.0,4.796878852443551,-76.36595162484764,'2026-08-12T17:27:51+00:00'],
+['SGC2026pusibi',2.3,-92.0,4.959737727554829,-76.21960107347782,'2026-08-12T17:47:25+00:00'],
+['SGC2026puslrh',2.2,-118.0,4.446166666666667,-76.889,'2026-08-12T17:51:34+00:00'],
+['SGC2026putbwh',1.5,-118.0,4.0195,-76.24266666666666,'2026-08-12T18:10:22+00:00'],
+['SGC2026putmcs',1.8,-41.0,4.621329675375549,-76.66142279352549,'2026-08-12T18:22:13+00:00'],
+['SGC2026putuwb',3.4,-92.0,4.972428029511553,-76.33270670273203,'2026-08-12T18:32:19+00:00'],
+['SGC2026pvbnym',1.7,-41.0,4.33685540651234,-76.81023267997595,'2026-08-12T22:25:45+00:00'],
+['SGC2026pvdhap',1.7,-45.0,4.616042049560247,-76.75199644062207,'2026-08-12T23:17:59+00:00'],
+['SGC2026pvdoei',2.5,-43.0,4.409824642763498,-76.73281568713288,'2026-08-12T23:26:22+00:00'],
+['SGC2026pvenyr',2.0,-77.0,4.834949758313719,-76.34908038148481,'2026-08-12T23:56:18+00:00'],
+['SGC2026pvewcf',1.8,-10.0,7.004991392913359,-76.24879542276003,'2026-08-13T00:05:42+00:00'],
+['SGC2026pvfcol',2.5,-43.0,4.524037360374005,-76.68224070709637,'2026-08-13T00:13:20+00:00'],
+['SGC2026pvffzq',1.7,-38.0,4.547302913961331,-76.69728039539721,'2026-08-13T00:17:12+00:00'],
+['SGC2026pvfkmk',1.3,-19.0,3.8726018599288894,-75.61217146952032,'2026-08-13T00:22:24+00:00'],
+['SGC2026pvfwjo',2.0,-34.0,4.570568467548656,-76.51407812102273,'2026-08-13T00:36:14+00:00'],
+['SGC2026pvgmdx',1.8,-47.0,3.7468333333333335,-77.03233333333333,'2026-08-13T00:54:33+00:00'],
+['SGC2026pvgnxs',1.8,-41.0,4.430975146024703,-76.71374102977074,'2026-08-13T00:56:34+00:00'],
+['SGC2026pvgsif',1.6,-39.0,4.4457804983075455,-76.78414792192696,'2026-08-13T01:01:40+00:00'],
+['SGC2026pvgsrj',1.4,-10.0,7.013451594217842,-76.31950382008564,'2026-08-13T01:02:05+00:00'],
+['SGC2026pvkvbg',2.0,-77.0,4.857157786737985,-76.35665429622115,'2026-08-13T03:05:33+00:00'],
+['SGC2026pvlfed',2.0,-40.0,4.589603920483741,-76.64207411214741,'2026-08-13T03:17:16+00:00'],
+['SGC2026pvnrde',2.6,-52.0,4.4638333333333335,-76.7055,'2026-08-13T04:31:34+00:00']
+];
+
+let eventos = RAW.map(r => ({
+  sgcId:r[0], mag:r[1], prof:Math.abs(r[2]), lat:r[3], lon:r[4], t:new Date(r[5]).getTime(), imported:false
+})).sort((a,b)=>a.t-b.t);
+
+let plateAll = [];   // [lon, lat, prof, mag] · USGS 1960–2026
+let plateData = [];  // recortada a la ventana geográfica activa
+
+/* Los dos catálogos de referencia que vive el repo. Mismo formato: [lon, lat, prof, mag]. */
+const CATALOGS = {
+  nazca:    {file:'subduccion-puntos.json',     short:'Nazca 1960',    label:'Subducción Nazca',   years:'1960–2026'},
+  colombia: {file:'historico-1900-puntos.json', short:'Colombia 1900', label:'Histórico Colombia', years:'1900–2026'}
+};
+const CDN = 'https://jduquetr.github.io/sismos-3d-colombia/';
+const catCache = new Map();
+
+/* ==========================================================================
+   2 · ESTADO
+   ========================================================================== */
+const state = {
+  win:'swarm', basemap:'geo', tz:'COT', catalog:'nazca',
+  tMode:'all', tPos:1, playing:false, speed:1, loop:false, windowH:12,
+  filt:{magMin:0.9, depthMin:0, depthMax:450, onlySwarm:false},
+  view:{vexag:3, base:150, magScale:1.3},
+  layers:{map:true, mapOp:.55, events:true, plate:true, plateOp:.45, plateSize:1,
+          plateGray:false, grid:true, labels:true, main:true, nest:true, autoRot:false,
+          proj:false, contours:false, moho:true},
+  hist:'swarm', an:'swarm',
+  prof:{a:null, b:null, swath:25, picking:null, trueScale:false},
+  sel:null, hover:null
+};
+
+const WINDOWS = {
+  swarm:{ west:-78.6, east:-74.6, south:3.2,  north:7.4,  zoom:9,
+          note:'4,0° × 4,2°, ceñida al enjambre.' },
+  wide: { west:-80.2, east:-71.7, south:0.9,  north:9.7,  zoom:8,
+          note:'Incluye el Nido de Bucaramanga (6,7°N 73,1°O).' }
+};
+
+const NEST = {lat:6.70, lon:-73.14, depth:160, label:'Nido de Bucaramanga'};
+
+/* ==========================================================================
+   3 · ESCALAS  ·  una sola rampa de profundidad para todo el tablero
+   ========================================================================== */
+/* Por debajo de ~35 km la sismicidad deja de ser cortical y pasa a ser de la
+   placa en subducción: son dos poblaciones distintas, y se pintan distinto. */
+const MOHO = 35;
+const CRUST_RGB = [0x8a,0x8a,0x86];
+const GRAY = [0x6d,0x6d,0x70];
+
+const RAMP_AN  = [[0xfd,0xe0,0xcc],[0xf7,0xb3,0x89],[0xef,0x83,0x48],[0xd9,0x59,0x26],[0xa3,0x3f,0x18]];
+const RAMP_REF = [[0xcd,0xe2,0xfb],[0x9e,0xc5,0xf4],[0x6d,0xa7,0xec],[0x39,0x87,0xe5],[0x25,0x6a,0xbf]];
+
+function rampAt(ramp, t){
+  t=Math.max(0,Math.min(1,t))*(ramp.length-1);
+  const i=Math.min(ramp.length-2, Math.floor(t)), k=t-i;
+  return [0,1,2].map(j=>Math.round(ramp[i][j]+(ramp[i+1][j]-ramp[i][j])*k));
+}
+const anRGB  = d => rampAt(RAMP_AN, d/200);                                  // capa en análisis: 0 → 200+ km
+const refRGB = d => d<=MOHO ? CRUST_RGB : rampAt(RAMP_REF, (d-MOHO)/(200-MOHO));  // referencia: corteza + placa
+
+const depthRGB = anRGB;
+const anCss  = d => `rgb(${anRGB(d).join(',')})`;
+const refCss = d => `rgb(${refRGB(d).join(',')})`;
+const depthCss = anCss;
+
+/* Radio en KILÓMETROS, exponencial en la magnitud (que es logarítmica en energía),
+   con un piso para que un M1 siga siendo visible. La ley se declara en la leyenda
+   con círculos M2/M4/M6 reales — el original escalaba lineal y sin leyenda alguna. */
+const magRadiusKm = m => Math.max(2.2, 1.15*Math.exp(0.40*Math.max(0.5,m)));
+
+/* ==========================================================================
+   4 · TIEMPO Y FORMATO
+   ========================================================================== */
+let tMin = eventos[0].t, tMax = eventos[eventos.length-1].t;
+const MES = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+const p2 = n => String(n).padStart(2,'0');
+const nf = (v,d=1) => v.toLocaleString('es-CO',{minimumFractionDigits:d,maximumFractionDigits:d});
+
+function shifted(ms){ return new Date(ms + (state.tz==='COT' ? -5*3600e3 : 0)); }
+function fmtDT(ms){ const d=shifted(ms);
+  return `${p2(d.getUTCDate())} ${MES[d.getUTCMonth()]} · ${p2(d.getUTCHours())}:${p2(d.getUTCMinutes())}`; }
+function fmtFull(ms){ const d=shifted(ms);
+  return `${p2(d.getUTCDate())}/${p2(d.getUTCMonth()+1)}/${d.getUTCFullYear()} ${p2(d.getUTCHours())}:${p2(d.getUTCMinutes())} ${state.tz==='COT'?'(UTC−5)':'UTC'}`; }
+const nowMs = () => tMin + (tMax-tMin)*state.tPos;
+
+/* ==========================================================================
+   5 · GEOMETRÍA DEL BLOQUE
+   El cubo original era 20×20 en horizontal para una ventana que en kilómetros
+   NO es cuadrada: estiraba la geografía ~20 % en el eje E–O. Aquí la caja
+   respeta la proporción real y la exageración vertical es un parámetro visible.
+   ========================================================================== */
+const BOX_X = 20;
+const GEO = {};
+function setupGeo(b){
+  const latMid=(b.north+b.south)/2;
+  GEO.b=b;
+  GEO.kmLon=111.320*Math.cos(latMid*Math.PI/180);
+  GEO.kmLat=110.574;
+  GEO.wKm=(b.east-b.west)*GEO.kmLon;
+  GEO.hKm=(b.north-b.south)*GEO.kmLat;
+  GEO.sx=BOX_X;
+  GEO.sz=BOX_X*GEO.hKm/GEO.wKm;
+  GEO.uKm=BOX_X/GEO.wKm;              // unidades de escena por km horizontal
+}
+const uY = km => -km*GEO.uKm*state.view.vexag;      // profundidad → y
+const boxH = () => state.view.base*GEO.uKm*state.view.vexag;
+function toScene(lat,lon,depth){
+  const u=(lon-GEO.b.west)/(GEO.b.east-GEO.b.west);
+  const v=(lat-GEO.b.north)/(GEO.b.south-GEO.b.north);
+  return {x:(u-0.5)*GEO.sx, y:uY(depth), z:(v-0.5)*GEO.sz};   // +x este, −z norte
+}
+function toLatLon(x,z){
+  const u=x/GEO.sx+0.5, v=z/GEO.sz+0.5;
+  return {lon:GEO.b.west+u*(GEO.b.east-GEO.b.west), lat:GEO.b.north+v*(GEO.b.south-GEO.b.north)};
+}
+const inWindow = (lat,lon) => lat>=GEO.b.south && lat<=GEO.b.north && lon>=GEO.b.west && lon<=GEO.b.east;
+
+/* centro del enjambre — mediana robusta, no promedio (hay eventos lejanos) */
+function swarmCenter(){
+  const la=eventos.map(e=>e.lat).sort((a,b)=>a-b), lo=eventos.map(e=>e.lon).sort((a,b)=>a-b);
+  const m=a=>a[Math.floor(a.length/2)];
+  return {lat:m(la), lon:m(lo)};
+}
+const CENTER = swarmCenter();
+function kmBetween(aLat,aLon,bLat,bLon){
+  const dx=(bLon-aLon)*111.320*Math.cos((aLat+bLat)/2*Math.PI/180), dy=(bLat-aLat)*110.574;
+  return Math.hypot(dx,dy);
+}
+
+/* ==========================================================================
+   6 · MAPA BASE  (teselas con CORS, caché por ventana+estilo)
+   ========================================================================== */
+/* MAPA GEOLÓGICO — por qué es un raster local y no un servicio.
+   1. El SGC publica el «Mapa Geológico de Colombia» V2023 en srvags.sgc.gov.co,
+      y su servidor sí manda CORS. Pero es un MapServer DINÁMICO sin caché: un
+      export de 1024 px de la capa de unidades cronoestratigráficas (id 733)
+      se cae por timeout a los 60 s. No puede alimentar una capa viva.
+   2. Macrostrat sí tiene teselas geológicas, pero manda `access-control-allow-origin`
+      de forma inconsistente según el nodo de Varnish que responda: en el navegador
+      41 de 42 teselas fallan con crossOrigin='anonymous'.
+   Así que el mosaico se arma una sola vez fuera de línea y viaja como PNG en el
+   repo — carga instantánea, sin CORS y sin depender de que el servicio esté arriba.
+   Se compone sobre el relieve sombreado para conservar el modelado del terreno. */
+const BASEMAPS = {
+  relief:{url:(x,y,z)=>`https://server.arcgisonline.com/ArcGIS/rest/services/World_Shaded_Relief/MapServer/tile/${z}/${y}/${x}`,
+          attr:'Relieve: © Esri', size:256},
+  geo:   {images:{swarm:'geologia-choco.png', wide:'geologia-region.png'},
+          attr:'Geología: Macrostrat · macrostrat.org — Relieve: © Esri',
+          under:'relief', alpha:0.88},
+  dark:  {url:(x,y,z)=>`https://a.basemaps.cartocdn.com/dark_all/${z}/${x}/${y}.png`,
+          attr:'© OpenStreetMap contributors © CARTO', size:256},
+  osm:   {url:(x,y,z)=>`https://tile.openstreetmap.org/${z}/${x}/${y}.png`,
+          attr:'© OpenStreetMap contributors', size:256},
+  sat:   {url:(x,y,z)=>`https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${y}/${x}`,
+          attr:'Imagen: © Esri, Maxar, Earthstar Geographics', size:256}
+};
+const lon2x=(lon,z)=>(lon+180)/360*Math.pow(2,z);
+const lat2y=(lat,z)=>{const r=lat*Math.PI/180;
+  return (1-Math.log(Math.tan(r)+1/Math.cos(r))/Math.PI)/2*Math.pow(2,z);};
+const x2lon=(x,z)=>x/Math.pow(2,z)*360-180;
+const y2lat=(y,z)=>{const n=Math.PI-2*Math.PI*y/Math.pow(2,z);
+  return 180/Math.PI*Math.atan(0.5*(Math.exp(n)-Math.exp(-n)));};
+
+const tileCache = new Map();
+function loadImg(url){
+  return new Promise((res,rej)=>{
+    const im=new Image(); im.crossOrigin='anonymous';
+    im.onload=()=>res(im); im.onerror=()=>rej(new Error(url)); im.src=url;
+  });
+}
+async function buildBasemap(winKey, styleKey, onProgress){
+  const ck=winKey+'|'+styleKey;
+  if(tileCache.has(ck)) return tileCache.get(ck);
+  const B=BASEMAPS[styleKey];
+  const W=WINDOWS[winKey], z=W.zoom, src=B.url, TS=B.size||256;
+  // capa servida como un único raster local (el mapa geológico)
+  if(B.images){
+    const base=await buildBasemap(winKey, B.under, onProgress);
+    const cv2=document.createElement('canvas');
+    cv2.width=base.canvas.width; cv2.height=base.canvas.height;
+    const c2=cv2.getContext('2d');
+    c2.fillStyle='#12161c'; c2.fillRect(0,0,cv2.width,cv2.height);
+    if(base.ok) c2.drawImage(base.canvas,0,0,cv2.width,cv2.height);
+    let ok2=0;
+    try{
+      const im=await loadImg(B.images[winKey]);
+      c2.globalAlpha=B.alpha; c2.drawImage(im,0,0,cv2.width,cv2.height); c2.globalAlpha=1;
+      ok2=1;
+    }catch(e){ console.warn('no se pudo cargar el raster geológico', e); }
+    const outG={canvas:cv2, ok:base.ok||ok2, bounds:base.bounds};
+    tileCache.set(ck,outG);
+    return outG;
+  }
+  const x0=Math.floor(lon2x(W.west,z)), x1=Math.floor(lon2x(W.east,z));
+  const y0=Math.floor(lat2y(W.north,z)), y1=Math.floor(lat2y(W.south,z));
+  const nx=x1-x0+1, ny=y1-y0+1, total=nx*ny;
+
+  const cv=document.createElement('canvas');
+  cv.width=nx*TS; cv.height=ny*TS;
+  const ctx=cv.getContext('2d');
+  ctx.fillStyle='#12161c'; ctx.fillRect(0,0,cv.width,cv.height);
+
+  // capa de abajo (el relieve bajo la geología), reescalada al mismo lienzo
+  if(B.under){
+    const base=await buildBasemap(winKey, B.under, null);
+    if(base.ok) ctx.drawImage(base.canvas, 0, 0, cv.width, cv.height);
+  }
+
+  let done=0, ok=0;
+  const jobs=[];
+  ctx.globalAlpha = B.alpha!==undefined ? B.alpha : 1;
+  for(let ty=0;ty<ny;ty++) for(let tx=0;tx<nx;tx++){
+    jobs.push(loadImg(src(x0+tx,y0+ty,z))
+      .then(im=>{ ctx.drawImage(im,tx*TS,ty*TS,TS,TS); ok++; })
+      .catch(()=>{})                                  // una tesela caída no tumba el mapa
+      .finally(()=>{ done++; onProgress && onProgress(done,total); }));
+  }
+  await Promise.all(jobs);
+  ctx.globalAlpha=1;
+
+  if(ok===0){                                          // sin red: retícula honesta
+    ctx.strokeStyle='#242a33';
+    for(let i=0;i<=16;i++){
+      const gx=i*cv.width/16, gy=i*cv.height/16;
+      ctx.beginPath();ctx.moveTo(gx,0);ctx.lineTo(gx,cv.height);ctx.stroke();
+      ctx.beginPath();ctx.moveTo(0,gy);ctx.lineTo(cv.width,gy);ctx.stroke();
+    }
+  }
+  const out={canvas:cv, ok, bounds:{
+    west:x2lon(x0,z), east:x2lon(x1+1,z), north:y2lat(y0,z), south:y2lat(y1+1,z)}};
+  tileCache.set(ck,out);
+  return out;
+}
+
+/* ==========================================================================
+   7 · ESCENA
+   Sin luces: materiales Basic → el hex de la rampa llega intacto al píxel.
+   La profundidad se lee por perspectiva, oclusión (aro de contorno) y niebla.
+   ========================================================================== */
+let scene, camera, renderer, controls, raycaster;
+let mapMesh, gridGroup, wallGroup, sectionGroup, markGroup;
+let swarmMesh, swarmHalo, plateMesh, selGroup;
+let needsRender=true, hoverIdx=-1;
+const invalidate = () => { needsRender=true; };
+
+const PLANE_COL = 0x0d0d0d;
+const sphereGeo = new THREE.SphereGeometry(1,16,12);
+const dummy = new THREE.Object3D(), tmpColor = new THREE.Color();
+
+function circleSprite(){
+  const c=document.createElement('canvas'); c.width=c.height=64;
+  const g=c.getContext('2d');
+  const grd=g.createRadialGradient(32,32,0,32,32,32);
+  grd.addColorStop(0,'rgba(255,255,255,1)');
+  grd.addColorStop(.55,'rgba(255,255,255,.95)');
+  grd.addColorStop(1,'rgba(255,255,255,0)');
+  g.fillStyle=grd; g.beginPath(); g.arc(32,32,32,0,Math.PI*2); g.fill();
+  return new THREE.CanvasTexture(c);
+}
+const dotTex = circleSprite();
+
+async function init(){
+  const wrap=document.getElementById('sceneWrap');
+  scene=new THREE.Scene();
+  scene.background=new THREE.Color(PLANE_COL);
+
+  camera=new THREE.PerspectiveCamera(48, wrap.clientWidth/wrap.clientHeight, 0.1, 500);
+  renderer=new THREE.WebGLRenderer({canvas:document.getElementById('c3d'), antialias:true, preserveDrawingBuffer:true});
+  renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+  renderer.setSize(wrap.clientWidth, wrap.clientHeight, false);
+
+  controls=new THREE.OrbitControls(camera, renderer.domElement);
+  controls.enableDamping=true; controls.dampingFactor=.09;
+  controls.minDistance=4; controls.maxDistance=120;
+  controls.addEventListener('change', invalidate);
+
+  raycaster=new THREE.Raycaster();
+  raycaster.params.Points.threshold=0.12;
+
+  gridGroup=new THREE.Group(); wallGroup=new THREE.Group();
+  sectionGroup=new THREE.Group(); markGroup=new THREE.Group(); selGroup=new THREE.Group();
+  scene.add(gridGroup, wallGroup, sectionGroup, markGroup, selGroup);
+
+  // carga en paralelo: teselas + catálogo histórico
+  const bar=document.getElementById('loadBar'), txt=document.getElementById('loadTxt');
+  const [mapRes] = await Promise.all([
+    buildBasemap(state.win, state.basemap, (d,t)=>{
+      bar.style.width=(d/t*100)+'%'; txt.textContent=`Cargando mapa base… ${d}/${t}`;
+    }),
+    loadPlate()
+  ]);
+
+  setupGeo(mapRes.bounds);
+  buildMap(mapRes);
+  buildSwarm();
+  buildPlate();
+  rebuildFrame();
+  applyFilters();
+  refreshCatalogLabels();
+  setView('iso', false);
+
+  new ResizeObserver(onResize).observe(wrap);
+  renderer.domElement.addEventListener('pointermove', onPointerMove);
+  renderer.domElement.addEventListener('pointerleave', ()=>{ setHover(-1); coordHud.classList.remove('on'); });
+  renderer.domElement.addEventListener('click', onClick);
+
+  document.getElementById('loading').classList.add('off');
+  drawStrip(); drawHist(); fillTopTable(); drawAnalysis();
+  animate();
+}
+
+async function fetchCatalog(key){
+  if(catCache.has(key)) return catCache.get(key);
+  const f=CATALOGS[key].file;
+  for(const url of [f, CDN+f]){            // relativo dentro del repo, absoluto si se abre suelto
+    try{
+      const r=await fetch(url,{cache:'force-cache'});
+      if(!r.ok) continue;
+      const j=JSON.parse((await r.text()).replace(/^\uFEFF/,''));   // los dos archivos traen BOM
+      if(Array.isArray(j) && j.length){ catCache.set(key,j); return j; }
+    }catch(e){ /* siguiente fuente */ }
+  }
+  return null;
+}
+async function loadPlate(){
+  const j=await fetchCatalog(state.catalog);
+  const chip=document.getElementById('chipErr');
+  if(j){ plateAll=j; chip.hidden=true; return; }
+  plateAll=[];
+  chip.hidden=false;
+  chip.textContent='no cargó '+CATALOGS[state.catalog].file;
+  document.getElementById('showPlate').checked=false;
+  state.layers.plate=false;
+}
+async function setCatalog(key){
+  state.catalog=key;
+  const ld=document.getElementById('loading'), bar=document.getElementById('loadBar');
+  ld.classList.remove('off'); bar.style.width='60%';
+  document.getElementById('loadTxt').textContent='Cargando '+CATALOGS[key].label+'…';
+  await loadPlate();
+  buildPlate(); refreshCatalogLabels(); drawHist(); drawProfile(); buildContours(); drawAnalysis();
+  ld.classList.add('off');
+}
+function refreshCatalogLabels(){
+  const c=CATALOGS[state.catalog];
+  document.getElementById('keyPlate').textContent=`Referencia · ${c.label} (${c.years})`;
+  document.getElementById('layerPlateLabel').textContent=c.label;
+}
+
+/* ---------- mapa (cara superior) ---------- */
+function buildMap(res){
+  if(mapMesh){ scene.remove(mapMesh); mapMesh.geometry.dispose(); mapMesh.material.map.dispose(); mapMesh.material.dispose(); }
+  const tex=new THREE.CanvasTexture(res.canvas);        // flipY por defecto: norte arriba, sin trucos de espejo
+  tex.anisotropy=renderer.capabilities.getMaxAnisotropy();
+  const geo=new THREE.PlaneGeometry(GEO.sx, GEO.sz);
+  const mat=new THREE.MeshBasicMaterial({map:tex, transparent:true, opacity:state.layers.mapOp,
+                                         side:THREE.DoubleSide, depthWrite:false});
+  mapMesh=new THREE.Mesh(geo,mat);
+  mapMesh.rotation.x=-Math.PI/2;
+  mapMesh.position.y=0.002;
+  mapMesh.renderOrder=-1;
+  mapMesh.visible=state.layers.map;
+  scene.add(mapMesh);
+  document.getElementById('attrib').textContent=BASEMAPS[state.basemap].attr;
+  invalidate();
+}
+
+/* ---------- enjambre: 2 InstancedMesh (aro + esfera), nunca se reconstruyen ---------- */
+function buildSwarm(){
+  [swarmMesh,swarmHalo].forEach(m=>{ if(m){ scene.remove(m); m.dispose&&m.dispose(); }});
+  const n=eventos.length;
+  swarmHalo=new THREE.InstancedMesh(sphereGeo,
+    new THREE.MeshBasicMaterial({color:PLANE_COL, side:THREE.BackSide, fog:false}), n);
+  swarmMesh=new THREE.InstancedMesh(sphereGeo, new THREE.MeshBasicMaterial(), n);
+  swarmHalo.frustumCulled=false; swarmMesh.frustumCulled=false;
+  swarmHalo.renderOrder=1; swarmMesh.renderOrder=2;
+  scene.add(swarmHalo, swarmMesh);
+}
+
+/* ---------- placa: un solo THREE.Points para ~5.000 hipocentros ---------- */
+function buildPlate(){
+  if(plateMesh){ scene.remove(plateMesh); plateMesh.geometry.dispose(); plateMesh.material.dispose(); plateMesh=null; }
+  plateData=plateAll.filter(p=>inWindow(p[1],p[0]));
+  document.getElementById('cntPlate').textContent=plateData.length.toLocaleString('es-CO');
+  document.getElementById('chipPlate').innerHTML='ref. <b>'+plateData.length.toLocaleString('es-CO')+'</b>';
+  if(!plateData.length) return;
+
+  const pos=new Float32Array(plateData.length*3), col=new Float32Array(plateData.length*3);
+  const g=new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos,3));
+  g.setAttribute('color', new THREE.BufferAttribute(col,3));
+  plateMesh=new THREE.Points(g, new THREE.PointsMaterial({
+    size:0.22, sizeAttenuation:true, vertexColors:true, map:dotTex,
+    transparent:true, opacity:state.layers.plateOp, depthWrite:false, alphaTest:0.06
+  }));
+  plateMesh.frustumCulled=false;
+  scene.add(plateMesh);
+  updatePlate();
+}
+function updatePlate(){
+  if(!plateMesh) return;
+  const pos=plateMesh.geometry.attributes.position.array;
+  const col=plateMesh.geometry.attributes.color.array;
+  const {depthMin,depthMax}=state.filt;
+  let k=0;
+  for(let i=0;i<plateData.length;i++){
+    const [lon,lat,d]=plateData[i];
+    const p=toScene(lat,lon,d);
+    const hidden = d>state.view.base || d<depthMin || d>depthMax;
+    pos[k]=p.x; pos[k+1]=hidden?1e6:p.y; pos[k+2]=p.z;
+    const c = state.layers.plateGray ? GRAY : refRGB(d);
+    col[k]=c[0]/255; col[k+1]=c[1]/255; col[k+2]=c[2]/255;
+    k+=3;
+  }
+  plateMesh.geometry.attributes.position.needsUpdate=true;
+  plateMesh.geometry.attributes.color.needsUpdate=true;
+  plateMesh.material.size=0.22*state.layers.plateSize;
+  plateMesh.material.opacity=state.layers.plateOp;
+  plateMesh.visible=state.layers.plate && plateData.length>0;
+  invalidate();
+}
+
+/* ---------- retícula: sólo las paredes del fondo, para no enjaular el dato ---------- */
+function rebuildFrame(){
+  [gridGroup,wallGroup,markGroup].forEach(g=>{
+    while(g.children.length){ const c=g.children.pop(); c.geometry&&c.geometry.dispose(); c.material&&c.material.dispose(); }
+  });
+  const H=boxH(), hx=GEO.sx/2, hz=GEO.sz/2;
+  const lineMat=o=>new THREE.LineBasicMaterial({color:0x4a4a46, transparent:true, opacity:o});
+
+  // anillos de profundidad
+  const step = state.view.base<=150?25:(state.view.base<=250?50:100);
+  for(let d=0; d<=state.view.base+0.1; d+=step){
+    const y=uY(d);
+    const g=new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(-hx,y,-hz),new THREE.Vector3(hx,y,-hz),
+      new THREE.Vector3(hx,y,hz),new THREE.Vector3(-hx,y,hz),new THREE.Vector3(-hx,y,-hz)]);
+    const l=new THREE.Line(g, lineMat(d===0?0.85:0.5));
+    l.userData.depth=d;
+    gridGroup.add(l);
+  }
+  // aristas verticales
+  [[-hx,-hz],[hx,-hz],[hx,hz],[-hx,hz]].forEach(([x,z])=>{
+    const g=new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(x,0,z),new THREE.Vector3(x,-H,z)]);
+    gridGroup.add(new THREE.Line(g, lineMat(0.7)));
+  });
+  // 4 paredes con retícula fina (se muestran sólo las del fondo)
+  const walls=[
+    {k:'n', x:0, z:-hz, rot:0,           w:GEO.sx},
+    {k:'s', x:0, z: hz, rot:0,           w:GEO.sx},
+    {k:'e', x: hx,z:0,  rot:Math.PI/2,   w:GEO.sz},
+    {k:'o', x:-hx,z:0,  rot:Math.PI/2,   w:GEO.sz}
+  ];
+  walls.forEach(W=>{
+    const pts=[];
+    for(let d=0; d<=state.view.base+0.1; d+=step){
+      pts.push(new THREE.Vector3(-W.w/2,uY(d),0), new THREE.Vector3(W.w/2,uY(d),0));
+    }
+    const nv=4;
+    for(let i=0;i<=nv;i++){
+      const x=-W.w/2+W.w*i/nv;
+      pts.push(new THREE.Vector3(x,0,0), new THREE.Vector3(x,-H,0));
+    }
+    const g=new THREE.BufferGeometry().setFromPoints(pts);
+    const l=new THREE.LineSegments(g, lineMat(0.34));
+    l.position.set(W.x,0,W.z); l.rotation.y=W.rot;
+    l.userData.wall=W.k;
+    wallGroup.add(l);
+  });
+  gridGroup.visible=wallGroup.visible=state.layers.grid;
+
+  // marcas fijas: sismo principal y Nido de Bucaramanga
+  const main=eventos.reduce((a,b)=>b.mag>a.mag?b:a);
+  markGroup.userData.main=main;
+  const mp=toScene(main.lat,main.lon,main.prof);
+  const ring=new THREE.Mesh(new THREE.RingGeometry(0.55,0.68,40),
+    new THREE.MeshBasicMaterial({color:0xffffff, side:THREE.DoubleSide, transparent:true, opacity:.85, fog:false}));
+  ring.position.set(mp.x,mp.y,mp.z); ring.userData.billboard=true; ring.userData.tag='main';
+  markGroup.add(ring);
+  const drop=new THREE.Line(new THREE.BufferGeometry().setFromPoints(
+    [new THREE.Vector3(mp.x,0,mp.z), new THREE.Vector3(mp.x,mp.y,mp.z)]),
+    new THREE.LineDashedMaterial({color:0xffffff, transparent:true, opacity:.35, dashSize:.22, gapSize:.18}));
+  drop.computeLineDistances(); drop.userData.tag='main';
+  markGroup.add(drop);
+
+  // plano de 35 km: separa la sismicidad cortical de la de la placa en subducción
+  if(state.view.base>MOHO){
+    const yM=uY(MOHO), hxm=GEO.sx/2, hzm=GEO.sz/2;
+    const pl=new THREE.Mesh(new THREE.PlaneGeometry(GEO.sx, GEO.sz),
+      new THREE.MeshBasicMaterial({color:0x8a8a86, transparent:true, opacity:.055,
+                                   side:THREE.DoubleSide, depthWrite:false}));
+    pl.rotation.x=-Math.PI/2; pl.position.y=yM; pl.userData.tag='moho';
+    markGroup.add(pl);
+    const ring=new THREE.Line(new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(-hxm,yM,-hzm),new THREE.Vector3(hxm,yM,-hzm),
+        new THREE.Vector3(hxm,yM,hzm),new THREE.Vector3(-hxm,yM,hzm),new THREE.Vector3(-hxm,yM,-hzm)]),
+      new THREE.LineBasicMaterial({color:0x8a8a86, transparent:true, opacity:.55}));
+    ring.userData.tag='moho';
+    markGroup.add(ring);
+  }
+
+  if(inWindow(NEST.lat,NEST.lon)){
+    const np=toScene(NEST.lat,NEST.lon,NEST.depth);
+    const nr=new THREE.Mesh(new THREE.RingGeometry(0.75,0.85,40),
+      new THREE.MeshBasicMaterial({color:0xd95926, side:THREE.DoubleSide, transparent:true, opacity:.8, fog:false}));
+    nr.position.set(np.x,np.y,np.z); nr.userData.billboard=true; nr.userData.tag='nest';
+    markGroup.add(nr);
+  }
+  updateMarkVisibility();
+
+  // niebla proporcional al bloque
+  const diag=Math.hypot(GEO.sx,GEO.sz,H);
+  scene.fog=new THREE.Fog(PLANE_COL, diag*0.75, diag*2.6);
+
+  if(mapMesh) mapMesh.position.y=0.002;
+  updateSwarm(); updatePlate(); redrawSection(); buildContours(); buildProj();
+  invalidate();
+}
+function updateMarkVisibility(){
+  markGroup.children.forEach(c=>{
+    const t=c.userData.tag;
+    c.visible = t==='main' ? state.layers.main : (t==='moho' ? state.layers.moho : state.layers.nest);
+  });
+  invalidate();
+}
+
+/* ==========================================================================
+   8 · FILTRO + PINTADO DEL ENJAMBRE
+   Nada de reconstruir geometría en cada tic: se reescriben matrices y colores.
+   ========================================================================== */
+let visible = [], visibleSet = new Set(), instMap = [];
+function passesFilter(e){
+  if(e.mag < state.filt.magMin) return false;
+  if(e.prof < state.filt.depthMin || e.prof > state.filt.depthMax) return false;
+  if(e.prof > state.view.base) return false;
+  if(!inWindow(e.lat,e.lon)) return false;
+  if(state.filt.onlySwarm && kmBetween(CENTER.lat,CENTER.lon,e.lat,e.lon) > 60) return false;
+  return true;
+}
+function applyFilters(){
+  visible = eventos.filter(passesFilter);
+  visibleSet = new Set(visible);
+  updateSwarm();
+  document.getElementById('chipVisible').textContent=visible.length;
+  document.getElementById('chipTotal').textContent=eventos.length;
+  document.getElementById('cntEvents').textContent=visible.length;
+  const mx=visible.reduce((a,e)=>Math.max(a,e.mag),0);
+  document.getElementById('chipMax').textContent=mx?nf(mx,1):'–';
+  const es=document.getElementById('emptyState');
+  if(es) es.hidden = visible.length>0;
+  const cb=document.getElementById('csvBtn');
+  if(cb) cb.disabled = visible.length===0;
+  drawHist(); fillTopTable(); drawStrip();
+  drawAnalysis();
+}
+
+function updateSwarm(){
+  if(!swarmMesh) return;
+  const now=nowMs();
+  const winMs=state.windowH*3600e3;
+  const scale=state.view.magScale*GEO.uKm;
+  let n=0;
+  instMap.length=0;
+  for(const e of eventos){
+    let show = passesFilter(e), fade=1;
+    if(show){
+      if(state.tMode==='window'){
+        show = e.t<=now && e.t>=now-winMs;
+        if(show) fade = 0.35+0.65*(1-(now-e.t)/winMs);
+      }else if(state.tMode==='trail'){
+        show = e.t<=now;
+        if(show){
+          const age=(now-e.t)/Math.max(1,(tMax-tMin));
+          fade = 0.30+0.70*(1-Math.min(1,age));
+        }
+      }
+    }
+    if(!show) continue;
+    const p=toScene(e.lat,e.lon,e.prof);
+    const r=magRadiusKm(e.mag)*scale*(state.tMode==='all'?1:(0.55+0.45*fade));
+    dummy.position.set(p.x,p.y,p.z);
+    dummy.scale.setScalar(r); dummy.updateMatrix();
+    swarmMesh.setMatrixAt(n, dummy.matrix);
+    dummy.scale.setScalar(r*1.28); dummy.updateMatrix();
+    swarmHalo.setMatrixAt(n, dummy.matrix);
+
+    const base = anRGB(e.prof);      // enjambre e importados son la misma capa: la que se analiza
+    // el envejecimiento se codifica mezclando hacia el fondo: nada de alfa,
+    // así no hay artefactos de orden de dibujo en el punto de nube
+    const f = state.tMode==='all' ? 1 : fade;
+    tmpColor.setRGB((base[0]/255)*f + 0.055*(1-f),
+                    (base[1]/255)*f + 0.055*(1-f),
+                    (base[2]/255)*f + 0.055*(1-f));
+    swarmMesh.setColorAt(n, tmpColor);
+    instMap[n]=e; n++;
+  }
+  swarmMesh.count=n; swarmHalo.count=n;
+  swarmMesh.instanceMatrix.needsUpdate=true;
+  swarmHalo.instanceMatrix.needsUpdate=true;
+  if(swarmMesh.instanceColor) swarmMesh.instanceColor.needsUpdate=true;
+  swarmMesh.visible=swarmHalo.visible=state.layers.events && n>0;
+  if(projMesh) updateProj(true);
+  invalidate();
+}
+const eventAtInstance = i => instMap[i] || null;
+
+/* ==========================================================================
+   9 · SELECCIÓN, HOVER Y ANOTACIONES HTML
+   Etiquetas en HTML proyectado: texto nítido, escalable y estilizable
+   (los sprites de canvas del original se veían borrosos y no respetaban el tema).
+   ========================================================================== */
+const overlay=document.getElementById('overlay');
+const tooltip=document.getElementById('tooltip');
+const coordHud=document.getElementById('coordHud');
+const labelPool=[];
+function getLabel(i){
+  if(!labelPool[i]){ const d=document.createElement('div'); d.className='lbl'; overlay.appendChild(d); labelPool[i]=d; }
+  return labelPool[i];
+}
+const v3=new THREE.Vector3();
+function project(x,y,z,el){
+  v3.set(x,y,z).project(camera);
+  const w=renderer.domElement.clientWidth, h=renderer.domElement.clientHeight;
+  if(v3.z>1){ el.style.display='none'; return false; }
+  el.style.display='block';
+  el.style.left=((v3.x*0.5+0.5)*w)+'px';
+  el.style.top=((-v3.y*0.5+0.5)*h)+'px';
+  return true;
+}
+function updateLabels(){
+  let i=0;
+  const on=state.layers.labels;
+  const hx=GEO.sx/2, hz=GEO.sz/2, H=boxH();
+  if(on){
+    // El eje de profundidad va sobre la arista que cae MÁS A LA IZQUIERDA en
+    // pantalla, como en cualquier gráfico: si se elige la arista más cercana a
+    // la cámara, las etiquetas aterrizan encima de la nube de puntos.
+    const corners=[[-hx,-hz],[hx,-hz],[hx,hz],[-hx,hz]];
+    let best=0, bx=Infinity;
+    corners.forEach((c,k)=>{
+      v3.set(c[0]*1.06, -boxH()/2, c[1]*1.06).project(camera);
+      if(v3.x<bx){ bx=v3.x; best=k; }
+    });
+    const [cx,cz]=corners[best];
+    const step=state.view.base<=150?25:(state.view.base<=250?50:100);
+    for(let d=0; d<=state.view.base+0.1; d+=step){
+      const el=getLabel(i++); el.className='lbl axis';
+      el.textContent = d===0 ? '0 km' : d+' km';
+      project(cx*1.06, uY(d), cz*1.06, el);
+    }
+    // sismo principal
+    if(state.layers.main && markGroup.userData.main){
+      const m=markGroup.userData.main, p=toScene(m.lat,m.lon,m.prof);
+      const el=getLabel(i++); el.className='lbl main';
+      el.textContent=`M${nf(m.mag,1)} · ${fmtDT(m.t)}`;
+      project(p.x,p.y,p.z,el);
+    }
+    // plano de 35 km
+    if(state.layers.moho && state.view.base>MOHO){
+      const el=getLabel(i++); el.className='lbl axis'; el.style.color='var(--crust)';
+      el.textContent='35 km · base de la corteza';
+      project(-hx*1.06, uY(MOHO), hz*1.06, el);
+    }
+    // nido de Bucaramanga
+    if(state.layers.nest && inWindow(NEST.lat,NEST.lon)){
+      const p=toScene(NEST.lat,NEST.lon,NEST.depth);
+      const el=getLabel(i++); el.className='lbl main'; el.style.borderColor='#d95926';
+      el.textContent='Nido de Bucaramanga · ~160 km';
+      project(p.x,p.y,p.z,el);
+    }
+    // extremos del perfil
+    if(state.prof.a){ const p=toScene(state.prof.a.lat,state.prof.a.lon,0);
+      const el=getLabel(i++); el.className='lbl main'; el.style.borderColor='#d95926'; el.textContent='A'; project(p.x,p.y,p.z,el); }
+    if(state.prof.b){ const p=toScene(state.prof.b.lat,state.prof.b.lon,0);
+      const el=getLabel(i++); el.className='lbl main'; el.style.borderColor='#d95926'; el.textContent='B'; project(p.x,p.y,p.z,el); }
+  }
+  for(;i<labelPool.length;i++) labelPool[i].style.display='none';
+}
+
+const roseEl=document.getElementById('cRose');
+const vN=new THREE.Vector3(), vO=new THREE.Vector3();
+function updateCompass(){
+  const w=renderer.domElement.clientWidth, h=renderer.domElement.clientHeight;
+  vO.set(0,0,0).project(camera);
+  vN.set(0,0,-GEO.sz*0.25).project(camera);          // −z es el norte geográfico
+  const dx=(vN.x-vO.x)*w, dy=(vN.y-vO.y)*h;
+  if(Math.hypot(dx,dy)<0.4) return;                  // planta perfecta: deja el último ángulo
+  roseEl.style.transform=`rotate(${Math.atan2(dx,dy)*180/Math.PI}deg)`;
+  document.getElementById('compass').style.opacity=state.layers.labels?1:0;
+}
+function updateScaleBar(){
+  const el=document.getElementById('scaleBarLine'), tx=document.getElementById('scaleBarTxt');
+  const a=new THREE.Vector3(0,0,0).project(camera);
+  const b=new THREE.Vector3(GEO.uKm*100,0,0).project(camera);   // 100 km en X
+  const w=renderer.domElement.clientWidth;
+  let px=Math.abs(b.x-a.x)*0.5*w;
+  let km=100;
+  while(px>150){ km/=2; px/=2; }
+  while(px<45 && km<1000){ km*=2; px*=2; }
+  el.style.width=Math.round(px)+'px';
+  tx.textContent=km>=1?`${km} km`:`${km*1000} m`;
+}
+
+function setHover(i){
+  if(i===hoverIdx) return;
+  hoverIdx=i;
+  renderer.domElement.style.cursor = i>=0 ? 'pointer' : (state.prof.picking?'crosshair':'grab');
+  if(i<0){ tooltip.classList.remove('on'); return; }
+  const e=eventAtInstance(i);
+  if(!e){ tooltip.classList.remove('on'); return; }
+  tooltip.innerHTML=`
+    <div class="hd"><span class="sw3" style="background:${anCss(e.prof)}"></span>M ${nf(e.mag,1)}</div>
+    <dl>
+      <dt>Profundidad</dt><dd>${nf(e.prof,0)} km</dd>
+      <dt>Fecha</dt><dd>${fmtFull(e.t)}</dd>
+      <dt>Lat/Lon</dt><dd>${nf(e.lat,3)}°N ${nf(Math.abs(e.lon),3)}°O</dd>
+      <dt>Id</dt><dd>${e.sgcId}</dd>
+    </dl>`;
+  tooltip.classList.add('on');
+}
+function moveTooltip(x,y){
+  const r=renderer.domElement.getBoundingClientRect();
+  const w=tooltip.offsetWidth||220, h=tooltip.offsetHeight||120;
+  let lx=x-r.left+16, ly=y-r.top+16;
+  if(lx+w>r.width-8) lx=x-r.left-w-16;
+  if(ly+h>r.height-8) ly=y-r.top-h-16;
+  tooltip.style.left=lx+'px'; tooltip.style.top=ly+'px';
+}
+
+const mouse=new THREE.Vector2();
+let rafPick=null;
+function onPointerMove(ev){
+  moveTooltip(ev.clientX, ev.clientY);
+  if(rafPick) return;
+  rafPick=requestAnimationFrame(()=>{
+    rafPick=null;
+    const r=renderer.domElement.getBoundingClientRect();
+    mouse.x=((ev.clientX-r.left)/r.width)*2-1;
+    mouse.y=-((ev.clientY-r.top)/r.height)*2+1;
+    raycaster.setFromCamera(mouse,camera);
+    const hits = swarmMesh && swarmMesh.visible ? raycaster.intersectObject(swarmMesh) : [];
+    setHover(hits.length ? hits[0].instanceId : -1);
+    // lectura de coordenadas sobre la cara del mapa
+    if(mapMesh){
+      const mh=raycaster.intersectObject(mapMesh);
+      if(mh.length){
+        const ll=toLatLon(mh[0].point.x, mh[0].point.z);
+        coordHud.textContent=`${nf(ll.lat,3)}°N  ${nf(Math.abs(ll.lon),3)}°O`;
+        coordHud.classList.add('on');
+      }else coordHud.classList.remove('on');
+    }
+  });
+}
+function onClick(ev){
+  const r=renderer.domElement.getBoundingClientRect();
+  mouse.x=((ev.clientX-r.left)/r.width)*2-1;
+  mouse.y=-((ev.clientY-r.top)/r.height)*2+1;
+  raycaster.setFromCamera(mouse,camera);
+
+  if(state.prof.picking){
+    const mh=mapMesh?raycaster.intersectObject(mapMesh):[];
+    if(!mh.length) return;
+    const ll=toLatLon(mh[0].point.x, mh[0].point.z);
+    if(state.prof.picking==='a'){
+      state.prof.a=ll; state.prof.b=null; state.prof.picking='b';
+      document.getElementById('pickText').innerHTML='Ahora el punto <b>B</b>';
+    }else{
+      state.prof.b=ll; state.prof.picking=null;
+      document.getElementById('pickBanner').classList.remove('on');
+      renderer.domElement.style.cursor='grab';
+      openProfile();
+    }
+    redrawSection(); invalidate();
+    return;
+  }
+  const hits = swarmMesh && swarmMesh.visible ? raycaster.intersectObject(swarmMesh) : [];
+  select(hits.length ? eventAtInstance(hits[0].instanceId) : null);
+}
+
+function select(e){
+  state.sel=e||null;
+  while(selGroup.children.length){ const c=selGroup.children.pop();
+    c.geometry&&c.geometry.dispose(); c.material&&c.material.dispose(); }
+  if(e){
+    const p=toScene(e.lat,e.lon,e.prof);
+    const rr=magRadiusKm(e.mag)*state.view.magScale*GEO.uKm;
+    const ring=new THREE.Mesh(new THREE.RingGeometry(rr*1.7, rr*1.7+0.07, 48),
+      new THREE.MeshBasicMaterial({color:0xffffff, side:THREE.DoubleSide, fog:false}));
+    ring.position.set(p.x,p.y,p.z); ring.userData.billboard=true;
+    selGroup.add(ring);
+    // proyección del hipocentro a la superficie: dónde y a qué hondura
+    const dl=new THREE.Line(new THREE.BufferGeometry().setFromPoints(
+      [new THREE.Vector3(p.x,0,p.z), new THREE.Vector3(p.x,p.y,p.z)]),
+      new THREE.LineDashedMaterial({color:0xffffff, transparent:true, opacity:.55, dashSize:.2, gapSize:.16}));
+    dl.computeLineDistances(); selGroup.add(dl);
+    const gm=new THREE.Mesh(new THREE.RingGeometry(0.14,0.2,24),
+      new THREE.MeshBasicMaterial({color:0xffffff, side:THREE.DoubleSide, fog:false}));
+    gm.rotation.x=-Math.PI/2; gm.position.set(p.x,0.01,p.z); selGroup.add(gm);
+  }
+  invalidate();
+}
+
+/* ==========================================================================
+   10 · CÁMARA
+   ========================================================================== */
+let tween=null, mapOpAuto=true;
+/* El mapa es una cara transparente que se dibuja DESPUÉS de las esferas: a 100 %
+   de opacidad tapaba toda la nube (el defecto más caro de la versión original).
+   Por eso baja a 55 % en las vistas oblicuas y sube a 100 % sólo en planta. */
+function setMapOpacity(v){
+  state.layers.mapOp=v;
+  const el=document.getElementById('mapOp');
+  el.value=Math.round(v*100);
+  document.getElementById('mapOpVal').textContent=Math.round(v*100)+' %';
+  if(mapMesh) mapMesh.material.opacity=v;
+  invalidate();
+}
+function fitDistance(){ return Math.max(GEO.sx,GEO.sz)*1.35; }
+function setView(k, animate=true){
+  const H=boxH(), D=fitDistance();
+  if(mapOpAuto) setMapOpacity(k==='plan' ? 1 : 0.55);
+  const target=new THREE.Vector3(0,-H*0.42,0);
+  let pos;
+  switch(k){
+    case 'plan': pos=new THREE.Vector3(0, D*1.25, 0.001); target.set(0,-H*0.15,0); break;
+    case 'we':   pos=new THREE.Vector3(0, -H*0.4, D*1.15); target.set(0,-H*0.5,0); break;
+    case 'ns':   pos=new THREE.Vector3(D*1.15, -H*0.4, 0); target.set(0,-H*0.5,0); break;
+    case 'zoom': {
+      const c=toScene(CENTER.lat,CENTER.lon,60);
+      target.set(c.x,c.y,c.z);
+      pos=new THREE.Vector3(c.x+D*0.30, c.y+D*0.34, c.z+D*0.46);
+      break;
+    }
+    default:     pos=new THREE.Vector3(D*0.68, D*0.40, D*0.80);
+  }
+  document.querySelectorAll('[data-view]').forEach(b=>b.setAttribute('aria-pressed', String(b.dataset.view===k)));
+  if(!animate || matchMedia('(prefers-reduced-motion:reduce)').matches){
+    camera.position.copy(pos); controls.target.copy(target); controls.update(); invalidate(); return;
+  }
+  tween={p0:camera.position.clone(), p1:pos, t0:controls.target.clone(), t1:target, s:performance.now(), d:620};
+}
+function stepTween(now){
+  if(!tween) return;
+  let k=(now-tween.s)/tween.d;
+  if(k>=1){ k=1; }
+  const e=k<.5 ? 4*k*k*k : 1-Math.pow(-2*k+2,3)/2;
+  camera.position.lerpVectors(tween.p0,tween.p1,e);
+  controls.target.lerpVectors(tween.t0,tween.t1,e);
+  controls.update();
+  if(k===1) tween=null;
+  invalidate();
+}
+function focusEvent(e){
+  select(e);
+  const p=toScene(e.lat,e.lon,e.prof), D=fitDistance()*0.42;
+  tween={p0:camera.position.clone(), p1:new THREE.Vector3(p.x+D*0.7,p.y+D*0.6,p.z+D*0.85),
+         t0:controls.target.clone(), t1:new THREE.Vector3(p.x,p.y,p.z), s:performance.now(), d:620};
+}
+
+/* ==========================================================================
+   11 · BUCLE
+   ========================================================================== */
+let lastPlay=0;
+function animate(now){
+  requestAnimationFrame(animate);
+  stepTween(now||0);
+
+  if(state.playing){
+    const dt=(now-lastPlay)||16; lastPlay=now;
+    state.tPos += (dt/1000)*0.055*state.speed;
+    if(state.tPos>=1){
+      state.tPos=1;
+      if(state.loop){ state.tPos=0; }
+      else setPlaying(false);
+    }
+    updateSwarm(); drawStrip(); updatePlayhead();
+  }
+  if(state.layers.autoRot){ controls.autoRotate=true; controls.autoRotateSpeed=0.55; invalidate(); }
+  else controls.autoRotate=false;
+  if(controls.enableDamping) controls.update();
+
+  if(!needsRender) return;
+  needsRender=false;
+
+  // paredes del fondo + billboards
+  if(state.layers.grid){
+    wallGroup.children.forEach(w=>{
+      const k=w.userData.wall;
+      w.visible = k==='n' ? camera.position.z> -GEO.sz/2
+                : k==='s' ? camera.position.z<  GEO.sz/2
+                : k==='e' ? camera.position.x<  GEO.sx/2
+                :           camera.position.x> -GEO.sx/2;
+    });
+  }
+  if(projMesh) updateProj(false);
+  [markGroup,selGroup].forEach(g=>g.children.forEach(c=>{
+    if(c.userData.billboard) c.quaternion.copy(camera.quaternion);
+  }));
+
+  renderer.render(scene,camera);
+  updateLabels(); updateScaleBar(); updateCompass();
+}
+function onResize(){
+  const wrap=document.getElementById('sceneWrap');
+  if(!wrap.clientWidth) return;
+  camera.aspect=wrap.clientWidth/wrap.clientHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(wrap.clientWidth, wrap.clientHeight, false);
+  invalidate(); drawStrip();
+}
+
+/* ==========================================================================
+   12 · TIRA DE TIEMPO
+   Un solo eje (magnitud). La tasa de sismos se lee en la densidad de tallos:
+   nada de un segundo eje Y colgado al lado.
+   ========================================================================== */
+const strip=document.getElementById('strip'), sctx=strip.getContext('2d');
+function sizeCanvas(cv,ctx){
+  const r=cv.getBoundingClientRect(), dpr=Math.min(devicePixelRatio,2);
+  if(!r.width) return null;
+  cv.width=Math.round(r.width*dpr); cv.height=Math.round(r.height*dpr);
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  return r;
+}
+function drawStrip(){
+  const r=sizeCanvas(strip,sctx); if(!r) return;
+  const W=r.width, H=r.height, mL=30, mR=8, mT=8, mB=15;
+  const pw=W-mL-mR, ph=H-mT-mB;
+  sctx.clearRect(0,0,W,H);
+
+  const magMax=Math.max(4, Math.ceil(eventos.reduce((a,e)=>Math.max(a,e.mag),0)));
+  const X=t=>mL+((t-tMin)/(tMax-tMin))*pw;
+  const Y=m=>mT+ph-(m/magMax)*ph;
+
+  // retículas de magnitud
+  sctx.strokeStyle='#2c2c2a'; sctx.lineWidth=1;
+  sctx.fillStyle='#898781'; sctx.font='10px system-ui,sans-serif'; sctx.textAlign='right';
+  for(let m=2;m<=magMax;m+=2){
+    const y=Math.round(Y(m))+.5;
+    sctx.beginPath(); sctx.moveTo(mL,y); sctx.lineTo(W-mR,y); sctx.stroke();
+    sctx.fillText('M'+m, mL-6, y+3);
+  }
+  // separadores de día
+  const d0=new Date(tMin); d0.setUTCHours(0,0,0,0);
+  for(let t=d0.getTime(); t<=tMax; t+=86400e3){
+    if(t<tMin) continue;
+    const x=Math.round(X(t))+.5;
+    sctx.strokeStyle='#383835';
+    sctx.beginPath(); sctx.moveTo(x,mT); sctx.lineTo(x,mT+ph); sctx.stroke();
+  }
+  // línea base
+  sctx.strokeStyle='#383835';
+  sctx.beginPath(); sctx.moveTo(mL,mT+ph+.5); sctx.lineTo(W-mR,mT+ph+.5); sctx.stroke();
+
+  const now=nowMs(), winMs=state.windowH*3600e3;
+  // banda activa de la ventana móvil
+  if(state.tMode==='window'){
+    sctx.fillStyle='rgba(57,135,229,.13)';
+    sctx.fillRect(X(Math.max(tMin,now-winMs)), mT, X(now)-X(Math.max(tMin,now-winMs)), ph);
+  }
+  // tallos
+  const vis=visibleSet;
+  for(const e of eventos){
+    const x=Math.round(X(e.t))+.5, y=Y(e.mag);
+    const shown = vis.has(e) && (state.tMode==='all' || e.t<=now);
+    const past  = e.t<=now;
+    sctx.strokeStyle = !vis.has(e) ? 'rgba(137,135,129,.22)'
+                     : shown ? anCss(e.prof)
+                     : 'rgba(137,135,129,.35)';
+    sctx.lineWidth = shown?2:1;
+    sctx.beginPath(); sctx.moveTo(x,mT+ph); sctx.lineTo(x,y); sctx.stroke();
+    if(shown && e.mag>=3.2){
+      sctx.fillStyle=sctx.strokeStyle;
+      sctx.beginPath(); sctx.arc(x,y,2.6,0,Math.PI*2); sctx.fill();
+    }
+  }
+  // etiqueta directa del principal
+  const main=eventos.reduce((a,b)=>b.mag>a.mag?b:a);
+  sctx.fillStyle='#ffffff'; sctx.font='600 11px system-ui,sans-serif'; sctx.textAlign='left';
+  sctx.fillText('M'+nf(main.mag,1), X(main.t)+7, Y(main.mag)+4);
+  // cabezal
+  const px=Math.round(X(now))+.5;
+  sctx.strokeStyle='#ffffff'; sctx.lineWidth=1.5;
+  sctx.beginPath(); sctx.moveTo(px,mT-3); sctx.lineTo(px,mT+ph+3); sctx.stroke();
+  sctx.fillStyle='#ffffff';
+  sctx.beginPath(); sctx.moveTo(px-4,mT-3); sctx.lineTo(px+4,mT-3); sctx.lineTo(px,mT+3); sctx.fill();
+
+  document.getElementById('tStart').textContent=fmtDT(tMin);
+  document.getElementById('tEnd').textContent=fmtDT(tMax);
+  updatePlayhead();
+}
+function updatePlayhead(){
+  document.getElementById('playhead').textContent=fmtFull(nowMs());
+  document.getElementById('tzLabel').textContent = state.tz==='COT'?'hora local (UTC−5)':'tiempo universal (UTC)';
+}
+(function stripDrag(){
+  const wrap=document.getElementById('stripWrap');
+  let down=false;
+  const seek=ev=>{
+    const r=strip.getBoundingClientRect();
+    const mL=30, mR=8;
+    const k=(ev.clientX-r.left-mL)/(r.width-mL-mR);
+    state.tPos=Math.max(0,Math.min(1,k));
+    if(state.tMode==='all'){ setTMode('trail'); }
+    updateSwarm(); drawStrip();
+  };
+  wrap.addEventListener('pointerdown',e=>{down=true;wrap.setPointerCapture(e.pointerId);seek(e);});
+  wrap.addEventListener('pointermove',e=>{if(down)seek(e);});
+  wrap.addEventListener('pointerup',()=>down=false);
+  wrap.addEventListener('pointercancel',()=>down=false);
+})();
+
+/* ==========================================================================
+   13 · HISTOGRAMA DE PROFUNDIDAD  (barra fantasma = total, barra llena = filtrado)
+   ========================================================================== */
+const hist=document.getElementById('histChart'), hctx=hist.getContext('2d');
+function drawHist(){
+  const r=sizeCanvas(hist,hctx); if(!r) return;
+  const W=r.width,H=r.height,mL=34,mR=10,mT=6,mB=18;
+  const pw=W-mL-mR, ph=H-mT-mB;
+  hctx.clearRect(0,0,W,H);
+
+  const isSwarm = state.hist==='swarm';
+  const maxD = isSwarm ? 130 : Math.min(300, state.view.base);
+  const bin = isSwarm ? 10 : 20;
+  const nb=Math.ceil(maxD/bin);
+  const tot=new Array(nb).fill(0), fil=new Array(nb).fill(0);
+
+  if(isSwarm){
+    eventos.forEach(e=>{ const i=Math.min(nb-1,Math.floor(e.prof/bin)); tot[i]++; if(visibleSet.has(e)) fil[i]++; });
+  }else{
+    plateData.forEach(p=>{ if(p[2]>maxD) return; const i=Math.min(nb-1,Math.floor(p[2]/bin)); tot[i]++; fil[i]++; });
+  }
+  const mx=Math.max(1,...tot);
+  const bh=ph/nb;
+
+  hctx.font='10px system-ui,sans-serif'; hctx.textAlign='right';
+  for(let i=0;i<nb;i++){
+    const y=mT+i*bh;
+    hctx.fillStyle='rgba(137,135,129,.20)';
+    hctx.fillRect(mL, y+1, (tot[i]/mx)*pw, bh-2);            // 2px de aire entre barras
+    hctx.fillStyle = isSwarm ? anCss(i*bin+bin/2) : refCss(i*bin+bin/2);
+    hctx.fillRect(mL, y+1, (fil[i]/mx)*pw, bh-2);
+    if(i%(isSwarm?3:2)===0){
+      hctx.fillStyle='#898781';
+      hctx.fillText(i*bin+'', mL-6, y+bh/2+3);
+    }
+  }
+  hctx.strokeStyle='#383835'; hctx.lineWidth=1;
+  hctx.beginPath(); hctx.moveTo(mL+.5,mT); hctx.lineTo(mL+.5,mT+ph); hctx.stroke();
+  hctx.fillStyle='#898781'; hctx.textAlign='left';
+  hctx.fillText('km', 4, mT+8);
+  hctx.textAlign='right';
+  hctx.fillText(mx+' sismos', W-mR, H-5);
+
+  const note=document.getElementById('histNote');
+  if(isSwarm){
+    const deep=eventos.filter(e=>e.prof>=70).length;
+    note.innerHTML=`Distribución <b>bimodal</b>: ${deep} de ${eventos.length} eventos por debajo de 70 km.`;
+  }else{
+    const nest=plateData.filter(p=>p[2]>=140&&p[2]<=180).length;
+    note.innerHTML = nest>50
+      ? `El pico de 140–180 km son <b>${nest.toLocaleString('es-CO')}</b> sismos del Nido de Bucaramanga, a ~600 km del Chocó.`
+      : `${CATALOGS[state.catalog].label} (${CATALOGS[state.catalog].years}), recortado a la ventana geográfica activa.`;
+  }
+}
+
+/* ==========================================================================
+   14 · TABLA DE EVENTOS MAYORES
+   ========================================================================== */
+function fillTopTable(){
+  const tb=document.getElementById('topTable');
+  const top=[...visible].sort((a,b)=>b.mag-a.mag).slice(0,8);
+  tb.innerHTML = top.length ? top.map(e=>`
+    <tr data-id="${e.sgcId}">
+      <td>${fmtDT(e.t)}</td>
+      <td class="n" style="color:${anCss(e.prof)}">${nf(e.mag,1)}</td>
+      <td class="n">${nf(e.prof,0)}</td>
+    </tr>`).join('') : '<tr><td colspan="3" style="color:var(--ink-3)">Ningún evento pasa los filtros.</td></tr>';
+  tb.querySelectorAll('tr[data-id]').forEach(tr=>tr.addEventListener('click',()=>{
+    const e=eventos.find(x=>x.sgcId===tr.dataset.id); if(e) focusEvent(e);
+  }));
+}
+
+/* ==========================================================================
+   15 · PERFIL DE PROFUNDIDAD
+   La banda se dibuja también DENTRO del cubo: el corte 2D y el volumen 3D
+   son visiblemente la misma cosa (antes era un modal que tapaba la escena).
+   ========================================================================== */
+function kmPerDeg(lat){ return {lat:110.574, lon:111.320*Math.cos(lat*Math.PI/180)}; }
+function profileGeom(){
+  const A=state.prof.a, B=state.prof.b;
+  if(!A||!B) return null;
+  const k=kmPerDeg((A.lat+B.lat)/2);
+  const ax=A.lon*k.lon, ay=A.lat*k.lat, bx=B.lon*k.lon, by=B.lat*k.lat;
+  const dx=bx-ax, dy=by-ay, L=Math.hypot(dx,dy);
+  if(L<1) return null;
+  const ux=dx/L, uy=dy/L;
+  const az=(Math.atan2(dx,dy)*180/Math.PI+360)%360;
+  return {A,B,k,ax,ay,ux,uy,L,az,
+    project:(lat,lon)=>{ const vx=lon*k.lon-ax, vy=lat*k.lat-ay;
+      return {t:vx*ux+vy*uy, perp:vx*(-uy)+vy*ux}; }};
+}
+function profileSeries(){
+  const g=profileGeom(); if(!g) return null;
+  const s=state.prof.swath;
+  const swarm=[], plate=[];
+  visible.forEach(e=>{ const {t,perp}=g.project(e.lat,e.lon);
+    if(t>=0&&t<=g.L&&Math.abs(perp)<=s) swarm.push({t,d:e.prof,m:e.mag,imp:e.imported,e}); });
+  plateData.forEach(p=>{ if(p[2]>state.view.base) return;
+    const {t,perp}=g.project(p[1],p[0]);
+    if(t>=0&&t<=g.L&&Math.abs(perp)<=s) plate.push({t,d:p[2],m:p[3]}); });
+  // buzamiento aparente: regresión lineal sobre la placa
+  let dip=null;
+  if(plate.length>=20){
+    const n=plate.length;
+    let st=0,sd=0,stt=0,std=0;
+    plate.forEach(p=>{st+=p.t;sd+=p.d;stt+=p.t*p.t;std+=p.t*p.d;});
+    const den=n*stt-st*st;
+    if(Math.abs(den)>1e-6){
+      const slope=(n*std-st*sd)/den;
+      dip=Math.atan(Math.abs(slope))*180/Math.PI;
+    }
+  }
+  return {g,swarm,plate,dip};
+}
+function redrawSection(){
+  while(sectionGroup.children.length){ const c=sectionGroup.children.pop();
+    c.geometry&&c.geometry.dispose(); c.material&&c.material.dispose(); }
+  const g=profileGeom(); if(!g) { invalidate(); return; }
+  const H=boxH(), s=state.prof.swath;
+  const A=toScene(g.A.lat,g.A.lon,0), B=toScene(g.B.lat,g.B.lon,0);
+  // plano de sección
+  const dx=B.x-A.x, dz=B.z-A.z, len=Math.hypot(dx,dz);
+  const pl=new THREE.Mesh(new THREE.PlaneGeometry(len,H),
+    new THREE.MeshBasicMaterial({color:0xd95926, transparent:true, opacity:.06,
+                                 side:THREE.DoubleSide, depthWrite:false}));
+  pl.position.set((A.x+B.x)/2, -H/2, (A.z+B.z)/2);
+  pl.rotation.y=Math.atan2(dx,dz)+Math.PI/2;
+  sectionGroup.add(pl);
+  // traza y banda sobre el mapa
+  const nx=-dz/len, nz=dx/len, half=s*GEO.uKm;
+  const band=[[A.x+nx*half,A.z+nz*half],[B.x+nx*half,B.z+nz*half],
+              [B.x-nx*half,B.z-nz*half],[A.x-nx*half,A.z-nz*half]];
+  const bp=band.map(([x,z])=>new THREE.Vector3(x,0.02,z)); bp.push(bp[0].clone());
+  sectionGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(bp),
+    new THREE.LineBasicMaterial({color:0xd95926, transparent:true, opacity:.55})));
+  sectionGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(
+    [new THREE.Vector3(A.x,0.03,A.z), new THREE.Vector3(B.x,0.03,B.z)]),
+    new THREE.LineBasicMaterial({color:0xd95926})));
+  invalidate();
+}
+
+const pchart=document.getElementById('profileChart'), pctx=pchart.getContext('2d');
+function drawProfile(){
+  const S=profileSeries();
+  const wrap=document.getElementById('profileBody');
+  if(!S){ wrap.hidden=true; document.getElementById('profileEmpty').hidden=false; return; }
+  wrap.hidden=false; document.getElementById('profileEmpty').hidden=true;
+
+  document.getElementById('pfLen').textContent=nf(S.g.L,0)+' km';
+  document.getElementById('pfAz').textContent='N'+nf(S.g.az,0)+'°E';
+  document.getElementById('pfN').textContent=(S.swarm.length+S.plate.length).toLocaleString('es-CO')+
+     ` (${S.swarm.length} enjambre)`;
+  document.getElementById('pfDip').textContent = S.dip!==null ? nf(S.dip,1)+'°' : 'sin datos suficientes';
+
+  const r=sizeCanvas(pchart,pctx); if(!r) return;
+  const W=r.width,H=r.height,mL=38,mR=10,mT=10,mB=26;
+  const pw=W-mL-mR, ph=H-mT-mB;
+  pctx.clearRect(0,0,W,H);
+  pctx.fillStyle='#0d0d0d'; pctx.fillRect(0,0,W,H);
+
+  let maxD=Math.max(20, ...S.swarm.map(p=>p.d), ...S.plate.map(p=>p.d));
+  maxD=Math.ceil(maxD*1.08/10)*10;
+  let exag = (ph/maxD)/(pw/S.g.L);
+  if(state.prof.trueScale){                        // fuerza 1:1 recortando el alto útil
+    const want=(pw/S.g.L)*maxD;
+    if(want<ph){ /* deja aire abajo */ }
+    exag=1;
+  }
+  const X=t=>mL+(t/S.g.L)*pw;
+  const Y=d=>state.prof.trueScale
+      ? mT+(d/S.g.L)*pw
+      : mT+(d/maxD)*ph;
+  document.getElementById('profExagVal').textContent='×'+nf(state.prof.trueScale?1:exag,1);
+
+  // retícula
+  pctx.font='10px system-ui,sans-serif';
+  const dStep = maxD<=60?10:(maxD<=150?25:50);
+  pctx.textAlign='right';
+  for(let d=0; d<=maxD; d+=dStep){
+    const y=Y(d); if(y>mT+ph) break;
+    pctx.strokeStyle='#2c2c2a'; pctx.lineWidth=1;
+    pctx.beginPath(); pctx.moveTo(mL,Math.round(y)+.5); pctx.lineTo(W-mR,Math.round(y)+.5); pctx.stroke();
+    pctx.fillStyle='#898781'; pctx.fillText(d, mL-6, y+3);
+  }
+  const lStep = S.g.L<=100?20:(S.g.L<=300?50:100);
+  pctx.textAlign='center';
+  for(let t=lStep; t<S.g.L-lStep*0.35; t+=lStep){
+    const x=X(t);
+    pctx.strokeStyle='#2c2c2a';
+    pctx.beginPath(); pctx.moveTo(Math.round(x)+.5,mT); pctx.lineTo(Math.round(x)+.5,mT+ph); pctx.stroke();
+    pctx.fillStyle='#898781'; pctx.fillText(Math.round(t), x, H-10);
+  }
+  pctx.strokeStyle='#383835';
+  pctx.strokeRect(mL+.5,mT+.5,pw,ph);
+  pctx.fillStyle='#c3c2b7'; pctx.textAlign='left';
+  pctx.fillText('A', mL+2, H-10); pctx.textAlign='right'; pctx.fillText('B', W-mR-2, H-10);
+  pctx.save(); pctx.translate(11,mT+ph/2); pctx.rotate(-Math.PI/2);
+  pctx.textAlign='center'; pctx.fillStyle='#898781'; pctx.fillText('profundidad (km)',0,0); pctx.restore();
+
+  pctx.save();
+  pctx.beginPath(); pctx.rect(mL,mT,pw,ph); pctx.clip();
+
+  // contexto primero
+  S.plate.forEach(p=>{
+    const c=state.layers.plateGray?GRAY:refRGB(p.d);
+    pctx.fillStyle=`rgba(${c[0]},${c[1]},${c[2]},.42)`;
+    pctx.beginPath(); pctx.arc(X(p.t),Y(p.d), Math.max(1.1,0.7+(p.m-2.5)*0.45), 0, Math.PI*2); pctx.fill();
+  });
+  // ajuste lineal de la placa
+  if(S.dip!==null && S.plate.length>=20){
+    const n=S.plate.length; let st=0,sd=0,stt=0,std=0;
+    S.plate.forEach(p=>{st+=p.t;sd+=p.d;stt+=p.t*p.t;std+=p.t*p.d;});
+    const den=n*stt-st*st, slope=(n*std-st*sd)/den, b=(sd-slope*st)/n;
+    pctx.strokeStyle='rgba(255,255,255,.45)'; pctx.lineWidth=1.5; pctx.setLineDash([5,4]);
+    pctx.beginPath(); pctx.moveTo(X(0),Y(b)); pctx.lineTo(X(S.g.L),Y(slope*S.g.L+b)); pctx.stroke();
+    pctx.setLineDash([]);
+  }
+  // enjambre encima, con aro de separación
+  S.swarm.forEach(p=>{
+    const c=anRGB(p.d);
+    const rr=Math.max(2.4, 1.4+Math.pow(p.m,1.7)*0.42);
+    pctx.beginPath(); pctx.arc(X(p.t),Y(p.d),rr,0,Math.PI*2);
+    pctx.fillStyle=`rgb(${c.join(',')})`; pctx.fill();
+    pctx.strokeStyle='#0d0d0d'; pctx.lineWidth=2; pctx.stroke();
+  });
+  pctx.restore();
+}
+function openProfile(){
+  showTab('perfil');
+  drawProfile(); redrawSection();
+}
+
+/* ==========================================================================
+   16 · IMPORTACIÓN DE GEOJSON
+   ========================================================================== */
+const num=v=>{ if(v===undefined||v===null||v==='') return null;
+  const n=typeof v==='number'?v:parseFloat(v); return isNaN(n)?null:n; };
+function parseGeoJSON(j){
+  const feats=Array.isArray(j?.features)?j.features:[];
+  const out=[];
+  feats.forEach((f,i)=>{
+    const p=f.properties||{}, c=Array.isArray(f.geometry?.coordinates)?f.geometry.coordinates:[];
+    const lon=num(p.longitude??p.lon??p.longitud??c[0]);
+    const lat=num(p.latitude??p.lat??p.latitud??c[1]);
+    const dep=num(p.depth??p.profundidad??p.prof??c[2]);
+    const mag=num(p.magnitude??p.mag??p.magnitud);
+    const tr=p.utc_time??p.time??p.fecha??p.date??p.local_time??p.ESP_FECHA_TXT;
+    if(lat===null||lon===null||dep===null||mag===null||!tr) return;
+    const t=new Date(tr).getTime();
+    if(isNaN(t)) return;
+    out.push({sgcId:p.id||p.ID||p.codigo||p.event_id||('IMP-'+(i+1)),
+              mag, prof:Math.abs(dep)>1000?Math.abs(dep)/1000:Math.abs(dep),
+              lat, lon, t, imported:true});
+  });
+  return out;
+}
+document.getElementById('fileIn').addEventListener('change',ev=>{
+  const f=ev.target.files[0], st=document.getElementById('importStatus');
+  if(!f) return;
+  st.textContent='Leyendo…';
+  const fr=new FileReader();
+  fr.onload=()=>{
+    try{
+      const nuevos=parseGeoJSON(JSON.parse(String(fr.result).replace(/^﻿/,'')));
+      if(!nuevos.length){ st.innerHTML='⚠ No se encontraron sismos válidos. Revisa que traiga <b>lat/lon/profundidad/magnitud/fecha</b>.'; return; }
+      eventos=eventos.concat(nuevos).sort((a,b)=>a.t-b.t);
+      tMin=eventos[0].t; tMax=eventos[eventos.length-1].t;
+      buildSwarm(); applyFilters(); drawStrip();
+      document.getElementById('clearImported').hidden=false;
+      st.innerHTML=`✓ <b>${nuevos.length}</b> sismos importados · total ${eventos.length}.`;
+    }catch(e){ st.textContent='⚠ Error al leer el archivo: '+e.message; }
+  };
+  fr.onerror=()=>{ st.textContent='⚠ No se pudo leer el archivo.'; };
+  fr.readAsText(f);
+  ev.target.value='';
+});
+document.getElementById('clearImported').addEventListener('click',()=>{
+  eventos=eventos.filter(e=>!e.imported).sort((a,b)=>a.t-b.t);
+  tMin=eventos[0].t; tMax=eventos[eventos.length-1].t;
+  buildSwarm(); applyFilters(); drawStrip();
+  document.getElementById('clearImported').hidden=true;
+  document.getElementById('importStatus').textContent='Importados eliminados.';
+});
+
+
+/* ==========================================================================
+   16b · ANÁLISIS SISMOLÓGICO
+   Tres estadísticos canónicos que el tablero original no calculaba:
+   Gutenberg-Richter (valor b), decaimiento de Omori y momento acumulado.
+   ========================================================================== */
+const AN_COL = () => state.an==='swarm' ? '#ef8348' : '#3987e5';   // el gráfico se tiñe del catálogo que analiza
+const M0J   = m => Math.pow(10, 1.5*m + 9.1);   // momento escalar, N·m — Hanks & Kanamori (1979)
+const ERAD  = m => Math.pow(10, 1.5*m + 4.8);   // energía radiada, J — Gutenberg & Richter (1956)
+const HIROSHIMA = 6.3e13;                        // J, referencia divulgativa (15 kt)
+
+function anList(){
+  return state.an==='swarm'
+    ? visible.map(e=>({mag:e.mag, prof:e.prof, t:e.t}))
+    : plateData.filter(q=>q[3]>=state.filt.magMin && q[2]>=state.filt.depthMin
+                        && q[2]<=state.filt.depthMax && q[2]<=state.view.base)
+               .map(q=>({mag:q[3], prof:q[2], t:null}));
+}
+
+/* Distribución frecuencia-magnitud + Mc por máxima curvatura + b por máxima
+   verosimilitud (Aki 1965, Utsu), con σ de Shi & Bolt (1982). */
+function fmd(list, bin){
+  bin = bin || 0.1;
+  if(list.length<10) return null;
+  let lo=Infinity, hi=-Infinity;
+  for(const e of list){ if(e.mag<lo) lo=e.mag; if(e.mag>hi) hi=e.mag; }
+  lo=Math.floor(lo/bin)*bin; hi=Math.ceil(hi/bin)*bin;
+  const nb=Math.max(2, Math.round((hi-lo)/bin)+1);
+  const bins=Array.from({length:nb},(_,i)=>lo+i*bin);
+  const nc=new Array(nb).fill(0);
+  for(const e of list){ nc[Math.max(0,Math.min(nb-1, Math.round((e.mag-lo)/bin)))]++; }
+  const cum=new Array(nb).fill(0);
+  for(let i=nb-1, acc=0; i>=0; i--){ acc+=nc[i]; cum[i]=acc; }
+
+  let iMax=0; for(let i=0;i<nb;i++) if(nc[i]>nc[iMax]) iMax=i;
+  const Mc=bins[iMax]+0.2;                                  // MAXC + corrección empírica
+
+  const sel=list.filter(e=>e.mag>=Mc-1e-9).map(e=>e.mag);
+  let b=null, sb=null, a=null;
+  if(sel.length>=15){
+    const mean=sel.reduce((x,m)=>x+m,0)/sel.length;
+    const den=mean-(Mc-bin/2);
+    if(den>0.05){
+      b=Math.LOG10E/den;
+      const v=sel.reduce((x,m)=>x+(m-mean)*(m-mean),0)/(sel.length*(sel.length-1));
+      sb=2.30*b*b*Math.sqrt(Math.max(v,0));
+      a=Math.log10(sel.length)+b*Mc;
+    }
+  }
+  return {bins, nc, cum, Mc, b, sb, a, nFit:sel.length, bin};
+}
+
+function drawFMD(F0){
+  const cv=document.getElementById('fmdChart'), ctx=cv.getContext('2d');
+  const r=sizeCanvas(cv,ctx); if(!r) return;
+  const W=r.width,H=r.height,mL=34,mR=12,mT=12,mB=26, pw=W-mL-mR, ph=H-mT-mB;
+  ctx.clearRect(0,0,W,H);
+  const F = F0!==undefined ? F0 : fmd(anList());
+  const note=document.getElementById('fmdNote');
+  if(!F){ ctx.fillStyle='#898781'; ctx.font='11px system-ui,sans-serif'; ctx.textAlign='center';
+    ctx.fillText('Se necesitan al menos 10 sismos.', W/2, H/2); note.textContent=''; return; }
+
+  const mMin=F.bins[0], mMax=F.bins[F.bins.length-1]+F.bin;
+  const yMax=Math.log10(Math.max(10,F.cum[0]))*1.05;
+  const X=m=>mL+((m-mMin)/(mMax-mMin))*pw;
+  const YL=v=>mT+ph-(v/yMax)*ph;                  // v ya viene en log10
+  const Y=n=>YL(Math.log10(Math.max(n,0.9)));
+
+  ctx.font='10px system-ui,sans-serif';
+  ctx.strokeStyle='#2c2c2a'; ctx.lineWidth=1; ctx.textAlign='right';
+  for(let e=0;e<=Math.ceil(yMax);e++){
+    const y=Math.round(Y(Math.pow(10,e)))+.5; if(y<mT) break;
+    ctx.beginPath(); ctx.moveTo(mL,y); ctx.lineTo(W-mR,y); ctx.stroke();
+    ctx.fillStyle='#898781'; ctx.fillText(Math.pow(10,e).toLocaleString('es-CO'), mL-6, y+3);
+  }
+  ctx.textAlign='center';
+  const mStep = (mMax-mMin)>5 ? 2 : 1;
+  for(let m=Math.ceil(mMin); m<=mMax; m+=mStep){
+    const x=Math.round(X(m))+.5;
+    ctx.strokeStyle='#2c2c2a'; ctx.beginPath(); ctx.moveTo(x,mT); ctx.lineTo(x,mT+ph); ctx.stroke();
+    ctx.fillStyle='#898781'; ctx.fillText('M'+m, x, H-9);
+  }
+  ctx.strokeStyle='#383835'; ctx.strokeRect(mL+.5,mT+.5,pw,ph);
+
+  ctx.save(); ctx.beginPath(); ctx.rect(mL,mT,pw,ph); ctx.clip();
+  // recta de Gutenberg-Richter
+  if(F.b!==null){
+    ctx.strokeStyle='rgba(255,255,255,.5)'; ctx.lineWidth=1.5; ctx.setLineDash([5,4]);
+    ctx.beginPath();                              // sin recortar: la pendiente ES −b
+    ctx.moveTo(X(F.Mc),  YL(F.a-F.b*F.Mc));
+    ctx.lineTo(X(mMax),  YL(F.a-F.b*mMax));
+    ctx.stroke(); ctx.setLineDash([]);
+  }
+  // magnitud de completitud
+  ctx.strokeStyle='#d95926'; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(Math.round(X(F.Mc))+.5,mT); ctx.lineTo(Math.round(X(F.Mc))+.5,mT+ph); ctx.stroke();
+  ctx.fillStyle='#d95926'; ctx.textAlign='left'; ctx.font='600 10px system-ui,sans-serif';
+  ctx.fillText('Mc', X(F.Mc)+4, mT+11);
+  // número acumulado
+  F.bins.forEach((m,i)=>{
+    if(F.cum[i]<1) return;
+    ctx.beginPath(); ctx.arc(X(m), Y(F.cum[i]), 2.6, 0, Math.PI*2);
+    ctx.fillStyle=AN_COL(); ctx.fill();
+    ctx.strokeStyle='#0d0d0d'; ctx.lineWidth=2; ctx.stroke();
+  });
+  ctx.restore();
+
+  if(F.b!==null){
+    ctx.fillStyle='#ffffff'; ctx.font='600 11px system-ui,sans-serif'; ctx.textAlign='right';
+    ctx.fillText(`b = ${nf(F.b,2)} ± ${nf(F.sb,2)}`, W-mR-6, mT+14);
+  }
+  note.innerHTML = F.b===null
+    ? 'Muy pocos sismos sobre Mc para ajustar el valor b.'
+    : `<b>b = ${nf(F.b,2)}</b> sobre ${F.nFit} sismos con M ≥ ${nf(F.Mc,1)}. ${F.b<0.8 ? 'Por debajo de 0,8: esfuerzo diferencial alto, o catálogo incompleto en magnitudes bajas.' : (F.b>1.2 ? 'Por encima de 1,2: típico de zonas con fluidos.' : 'Cerca de 1, lo normal en corteza.')}`;
+}
+
+/* Decaimiento del ritmo de réplicas: bines logarítmicos desde el sismo principal
+   y ajuste log-log (equivale a la ley de Omori modificada con c ≈ 0). */
+function omoriSeries(){
+  if(state.an!=='swarm') return null;
+  const main=visible.reduce((a,e)=>(!a||e.mag>a.mag)?e:a, null);
+  if(!main) return null;
+  const post=visible.filter(e=>e.t>main.t).map(e=>(e.t-main.t)/3600e3);   // horas
+  if(post.length<12) return null;
+  const tEnd=Math.max(...post);
+  const t0=0.05, nb=9;
+  const edges=Array.from({length:nb+1},(_,i)=>t0*Math.pow(tEnd/t0, i/nb));
+  const pts=[];
+  for(let i=0;i<nb;i++){
+    const a=edges[i], b=edges[i+1];
+    const c=post.filter(t=>t>=a&&t<b).length;
+    if(c>0) pts.push({t:Math.sqrt(a*b), rate:c/(b-a), n:c});
+  }
+  if(pts.length<4) return null;
+  let sx=0,sy=0,sxx=0,sxy=0;
+  pts.forEach(q=>{ const X=Math.log10(q.t), Y=Math.log10(q.rate); sx+=X;sy+=Y;sxx+=X*X;sxy+=X*Y; });
+  const n=pts.length, den=n*sxx-sx*sx;
+  const slope=Math.abs(den)>1e-9 ? (n*sxy-sx*sy)/den : 0;
+  const inter=(sy-slope*sx)/n;
+  return {pts, p:-slope, inter, main, tEnd, total:pts.reduce((x,q)=>x+q.n,0), desde:t0};
+}
+function drawOmori(){
+  const cv=document.getElementById('omoriChart'), ctx=cv.getContext('2d');
+  const r=sizeCanvas(cv,ctx); if(!r) return;
+  const W=r.width,H=r.height,mL=40,mR=12,mT=12,mB=26, pw=W-mL-mR, ph=H-mT-mB;
+  ctx.clearRect(0,0,W,H);
+  const S=omoriSeries(), note=document.getElementById('omoriNote');
+  if(!S){ ctx.fillStyle='#898781'; ctx.font='11px system-ui,sans-serif'; ctx.textAlign='center';
+    ctx.fillText(state.an==='plate' ? 'Sólo aplica al enjambre.' : 'Faltan réplicas para el ajuste.', W/2, H/2);
+    note.textContent=''; return; }
+
+  const tMinL=Math.log10(0.05), tMaxL=Math.log10(S.tEnd);
+  const rates=S.pts.map(q=>q.rate);
+  const rMinL=Math.floor(Math.log10(Math.min(...rates)));
+  let rMaxL=Math.ceil(Math.log10(Math.max(...rates)));
+  if(rMaxL===rMinL) rMaxL=rMinL+1;
+  const X=t=>mL+((Math.log10(t)-tMinL)/(tMaxL-tMinL))*pw;
+  const Y=v=>mT+ph-((Math.log10(v)-rMinL)/(rMaxL-rMinL))*ph;
+
+  ctx.font='10px system-ui,sans-serif'; ctx.strokeStyle='#2c2c2a'; ctx.lineWidth=1;
+  ctx.textAlign='right';
+  for(let e=rMinL;e<=rMaxL;e++){
+    const y=Math.round(Y(Math.pow(10,e)))+.5;
+    ctx.beginPath(); ctx.moveTo(mL,y); ctx.lineTo(W-mR,y); ctx.stroke();
+    ctx.fillStyle='#898781';
+    ctx.fillText(e<0?Math.pow(10,e).toFixed(-e):String(Math.pow(10,e)), mL-6, y+3);
+  }
+  ctx.textAlign='center';
+  [0.1,1,10,100].forEach(t=>{ if(t<0.05||t>S.tEnd) return;
+    const x=Math.round(X(t))+.5;
+    ctx.strokeStyle='#2c2c2a'; ctx.beginPath(); ctx.moveTo(x,mT); ctx.lineTo(x,mT+ph); ctx.stroke();
+    ctx.fillStyle='#898781'; ctx.fillText(nf(t, t<1?1:0)+' h', x, H-9);
+  });
+  ctx.strokeStyle='#383835'; ctx.strokeRect(mL+.5,mT+.5,pw,ph);
+  ctx.save(); ctx.translate(11,mT+ph/2); ctx.rotate(-Math.PI/2);
+  ctx.fillStyle='#898781'; ctx.textAlign='center'; ctx.fillText('sismos / hora',0,0); ctx.restore();
+
+  ctx.save(); ctx.beginPath(); ctx.rect(mL,mT,pw,ph); ctx.clip();
+  ctx.strokeStyle='rgba(255,255,255,.5)'; ctx.lineWidth=1.5; ctx.setLineDash([5,4]);
+  ctx.beginPath();
+  ctx.moveTo(X(0.05), Y(Math.pow(10, S.inter - S.p*Math.log10(0.05))));
+  ctx.lineTo(X(S.tEnd), Y(Math.pow(10, S.inter - S.p*Math.log10(S.tEnd))));
+  ctx.stroke(); ctx.setLineDash([]);
+  S.pts.forEach(q=>{
+    ctx.beginPath(); ctx.arc(X(q.t), Y(q.rate), 3, 0, Math.PI*2);
+    ctx.fillStyle=AN_COL(); ctx.fill();
+    ctx.strokeStyle='#0d0d0d'; ctx.lineWidth=2; ctx.stroke();
+  });
+  ctx.restore();
+  ctx.fillStyle='#ffffff'; ctx.font='600 11px system-ui,sans-serif'; ctx.textAlign='right';
+  ctx.fillText(`p = ${nf(S.p,2)}`, W-mR-6, mT+14);
+  const lect = S.p<0.45
+    ? 'el ritmo casi no decae: se comporta como <b>enjambre</b>, no como una serie de réplicas clásica'
+    : (S.p<1.45 ? 'decaimiento propio de una <b>serie de réplicas</b>' : 'decaimiento <b>más rápido</b> de lo habitual');
+  note.innerHTML=`${S.total} eventos posteriores al M${nf(S.main.mag,1)}, en bines desde ${nf(S.desde*60,0)} min. Con <b>p = ${nf(S.p,2)}</b>, ${lect}.`;
+}
+
+/* Número de sismos y momento liberado, ambos en % del total: un solo eje,
+   y así se ve que casi toda la energía la suelta un evento. */
+function drawCum(){
+  const cv=document.getElementById('cumChart'), ctx=cv.getContext('2d');
+  const r=sizeCanvas(cv,ctx); if(!r) return;
+  const W=r.width,H=r.height,mL=34,mR=62,mT=12,mB=26, pw=W-mL-mR, ph=H-mT-mB;
+  ctx.clearRect(0,0,W,H);
+  const note=document.getElementById('cumNote');
+  if(state.an!=='swarm' || visible.length<5){
+    ctx.fillStyle='#898781'; ctx.font='11px system-ui,sans-serif'; ctx.textAlign='center';
+    ctx.fillText(state.an!=='swarm' ? 'Sólo aplica al enjambre.' : 'Muy pocos sismos pasan los filtros.', W/2, H/2);
+    note.textContent=''; return;
+  }
+  const list=[...visible].sort((a,b)=>a.t-b.t);
+  const totN=list.length, totM=list.reduce((x,e)=>x+M0J(e.mag),0);
+  const X=t=>mL+((t-tMin)/(tMax-tMin))*pw;
+  const Y=pc=>mT+ph-(pc/100)*ph;
+
+  ctx.font='10px system-ui,sans-serif'; ctx.textAlign='right';
+  [0,25,50,75,100].forEach(pc=>{
+    const y=Math.round(Y(pc))+.5;
+    ctx.strokeStyle='#2c2c2a'; ctx.beginPath(); ctx.moveTo(mL,y); ctx.lineTo(W-mR,y); ctx.stroke();
+    ctx.fillStyle='#898781'; ctx.fillText(pc+'%', mL-6, y+3);
+  });
+  ctx.strokeStyle='#383835'; ctx.strokeRect(mL+.5,mT+.5,pw,ph);
+  ctx.textAlign='center'; ctx.fillStyle='#898781';
+  const d0=new Date(tMin); d0.setUTCHours(0,0,0,0);
+  const days=Math.max(1,Math.round((tMax-tMin)/86400e3));
+  const dStep=Math.max(1,Math.ceil(days/6));        // un catálogo de años traía miles de etiquetas
+  let di=0;
+  for(let t=d0.getTime(); t<=tMax; t+=86400e3){
+    if(t<tMin) continue;
+    if(di++ % dStep) continue;
+    ctx.fillText(fmtDT(t).split('·')[0].trim(), X(t), H-9);
+  }
+
+  const draw=(valFn,color)=>{
+    ctx.strokeStyle=color; ctx.lineWidth=2; ctx.beginPath();
+    let acc=0; ctx.moveTo(X(tMin), Y(0));
+    list.forEach(e=>{ const x=X(e.t); ctx.lineTo(x, Y(acc)); acc+=valFn(e); ctx.lineTo(x, Y(acc)); });
+    ctx.lineTo(X(tMax), Y(acc)); ctx.stroke();
+    return acc;
+  };
+  draw(()=>100/totN, '#ef8348');
+  draw(e=>100*M0J(e.mag)/totM, '#d95926');
+
+  ctx.font='600 10px system-ui,sans-serif'; ctx.textAlign='left';
+  ctx.fillStyle='#ef8348'; ctx.fillText('sismos', W-mR+5, Y(100)+22);
+  ctx.fillStyle='#d95926'; ctx.fillText('momento', W-mR+5, Y(100)+8);
+
+  const main=list.reduce((a,e)=>e.mag>a.mag?e:a);
+  const share=100*M0J(main.mag)/totM;
+  const txt = share>99.95 ? '&gt;99,9 %' : nf(share,1)+' %';
+  note.innerHTML=`El M${nf(main.mag,1)} concentra el <b>${txt}</b> del momento sísmico, siendo 1 de ${totN} eventos.`;
+}
+
+function updateTiles(L,F){
+  document.getElementById('tileB').innerHTML = F&&F.b!==null
+    ? `${nf(F.b,2)} <small>± ${nf(F.sb,2)}</small>` : '–';
+  document.getElementById('tileMc').innerHTML = F ? `M ${nf(F.Mc,1)}` : '–';
+  const m0=L.reduce((x,e)=>x+M0J(e.mag),0);
+  const ej=L.reduce((x,e)=>x+ERAD(e.mag),0);
+  const exp=m0>0?Math.floor(Math.log10(m0)):0;
+  document.getElementById('tileM0').innerHTML = m0>0
+    ? `${nf(m0/Math.pow(10,exp),1)} <small>×10<sup>${exp}</sup> N·m</small>` : '–';
+  const h=ej/HIROSHIMA;
+  document.getElementById('tileEq').innerHTML = ej>0
+    ? (h>=1 ? `${nf(h,1)} <small>× Hiroshima</small>` : `${nf(ej/1e12,1)} <small>TJ</small>`) : '–';
+}
+function drawAnalysis(){
+  if(!document.getElementById('pane-analisis').classList.contains('on')) return;
+  const L=anList(), F=fmd(L);       // un solo recorrido para fichas y gráfico
+  updateTiles(L,F); drawFMD(F); drawOmori(); drawCum();
+}
+
+/* ==========================================================================
+   16c · CONTORNOS DE PROFUNDIDAD (marching squares sobre celdas de 0,25°)
+   ========================================================================== */
+let contourGroup=null;
+const MS_TABLE={1:[[3,2]],2:[[2,1]],3:[[3,1]],4:[[0,1]],5:[[3,0],[2,1]],6:[[0,2]],7:[[3,0]],
+                8:[[3,0]],9:[[0,2]],10:[[3,2],[0,1]],11:[[0,1]],12:[[3,1]],13:[[2,1]],14:[[3,2]]};
+function buildContours(){
+  if(contourGroup){ scene.remove(contourGroup);
+    contourGroup.children.forEach(c=>{c.geometry.dispose();c.material.dispose();}); contourGroup=null; }
+  if(!state.layers.contours || plateData.length<80) return;
+
+  const b=GEO.b, cell=0.25;
+  const nx=Math.max(3,Math.round((b.east-b.west)/cell));
+  const ny=Math.max(3,Math.round((b.north-b.south)/cell));
+  const acc=Array.from({length:nx*ny},()=>[]);
+  plateData.forEach(([lon,lat,d])=>{
+    const ix=Math.floor((lon-b.west)/(b.east-b.west)*nx);
+    const iy=Math.floor((b.north-lat)/(b.north-b.south)*ny);
+    if(ix<0||ix>=nx||iy<0||iy>=ny) return;
+    acc[iy*nx+ix].push(d);
+  });
+  let g=new Float64Array(nx*ny).fill(NaN);
+  acc.forEach((v,i)=>{ if(v.length>=3){ v.sort((a,b)=>a-b); g[i]=v[(v.length>>1)]; } });
+
+  const at=(gr,c,r)=>(c<0||c>=nx||r<0||r>=ny)?NaN:gr[r*nx+c];
+  const pass=(gr,fillGaps)=>{
+    const out=new Float64Array(nx*ny).fill(NaN);
+    for(let r=0;r<ny;r++) for(let c=0;c<nx;c++){
+      const self=at(gr,c,r);
+      if(isNaN(self) && !fillGaps){ continue; }
+      let s=0,n=0;
+      for(let dr=-1;dr<=1;dr++) for(let dc=-1;dc<=1;dc++){
+        const v=at(gr,c+dc,r+dr); if(!isNaN(v)){ s+=v; n++; }
+      }
+      if(n>=(isNaN(self)?4:2)) out[r*nx+c]=s/n;
+      else if(!isNaN(self)) out[r*nx+c]=self;
+    }
+    return out;
+  };
+  g=pass(g,true); g=pass(g,false);   // un relleno de huecos y un suavizado: más pasadas
+                                     // extienden los contornos sobre zonas sin sismos
+
+  let lo=Infinity, hi=-Infinity;
+  for(const v of g){ if(!isNaN(v)){ if(v<lo)lo=v; if(v>hi)hi=v; } }
+  const levels=[MOHO,50,75,100,150,200].filter(l=>l>lo+3 && l<hi-3 && l<=state.view.base);
+  if(!levels.length) return;
+
+  const dLon=(b.east-b.west)/nx, dLat=(b.north-b.south)/ny;
+  const node=(gc,gr)=>({lon:b.west+(gc+0.5)*dLon, lat:b.north-(gr+0.5)*dLat});
+  contourGroup=new THREE.Group();
+  levels.forEach(lvl=>{
+    const pts=[];
+    for(let r=0;r<ny-1;r++) for(let c=0;c<nx-1;c++){
+      const tl=at(g,c,r), tr=at(g,c+1,r), br=at(g,c+1,r+1), bl=at(g,c,r+1);
+      if(isNaN(tl)||isNaN(tr)||isNaN(br)||isNaN(bl)) continue;
+      const idx=(tl>=lvl?8:0)|(tr>=lvl?4:0)|(br>=lvl?2:0)|(bl>=lvl?1:0);
+      const segs=MS_TABLE[idx]; if(!segs) continue;
+      const edge=k=>{
+        let t;
+        if(k===0){ t=(lvl-tl)/(tr-tl); return node(c+t, r); }
+        if(k===1){ t=(lvl-tr)/(br-tr); return node(c+1, r+t); }
+        if(k===2){ t=(lvl-bl)/(br-bl); return node(c+t, r+1); }
+        t=(lvl-tl)/(bl-tl); return node(c, r+t);
+      };
+      segs.forEach(([e1,e2])=>{
+        [edge(e1),edge(e2)].forEach(q=>{
+          const P=toScene(q.lat,q.lon,0);
+          pts.push(new THREE.Vector3(P.x, 0.05, P.z));
+        });
+      });
+    }
+    if(!pts.length) return;
+    const col=refRGB(lvl);
+    const line=new THREE.LineSegments(
+      new THREE.BufferGeometry().setFromPoints(pts),
+      new THREE.LineBasicMaterial({color:(col[0]<<16)|(col[1]<<8)|col[2],
+        transparent:true, opacity: lvl===MOHO ? 1 : .8}));
+    line.userData.level=lvl;
+    contourGroup.add(line);
+  });
+  if(contourGroup.children.length) scene.add(contourGroup); else contourGroup=null;
+  invalidate();
+}
+
+/* ==========================================================================
+   16d · PROYECCIONES ORTOGONALES (piso + dos paredes del fondo)
+   ========================================================================== */
+let projMesh=null, projSign={x:0,z:0};
+function buildProj(){
+  // sphereGeo es compartida con el enjambre: aquí sólo se libera la instancia
+  if(projMesh){ scene.remove(projMesh); projMesh.dispose(); projMesh.material.dispose(); projMesh=null; }
+  if(!state.layers.proj || !eventos.length) return;
+  projMesh=new THREE.InstancedMesh(sphereGeo,
+    new THREE.MeshBasicMaterial({color:0x7a7a74, transparent:true, opacity:.5, depthWrite:false, fog:false}),
+    eventos.length*3);
+  projMesh.frustumCulled=false; projMesh.renderOrder=0;
+  scene.add(projMesh);
+  projSign={x:0,z:0};
+  updateProj(true);
+}
+function updateProj(force){
+  if(!projMesh) return;
+  const sx = camera.position.x>=0 ? -1 : 1;
+  const sz = camera.position.z>=0 ? -1 : 1;
+  if(!force && sx===projSign.x && sz===projSign.z) return;
+  projSign={x:sx,z:sz};
+  const hx=GEO.sx/2*sx, hz=GEO.sz/2*sz, floor=-boxH()+0.03, rad=0.085;
+  let k=0;
+  for(const e of instMap){          // instMap = lo que el modo temporal deja a la vista
+    if(!e) continue;
+    const p=toScene(e.lat,e.lon,e.prof);
+    const trio=[[p.x,floor,p.z],[hx,p.y,p.z],[p.x,p.y,hz]];
+    for(const [x,y,z] of trio){
+      dummy.position.set(x,y,z); dummy.scale.setScalar(rad); dummy.updateMatrix();
+      projMesh.setMatrixAt(k++, dummy.matrix);
+    }
+  }
+  projMesh.count=k;
+  projMesh.instanceMatrix.needsUpdate=true;
+  invalidate();
+}
+
+/* ==========================================================================
+   17 · CONTROLES
+   ========================================================================== */
+const $=id=>document.getElementById(id);
+const on=(id,ev,fn)=>$(id).addEventListener(ev,fn);
+
+// pestañas
+function showTab(k){
+  document.querySelectorAll('[data-tab]').forEach(b=>b.setAttribute('aria-selected',String(b.dataset.tab===k)));
+  document.querySelectorAll('.pane').forEach(p=>p.classList.toggle('on', p.id==='pane-'+k));
+  const paint = k==='perfil' ? drawProfile : (k==='datos' ? drawHist : (k==='analisis' ? drawAnalysis : null));
+  if(paint){ paint(); requestAnimationFrame(()=>paint()); }   // ya, y otra vez cuando el lienzo tenga medidas
+  if(window.innerWidth<=980) $('panel').classList.add('open');
+}
+document.querySelectorAll('[data-tab]').forEach(b=>b.addEventListener('click',()=>showTab(b.dataset.tab)));
+
+// grupos segmentados genéricos
+function segGroup(attr, fn){
+  document.querySelectorAll('['+attr+']').forEach(b=>b.addEventListener('click',()=>{
+    document.querySelectorAll('['+attr+']').forEach(x=>x.setAttribute('aria-pressed','false'));
+    b.setAttribute('aria-pressed','true');
+    fn(b.getAttribute(attr));
+  }));
+}
+segGroup('data-view', k=>setView(k));
+segGroup('data-tmode', k=>setTMode(k));
+segGroup('data-speed', k=>state.speed=parseFloat(k));
+segGroup('data-hist', k=>{ state.hist=k; drawHist(); });
+segGroup('data-base', k=>{ state.view.base=+k; $('depthMax').value=Math.min(450,+k);
+  state.filt.depthMax=+$('depthMax').value; updateDepthLabel(); rebuildFrame(); applyFilters(); });
+segGroup('data-tz', k=>{ state.tz=k; drawStrip(); fillTopTable(); updatePlayhead(); });
+segGroup('data-map', async k=>{ state.basemap=k; await reloadMap(); });
+segGroup('data-win', async k=>{ state.win=k; $('winNote').textContent=WINDOWS[k].note; await reloadMap(true); });
+segGroup('data-quick', k=>quickProfile(k));
+segGroup('data-cat', k=>setCatalog(k));
+segGroup('data-an', k=>{ state.an=k; drawAnalysis(); });
+$('winNote').textContent=WINDOWS.swarm.note;
+
+async function reloadMap(newWindow=false){
+  const ld=$('loading'), bar=$('loadBar'), txt=$('loadTxt');
+  ld.classList.remove('off'); bar.style.width='0%'; txt.textContent='Cargando mapa base…';
+  const res=await buildBasemap(state.win, state.basemap, (d,t)=>{
+    bar.style.width=(d/t*100)+'%'; txt.textContent=`Cargando mapa base… ${d}/${t}`; });
+  if(newWindow){
+    setupGeo(res.bounds);
+    state.prof.a=state.prof.b=null;
+    buildPlate(); rebuildFrame(); applyFilters();
+    drawProfile();
+  }
+  buildMap(res);
+  if(newWindow) setView('iso');
+  ld.classList.add('off');
+}
+
+// tiempo
+function setTMode(k){
+  state.tMode=k;
+  document.querySelectorAll('[data-tmode]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.tmode===k)));
+  if(k==='all') state.tPos=1;
+  updateSwarm(); drawStrip();
+}
+function setPlaying(v){
+  state.playing=v; lastPlay=performance.now();
+  $('playBtn').textContent = v?'❚❚':'▶';
+  $('playBtn').setAttribute('aria-label', v?'Pausar':'Reproducir');
+  if(v && state.tMode==='all') setTMode('trail');
+  if(v && state.tPos>=1) state.tPos=0;
+}
+on('playBtn','click',()=>setPlaying(!state.playing));
+on('loopChk','change',e=>state.loop=e.target.checked);
+
+// filtros
+on('magMin','input',e=>{ state.filt.magMin=+e.target.value;
+  $('magMinVal').textContent='M'+nf(state.filt.magMin,1); applyFilters(); updatePlate(); });
+function updateDepthLabel(){
+  $('depthVal').textContent=`${state.filt.depthMin}–${state.filt.depthMax} km`;
+}
+on('depthMin','input',e=>{
+  state.filt.depthMin=Math.min(+e.target.value, state.filt.depthMax-5);
+  e.target.value=state.filt.depthMin; updateDepthLabel(); applyFilters(); updatePlate(); });
+on('depthMax','input',e=>{
+  state.filt.depthMax=Math.max(+e.target.value, state.filt.depthMin+5);
+  e.target.value=state.filt.depthMax; updateDepthLabel(); applyFilters(); updatePlate(); });
+on('onlySwarm','change',e=>{ state.filt.onlySwarm=e.target.checked; applyFilters(); });
+$('depthMax').value=150; state.filt.depthMax=150; updateDepthLabel();
+
+// vista
+on('vexag','input',e=>{ state.view.vexag=+e.target.value;
+  $('vexagVal').textContent='×'+nf(state.view.vexag,1); rebuildFrame(); });
+on('mapOp','input',e=>{ mapOpAuto=false; state.layers.mapOp=+e.target.value/100;
+  $('mapOpVal').textContent=e.target.value+' %'; if(mapMesh) mapMesh.material.opacity=state.layers.mapOp; invalidate(); });
+on('showMap','change',e=>{ state.layers.map=e.target.checked; if(mapMesh) mapMesh.visible=e.target.checked; invalidate(); });
+on('showEvents','change',e=>{ state.layers.events=e.target.checked; updateSwarm(); });
+on('magScale','input',e=>{ state.view.magScale=+e.target.value/100;
+  $('magScaleVal').textContent=e.target.value+' %'; updateSwarm(); if(state.sel) select(state.sel); });
+on('showPlate','change',e=>{ state.layers.plate=e.target.checked; updatePlate(); });
+on('plateOp','input',e=>{ state.layers.plateOp=+e.target.value/100;
+  $('plateOpVal').textContent=e.target.value+' %'; updatePlate(); });
+on('plateSize','input',e=>{ state.layers.plateSize=+e.target.value/100;
+  $('plateSizeVal').textContent=e.target.value+' %'; updatePlate(); });
+on('plateGray','change',e=>{ state.layers.plateGray=e.target.checked; updatePlate(); drawProfile(); });
+on('showGrid','change',e=>{ state.layers.grid=e.target.checked;
+  gridGroup.visible=wallGroup.visible=e.target.checked; invalidate(); });
+on('showLabels','change',e=>{ state.layers.labels=e.target.checked; invalidate(); });
+on('showMain','change',e=>{ state.layers.main=e.target.checked; updateMarkVisibility(); });
+on('showNest','change',e=>{ state.layers.nest=e.target.checked; updateMarkVisibility(); });
+on('showMoho','change',e=>{ state.layers.moho=e.target.checked; updateMarkVisibility(); });
+on('showProj','change',e=>{ state.layers.proj=e.target.checked; buildProj(); });
+on('showContours','change',e=>{ state.layers.contours=e.target.checked; buildContours(); });
+on('autoRot','change',e=>{ state.layers.autoRot=e.target.checked; invalidate(); });
+on('resetCam','click',()=>{ setView('iso'); select(null); });
+on('pngBtn','click',()=>{
+  renderer.render(scene,camera);
+  const a=document.createElement('a');
+  a.download='enjambre-choco-3d.png';
+  a.href=renderer.domElement.toDataURL('image/png');
+  a.click();
+});
+
+// perfil
+on('pickBtn','click',()=>{
+  state.prof.a=state.prof.b=null; state.prof.picking='a';
+  $('pickText').innerHTML='Haz clic sobre el mapa para el punto <b>A</b>';
+  $('pickBanner').classList.add('on');
+  renderer.domElement.style.cursor='crosshair';
+  if(window.innerWidth<=980) $('panel').classList.remove('open');
+  redrawSection(); drawProfile();
+});
+on('pickCancel','click',()=>{
+  state.prof.picking=null; $('pickBanner').classList.remove('on');
+  renderer.domElement.style.cursor='grab';
+});
+on('swath','input',e=>{ state.prof.swath=+e.target.value;
+  $('swathVal').textContent='±'+e.target.value+' km'; redrawSection(); drawProfile(); });
+on('profTrue','change',e=>{ state.prof.trueScale=e.target.checked; drawProfile(); });
+on('profClear','click',()=>{ state.prof.a=state.prof.b=null; redrawSection(); drawProfile(); });
+on('profPng','click',()=>{
+  const a=document.createElement('a');
+  a.download='seccion-profundidad.png'; a.href=pchart.toDataURL('image/png'); a.click();
+});
+function quickProfile(kind){
+  const c=CENTER, k=kmPerDeg(c.lat);
+  const halfKm=Math.min(GEO.wKm,GEO.hKm)*0.42;
+  let az = kind==='trench' ? 75 : 0;                 // ⟂ a la fosa ≈ N75°E
+  const dLat=Math.cos(az*Math.PI/180)*halfKm/k.lat;
+  const dLon=Math.sin(az*Math.PI/180)*halfKm/k.lon;
+  state.prof.a={lat:c.lat-dLat, lon:c.lon-dLon};
+  state.prof.b={lat:c.lat+dLat, lon:c.lon+dLon};
+  state.prof.picking=null; $('pickBanner').classList.remove('on');
+  redrawSection(); drawProfile(); showTab('perfil');
+  setView(kind==='trench'?'we':'ns');
+}
+
+// panel móvil
+on('panelToggle','click',()=>{
+  const p=$('panel'), open=p.classList.toggle('open');
+  $('panelToggle').setAttribute('aria-expanded',String(open));
+});
+
+// atajos
+/* ── diálogo de fuentes ── */
+const dlg=$('methodDlg');
+on('methodBtn','click',()=>dlg.showModal());
+on('methodClose','click',()=>dlg.close());
+dlg.addEventListener('click',e=>{ if(e.target===dlg) dlg.close(); });
+
+/* ── leyenda plegable ── */
+on('legendToggle','click',e=>{
+  const l=$('legendHud'), col=l.classList.toggle('collapsed');
+  e.target.textContent = col ? '+' : '–';
+  e.target.setAttribute('aria-expanded', String(!col));
+  e.target.setAttribute('aria-label', col ? 'Desplegar la leyenda' : 'Plegar la leyenda');
+});
+
+/* ── exportar la selección visible ── */
+function toCSV(){
+  const q=v=>/[",;\n]/.test(String(v)) ? '"'+String(v).replace(/"/g,'""')+'"' : v;
+  const head=['id','fecha_utc','fecha_local_utc-5','magnitud','profundidad_km','latitud','longitud','origen'];
+  const rows=visible.map(e=>{
+    const u=new Date(e.t).toISOString().replace('.000','');
+    const l=new Date(e.t-5*3600e3).toISOString().replace('.000','').replace('Z','-05:00');
+    return [e.sgcId,u,l,nf(e.mag,1),nf(e.prof,1),e.lat.toFixed(5),e.lon.toFixed(5),
+            e.imported?'importado':'SGC'].map(q).join(',');
+  });
+  return head.join(',')+'\n'+rows.join('\n');
+}
+on('csvBtn','click',()=>{
+  if(!visible.length) return;
+  const url=URL.createObjectURL(new Blob(['\ufeff'+toCSV()],{type:'text/csv;charset=utf-8'}));
+  const a=document.createElement('a');
+  a.href=url; a.download='enjambre-choco-seleccion.csv'; a.click();
+  URL.revokeObjectURL(url);
+});
+
+/* ── restablecer filtros desde el estado vacío ── */
+on('resetFilters','click',()=>{
+  state.filt={magMin:0.9, depthMin:0, depthMax:state.view.base, onlySwarm:false};
+  $('magMin').value=0.9; $('magMinVal').textContent='M0,9';
+  $('depthMin').value=0; $('depthMax').value=state.view.base;
+  $('onlySwarm').checked=false;
+  updateDepthLabel(); applyFilters(); updatePlate();
+});
+
+const HELP=`Espacio  reproducir / pausar
+← →      mover la línea de tiempo
+1…5      vistas predefinidas
+G        retícula      M  mapa
+L        etiquetas     P  trazar sección
+F        fuentes y método
+R        restablecer   Esc  cerrar selección`;
+on('helpBtn','click',()=>alert('Atajos de teclado\n\n'+HELP));
+addEventListener('keydown',ev=>{
+  if(/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName)) return;
+  const k=ev.key.toLowerCase();
+  if(ev.key===' '){ ev.preventDefault(); setPlaying(!state.playing); }
+  else if(ev.key==='ArrowRight'||ev.key==='ArrowLeft'){
+    ev.preventDefault();
+    if(state.tMode==='all') setTMode('trail');
+    state.tPos=Math.max(0,Math.min(1,state.tPos+(ev.key==='ArrowRight'?0.01:-0.01)));
+    updateSwarm(); drawStrip();
+  }
+  else if('12345'.includes(k)) setView(['iso','plan','we','ns','zoom'][+k-1]);
+  else if(k==='g'){ $('showGrid').click(); }
+  else if(k==='m'){ $('showMap').click(); }
+  else if(k==='l'){ $('showLabels').click(); }
+  else if(k==='p'){ $('pickBtn').click(); }
+  else if(k==='f'){ dlg.open ? dlg.close() : dlg.showModal(); }
+  else if(k==='r'){ setView('iso'); select(null); }
+  else if(ev.key==='Escape'){
+    select(null);
+    if(state.prof.picking){ state.prof.picking=null; $('pickBanner').classList.remove('on'); }
+    $('panel').classList.remove('open');
+  }
+});
+
+addEventListener('resize',()=>{ drawStrip(); drawHist(); drawProfile(); drawAnalysis(); });
+
+/* ==========================================================================
+   18 · ARRANQUE
+   ========================================================================== */
+init().catch(err=>{
+  console.error(err);
+  document.getElementById('loadTxt').innerHTML=
+    'No se pudo iniciar la escena 3D.<br><span style="color:#898781">'+err.message+'</span>';
+});
+</script>
+</body>
+</html>
