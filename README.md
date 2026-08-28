@@ -2,7 +2,8 @@
 
 Visualizador 3D interactivo de sismicidad en Colombia, con datos reales del Servicio Geológico Colombiano (SGC) y el USGS. Permite explorar la geometría de la placa de Nazca en subducción, comparar distintas bases de datos históricas, e importar y visualizar cualquier catálogo sísmico propio en formato GeoJSON.
 
-**Demo en vivo:** https://jduquetr.github.io/sismos-3d-colombia/cubo-v2.html
+**Demo en vivo:** https://sismos-3d-colombia.vercel.app/cubo-v2.html
+**Explorador por área:** https://sismos-3d-colombia.vercel.app/explorador-area.html
 
 ## Qué muestra
 
@@ -54,7 +55,9 @@ Luego abre `http://localhost:8000/sismos-cube.html`
 
 ## Despliegue
 
-El sitio se publica automáticamente en **GitHub Pages** mediante GitHub Actions con cada push a `main` (ver `.github/workflows/pages.yml`). No requiere cuenta ni login para verlo — es una página pública normal.
+El sitio se publica automáticamente en **Vercel** con cada push a `main`: https://sismos-3d-colombia.vercel.app — es público, no pide cuenta ni login.
+
+GitHub Pages quedó fuera de servicio al pasar el repositorio a privado (Pages desde un repo privado exige plan de pago), así que `jduquetr.github.io/sismos-3d-colombia/` ya no responde. El flujo `.github/workflows/pages.yml` se deja en el repo: vuelve a servir solo si el repositorio se hace público de nuevo.
 
 ## Fuentes de datos
 
