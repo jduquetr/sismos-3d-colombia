@@ -465,6 +465,7 @@ dialog#methodDlg::backdrop{background:rgba(5,5,5,.72);backdrop-filter:blur(3px)}
       <button data-view="we">Corte E–O</button>
       <button data-view="ns">Corte N–S</button>
       <button data-view="zoom">Al enjambre</button>
+      <button data-view="slab">Subducción</button>
     </div>
 
     <span class="spacer"></span>
@@ -633,6 +634,7 @@ dialog#methodDlg::backdrop{background:rgba(5,5,5,.72);backdrop-filter:blur(3px)}
           <input type="file" id="fileIn" accept=".geojson,.json" class="sr">
           <label for="fileIn" class="btn" style="cursor:pointer">Cargar GeoJSON…</label>
           <button class="btn" id="csvBtn">Descargar selección (CSV)</button>
+          <button class="btn" id="fitImported" hidden>Ajustar la vista a lo importado</button>
           <button class="btn danger" id="clearImported" hidden>Quitar importados</button>
           <p class="hint" id="importStatus">GeoJSON del SGC o del USGS: lat, lon, profundidad, magnitud y fecha.</p>
         </div>
@@ -708,7 +710,13 @@ dialog#methodDlg::backdrop{background:rgba(5,5,5,.72);backdrop-filter:blur(3px)}
             <div class="cap"><label for="plateSize">Tamaño de punto</label><span class="val" id="plateSizeVal">100 %</span></div>
             <input type="range" id="plateSize" min="30" max="300" value="100">
           </div>
-          <div class="row"><label class="sw"><input type="checkbox" id="plateGray"><i></i>Atenuar la placa a gris</label></div>
+          <div class="cap" style="margin-top:10px"><span>Color de la referencia</span></div>
+          <div class="seg" role="group" aria-label="Color de la capa de referencia">
+            <button data-reframp="azul" aria-pressed="true">Azules</button>
+            <button data-reframp="contraste" aria-pressed="false">Contraste</button>
+            <button data-reframp="gris" aria-pressed="false">Gris</button>
+          </div>
+          <p class="hint">«Contraste» aclara la placa a medida que se hunde: es la lectura del visor original y es la que deja ver el plano de subducción y sus rupturas contra el fondo.</p>
         </div>
 
         <div class="group">
@@ -957,7 +965,7 @@ const state = {
   filt:{magMin:0.9, depthMin:0, depthMax:450, onlySwarm:false},
   view:{vexag:3, base:150, magScale:1.3},
   layers:{map:true, mapOp:.55, events:true, plate:true, plateOp:.45, plateSize:1,
-          plateGray:false, grid:true, labels:true, main:true, nest:true, autoRot:false,
+          refRamp:'azul', grid:true, labels:true, main:true, nest:true, autoRot:false,
           proj:false, contours:false, moho:true},
   hist:'swarm', an:'swarm',
   prof:{a:null, b:null, swath:25, picking:null, trueScale:false},
@@ -985,6 +993,14 @@ const GRAY = [0x6d,0x6d,0x70];
 const RAMP_AN  = [[0xfd,0xe0,0xcc],[0xf7,0xb3,0x89],[0xef,0x83,0x48],[0xd9,0x59,0x26],[0xa3,0x3f,0x18]];
 const RAMP_REF = [[0xcd,0xe2,0xfb],[0x9e,0xc5,0xf4],[0x6d,0xa7,0xec],[0x39,0x87,0xe5],[0x25,0x6a,0xbf]];
 
+/* Rampa de contraste para la placa, heredada del visor original (sismos-cube.html):
+   allí la profundidad iba de oscuro a blanco y por eso el plano de Wadati-Benioff se
+   leía de un vistazo. La rampa de azules hace justo lo contrario — oscurece los
+   eventos más profundos, que son los que dibujan la geometría de la ruptura, y los
+   entierra en el fondo. Aquí la luminancia CRECE con la profundidad. */
+const RAMP_SLAB  = [[0x1d,0x4e,0x7a],[0x2f,0x8f,0xc4],[0x7f,0xd4,0xff],[0xdf,0xf3,0xff],[0xff,0xff,0xff]];
+const SLAB_CRUST = [0x2f,0x6f,0xe0];
+
 function rampAt(ramp, t){
   t=Math.max(0,Math.min(1,t))*(ramp.length-1);
   const i=Math.min(ramp.length-2, Math.floor(t)), k=t-i;
@@ -992,6 +1008,25 @@ function rampAt(ramp, t){
 }
 const anRGB  = d => rampAt(RAMP_AN, d/200);                                  // capa en análisis: 0 → 200+ km
 const refRGB = d => d<=MOHO ? CRUST_RGB : rampAt(RAMP_REF, (d-MOHO)/(200-MOHO));  // referencia: corteza + placa
+const slabRGB = d => d<=MOHO ? SLAB_CRUST : rampAt(RAMP_SLAB, (d-MOHO)/(200-MOHO));
+
+/* La capa de referencia admite tres lecturas: azules (contexto), contraste (para leer
+   la placa y sus rupturas) y gris (para que no le compita al enjambre). */
+function refColor(d){
+  const m = state.layers.refRamp;
+  return m==='gris' ? GRAY : m==='contraste' ? slabRGB(d) : refRGB(d);
+}
+
+/* La leyenda no puede quedarse pintando la rampa vieja: se reescriben sus variables CSS. */
+function syncRefLegend(){
+  const m = state.layers.refRamp;
+  const ramp  = m==='contraste' ? RAMP_SLAB : m==='gris' ? [GRAY,GRAY,GRAY,GRAY,GRAY] : RAMP_REF;
+  const crust = m==='contraste' ? SLAB_CRUST : m==='gris' ? GRAY : CRUST_RGB;
+  const css = c => `rgb(${c[0]},${c[1]},${c[2]})`;
+  const r = document.documentElement.style;
+  ramp.forEach((c,i)=>r.setProperty('--d'+i, css(c)));
+  r.setProperty('--crust', css(crust));
+}
 
 const depthRGB = anRGB;
 const anCss  = d => `rgb(${anRGB(d).join(',')})`;
@@ -1343,7 +1378,7 @@ function updatePlate(){
     const p=toScene(lat,lon,d);
     const hidden = d>state.view.base || d<depthMin || d>depthMax;
     pos[k]=p.x; pos[k+1]=hidden?1e6:p.y; pos[k+2]=p.z;
-    const c = state.layers.plateGray ? GRAY : refRGB(d);
+    const c = refColor(d);
     col[k]=c[0]/255; col[k+1]=c[1]/255; col[k+2]=c[2]/255;
     k+=3;
   }
@@ -1406,17 +1441,22 @@ function rebuildFrame(){
 
   // marcas fijas: sismo principal y Nido de Bucaramanga
   const main=eventos.reduce((a,b)=>b.mag>a.mag?b:a);
-  markGroup.userData.main=main;
-  const mp=toScene(main.lat,main.lon,main.prof);
-  const ring=new THREE.Mesh(new THREE.RingGeometry(0.55,0.68,40),
-    new THREE.MeshBasicMaterial({color:0xffffff, side:THREE.DoubleSide, transparent:true, opacity:.85, fog:false}));
-  ring.position.set(mp.x,mp.y,mp.z); ring.userData.billboard=true; ring.userData.tag='main';
-  markGroup.add(ring);
-  const drop=new THREE.Line(new THREE.BufferGeometry().setFromPoints(
-    [new THREE.Vector3(mp.x,0,mp.z), new THREE.Vector3(mp.x,mp.y,mp.z)]),
-    new THREE.LineDashedMaterial({color:0xffffff, transparent:true, opacity:.35, dashSize:.22, gapSize:.18}));
-  drop.computeLineDistances(); drop.userData.tag='main';
-  markGroup.add(drop);
+  /* Solo si cae dentro de la ventana: si no, el anillo y su plomada se proyectan
+     fuera de la caja y quedan flotando en el vacío — es lo que pasaba al importar
+     un catálogo de otra región. El marcador del Nido ya se filtraba así. */
+  markGroup.userData.main = inWindow(main.lat,main.lon) ? main : null;
+  if(markGroup.userData.main){
+    const mp=toScene(main.lat,main.lon,main.prof);
+    const ring=new THREE.Mesh(new THREE.RingGeometry(0.55,0.68,40),
+      new THREE.MeshBasicMaterial({color:0xffffff, side:THREE.DoubleSide, transparent:true, opacity:.85, fog:false}));
+    ring.position.set(mp.x,mp.y,mp.z); ring.userData.billboard=true; ring.userData.tag='main';
+    markGroup.add(ring);
+    const drop=new THREE.Line(new THREE.BufferGeometry().setFromPoints(
+      [new THREE.Vector3(mp.x,0,mp.z), new THREE.Vector3(mp.x,mp.y,mp.z)]),
+      new THREE.LineDashedMaterial({color:0xffffff, transparent:true, opacity:.35, dashSize:.22, gapSize:.18}));
+    drop.computeLineDistances(); drop.userData.tag='main';
+    markGroup.add(drop);
+  }
 
   // plano de 35 km: separa la sismicidad cortical de la de la placa en subducción
   if(state.view.base>MOHO){
@@ -1760,6 +1800,7 @@ function setView(k, animate=true){
     case 'plan': pos=new THREE.Vector3(0, D*1.25, 0.001); target.set(0,-H*0.15,0); break;
     case 'we':   pos=new THREE.Vector3(0, -H*0.4, D*1.15); target.set(0,-H*0.5,0); break;
     case 'ns':   pos=new THREE.Vector3(D*1.15, -H*0.4, 0); target.set(0,-H*0.5,0); break;
+    case 'slab': pos=new THREE.Vector3(0, -H*0.22, D*1.52); target.set(0,-H*0.50,0); break;
     case 'zoom': {
       const c=toScene(CENTER.lat,CENTER.lon,60);
       target.set(c.x,c.y,c.z);
@@ -2149,7 +2190,7 @@ function drawProfile(){
 
   // contexto primero
   S.plate.forEach(p=>{
-    const c=state.layers.plateGray?GRAY:refRGB(p.d);
+    const c=refColor(p.d);
     pctx.fillStyle=`rgba(${c[0]},${c[1]},${c[2]},.42)`;
     pctx.beginPath(); pctx.arc(X(p.t),Y(p.d), Math.max(1.1,0.7+(p.m-2.5)*0.45), 0, Math.PI*2); pctx.fill();
   });
@@ -2178,6 +2219,45 @@ function openProfile(){
 }
 
 /* ==========================================================================
+   15b · VISTA DE SUBDUCCIÓN
+   El tablero arranca ceñido al enjambre y con la caja cortada a 150 km: la placa
+   de Nazca queda fuera de cuadro justo donde se pone interesante, y con la rampa
+   de azules los eventos profundos se pierden contra el fondo. Esta vista arma de
+   una sola vez la configuración que sí deja leer el plano y sus rupturas:
+   ventana regional, caja hasta 450 km, referencia en alto contraste, proyecciones
+   en las paredes y cámara en corte E–O, que es donde el buzamiento se ve de canto.
+   ========================================================================== */
+function setBaseDepth(km){
+  state.view.base=km;
+  document.querySelectorAll('[data-base]').forEach(b=>b.setAttribute('aria-pressed', String(+b.getAttribute('data-base')===km)));
+}
+
+async function vistaSubduccion(){
+  if(state.win!=='wide'){
+    state.win='wide';
+    document.querySelectorAll('[data-win]').forEach(b=>b.setAttribute('aria-pressed', String(b.getAttribute('data-win')==='wide')));
+    $('winNote').textContent=WINDOWS.wide.note;
+    await reloadMap(true);
+  }
+  setBaseDepth(450);
+  state.filt.depthMin=0; state.filt.depthMax=450;
+  $('depthMin').value=0; $('depthMax').value=450; updateDepthLabel();
+
+  state.layers.plate=true;      $('showPlate').checked=true;
+  state.layers.plateOp=0.8;     $('plateOp').value=80;   $('plateOpVal').textContent='80 %';
+  state.layers.plateSize=1.5;   $('plateSize').value=150; $('plateSizeVal').textContent='150 %';
+  state.layers.refRamp='contraste';
+  document.querySelectorAll('[data-reframp]').forEach(b=>b.setAttribute('aria-pressed', String(b.getAttribute('data-reframp')==='contraste')));
+  syncRefLegend();
+  state.layers.proj=true;       $('showProj').checked=true; buildProj();
+
+  rebuildFrame(); applyFilters(); updatePlate(); drawProfile();
+  setView('slab');
+  document.querySelectorAll('[data-view]').forEach(b=>b.setAttribute('aria-pressed', String(b.getAttribute('data-view')==='slab')));
+}
+
+
+/* ==========================================================================
    16 · IMPORTACIÓN DE GEOJSON
    ========================================================================== */
 const num=v=>{ if(v===undefined||v===null||v==='') return null;
@@ -2201,6 +2281,71 @@ function parseGeoJSON(j){
   });
   return out;
 }
+/* Un catálogo importado casi nunca cae dentro de la ventana del enjambre. Si se suma
+   en silencio pasa lo que pasaba antes: los eventos se proyectan fuera de la caja (la
+   proyección normaliza sobre la ventana activa, así que u y v se salen de 0–1), la
+   línea de tiempo se estira a años y el enjambre se aplasta contra el borde derecho.
+   El tablero queda roto sin decir por qué, y encima el mensaje decía "✓ importados".
+   Ahora se mide el desajuste, se dice en pantalla y se ofrece ajustar la vista. */
+let importado = null;    // {bbox, profMax, fuera, tMin, tMax}
+let vistaPrevia = null;  // encuadre al que volver cuando se quiten los importados
+
+function statsImportados(nuevos){
+  let west=Infinity, east=-Infinity, south=Infinity, north=-Infinity;
+  let profMax=0, fuera=0, t0=Infinity, t1=-Infinity;
+  nuevos.forEach(e=>{
+    if(e.lon<west) west=e.lon;   if(e.lon>east) east=e.lon;
+    if(e.lat<south) south=e.lat; if(e.lat>north) north=e.lat;
+    if(e.prof>profMax) profMax=e.prof;
+    if(e.t<t0) t0=e.t;           if(e.t>t1) t1=e.t;
+    if(!inWindow(e.lat,e.lon)) fuera++;
+  });
+  return {bbox:{west,east,south,north}, profMax, fuera, tMin:t0, tMax:t1};
+}
+
+/* Zoom de teselas para una ventana arbitraria: el mayor que no dispare la descarga. */
+function zoomParaVentana(w){
+  for(let z=10; z>=3; z--){
+    const nx=Math.floor(lon2x(w.east,z))-Math.floor(lon2x(w.west,z))+1;
+    const ny=Math.floor(lat2y(w.south,z))-Math.floor(lat2y(w.north,z))+1;
+    if(nx*ny<=64) return z;
+  }
+  return 3;
+}
+
+async function ajustarVistaAImportados(){
+  if(!importado) return;
+  const b=importado.bbox;
+  const mLat=Math.max(0.25,(b.north-b.south)*0.08), mLon=Math.max(0.25,(b.east-b.west)*0.08);
+  const win={west:b.west-mLon, east:b.east+mLon, south:b.south-mLat, north:b.north+mLat};
+  win.zoom=zoomParaVentana(win);
+  win.note=`Ajustada al catálogo importado (${(win.north-win.south).toFixed(1)}° × ${(win.east-win.west).toFixed(1)}°).`;
+  WINDOWS.custom=win;
+  /* Se guarda el encuadre completo, no solo la ventana: al quitar los importados
+     hay que devolver también la base de la caja y el filtro de profundidad. */
+  if(state.win!=='custom') vistaPrevia={win:state.win, basemap:state.basemap,
+    base:state.view.base, depthMin:state.filt.depthMin, depthMax:state.filt.depthMax};
+  state.win='custom';
+
+  /* El mapa geológico solo existe como raster para las dos ventanas del repo. */
+  if(state.basemap==='geo'){
+    state.basemap='relief';
+    document.querySelectorAll('[data-map]').forEach(x=>x.setAttribute('aria-pressed', String(x.getAttribute('data-map')==='relief')));
+  }
+  document.querySelectorAll('[data-win]').forEach(x=>x.setAttribute('aria-pressed','false'));
+  $('winNote').textContent=win.note;
+
+  const base=[150,250,450].find(v=>v>=importado.profMax) || 450;
+  setBaseDepth(base);
+  state.filt.depthMin=0; state.filt.depthMax=base;
+  $('depthMin').value=0; $('depthMax').value=base; updateDepthLabel();
+
+  await reloadMap(true);
+  $('fitImported').hidden=true;
+  $('importStatus').innerHTML=`✓ Vista ajustada al catálogo importado · caja hasta ${base} km. ` +
+    `Con «Quitar importados» se vuelve a la ventana anterior.`;
+}
+
 document.getElementById('fileIn').addEventListener('change',ev=>{
   const f=ev.target.files[0], st=document.getElementById('importStatus');
   if(!f) return;
@@ -2208,24 +2353,66 @@ document.getElementById('fileIn').addEventListener('change',ev=>{
   const fr=new FileReader();
   fr.onload=()=>{
     try{
-      const nuevos=parseGeoJSON(JSON.parse(String(fr.result).replace(/^﻿/,'')));
+      const nuevos=parseGeoJSON(JSON.parse(String(fr.result).replace(/^\uFEFF/,'')));
       if(!nuevos.length){ st.innerHTML='⚠ No se encontraron sismos válidos. Revisa que traiga <b>lat/lon/profundidad/magnitud/fecha</b>.'; return; }
+
+      const spanAntes = tMax-tMin;
       eventos=eventos.concat(nuevos).sort((a,b)=>a.t-b.t);
       tMin=eventos[0].t; tMax=eventos[eventos.length-1].t;
       buildSwarm(); applyFilters(); drawStrip();
       document.getElementById('clearImported').hidden=false;
-      st.innerHTML=`✓ <b>${nuevos.length}</b> sismos importados · total ${eventos.length}.`;
+
+      importado = statsImportados(nuevos);
+      const profundos = nuevos.filter(e=>e.prof>state.view.base).length;
+      const dentro = nuevos.length - importado.fuera;
+      const dias = (tMax-tMin)/86400000;
+
+      const avisos=[];
+      if(importado.fuera) avisos.push(
+        `<b>${importado.fuera}</b> de ${nuevos.length} caen fuera de la ventana geográfica activa` +
+        (dentro ? ` (solo ${dentro} se dibujan)` : ' y ninguno se dibuja') + '.');
+      if(profundos) avisos.push(`<b>${profundos}</b> quedan por debajo de la base de la caja (${state.view.base} km).`);
+      if(spanAntes>0 && (tMax-tMin) > spanAntes*3)
+        avisos.push(`La línea de tiempo pasó a abarcar ${Math.round(dias)} días, así que el enjambre queda comprimido.`);
+
+      if(avisos.length){
+        st.innerHTML=`<b>${nuevos.length}</b> sismos importados · total ${eventos.length}.<br>⚠ ${avisos.join(' ')}`;
+        /* Ajustar la vista solo arregla el desencuadre geográfico o de profundidad.
+           Si lo único que cambió fue el rango temporal, el botón no ayudaría. */
+        document.getElementById('fitImported').hidden = !(importado.fuera || profundos);
+      }else{
+        st.innerHTML=`✓ <b>${nuevos.length}</b> sismos importados · total ${eventos.length}.`;
+        document.getElementById('fitImported').hidden=true;
+      }
     }catch(e){ st.textContent='⚠ Error al leer el archivo: '+e.message; }
   };
   fr.onerror=()=>{ st.textContent='⚠ No se pudo leer el archivo.'; };
   fr.readAsText(f);
   ev.target.value='';
 });
-document.getElementById('clearImported').addEventListener('click',()=>{
+
+document.getElementById('fitImported').addEventListener('click', ajustarVistaAImportados);
+
+document.getElementById('clearImported').addEventListener('click', async ()=>{
   eventos=eventos.filter(e=>!e.imported).sort((a,b)=>a.t-b.t);
   tMin=eventos[0].t; tMax=eventos[eventos.length-1].t;
-  buildSwarm(); applyFilters(); drawStrip();
+  importado=null;
   document.getElementById('clearImported').hidden=true;
+  document.getElementById('fitImported').hidden=true;
+
+  if(state.win==='custom'){
+    const v=vistaPrevia||{win:'swarm', basemap:state.basemap, base:150, depthMin:0, depthMax:150};
+    state.win=v.win; state.basemap=v.basemap;
+    setBaseDepth(v.base);
+    state.filt.depthMin=v.depthMin; state.filt.depthMax=v.depthMax;
+    $('depthMin').value=v.depthMin; $('depthMax').value=v.depthMax; updateDepthLabel();
+    document.querySelectorAll('[data-win]').forEach(x=>x.setAttribute('aria-pressed', String(x.getAttribute('data-win')===state.win)));
+    document.querySelectorAll('[data-map]').forEach(x=>x.setAttribute('aria-pressed', String(x.getAttribute('data-map')===state.basemap)));
+    $('winNote').textContent=WINDOWS[state.win].note;
+    vistaPrevia=null;
+    await reloadMap(true);
+  }
+  buildSwarm(); applyFilters(); drawStrip();
   document.getElementById('importStatus').textContent='Importados eliminados.';
 });
 
@@ -2647,7 +2834,7 @@ function segGroup(attr, fn){
     fn(b.getAttribute(attr));
   }));
 }
-segGroup('data-view', k=>setView(k));
+segGroup('data-view', k=> k==='slab' ? vistaSubduccion() : setView(k));
 segGroup('data-tmode', k=>setTMode(k));
 segGroup('data-speed', k=>state.speed=parseFloat(k));
 segGroup('data-hist', k=>{ state.hist=k; drawHist(); });
@@ -2723,7 +2910,7 @@ on('plateOp','input',e=>{ state.layers.plateOp=+e.target.value/100;
   $('plateOpVal').textContent=e.target.value+' %'; updatePlate(); });
 on('plateSize','input',e=>{ state.layers.plateSize=+e.target.value/100;
   $('plateSizeVal').textContent=e.target.value+' %'; updatePlate(); });
-on('plateGray','change',e=>{ state.layers.plateGray=e.target.checked; updatePlate(); drawProfile(); });
+segGroup('data-reframp', k=>{ state.layers.refRamp=k; syncRefLegend(); updatePlate(); drawProfile(); });
 on('showGrid','change',e=>{ state.layers.grid=e.target.checked;
   gridGroup.visible=wallGroup.visible=e.target.checked; invalidate(); });
 on('showLabels','change',e=>{ state.layers.labels=e.target.checked; invalidate(); });
