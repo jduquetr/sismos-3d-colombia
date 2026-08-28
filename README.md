@@ -36,6 +36,7 @@ Solo una de las dos bases de datos históricas se muestra a la vez (selector des
 
 ## Archivos
 
+- `explorador-area.html` — explorador por área: se dibuja un bbox en el mapa y consulta en vivo el catálogo de EMSC (con respaldo automático a USGS), reproyecta la escena 3D al área pedida y exporta GeoJSON
 - `cubo-v2.html` — versión 2 del visor (demo en vivo): misma base de datos, revisión de la experiencia de uso y de las gráficas, con pestaña de análisis sismológico
 - `sismos-cube.html` — versión original completa (`index.html` redirige aquí)
 - `subduccion-puntos.json` — dataset USGS 1960–2026 (subducción Nazca), formato compacto `[lon, lat, depth, mag]`
