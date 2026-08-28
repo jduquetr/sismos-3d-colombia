@@ -57,7 +57,7 @@ Luego abre `http://localhost:8000/sismos-cube.html`
 
 El sitio se publica automáticamente en **Vercel** con cada push a `main`: https://sismos-3d-colombia.vercel.app — es público, no pide cuenta ni login.
 
-GitHub Pages quedó fuera de servicio al pasar el repositorio a privado (Pages desde un repo privado exige plan de pago), así que `jduquetr.github.io/sismos-3d-colombia/` ya no responde. El flujo `.github/workflows/pages.yml` se deja en el repo: vuelve a servir solo si el repositorio se hace público de nuevo.
+También existe el flujo `.github/workflows/pages.yml`, que publica en GitHub Pages. Quedó fuera de servicio cuando el repositorio pasó a privado (Pages desde un repo privado exige plan de pago) y hay que **volver a activarlo a mano** en Settings → Pages, porque recuperar la visibilidad pública no lo reactiva solo.
 
 ## Fuentes de datos
 
