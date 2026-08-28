@@ -391,6 +391,20 @@ dialog#methodDlg::backdrop{background:rgba(5,5,5,.72);backdrop-filter:blur(3px)}
   #credit{display:none}
   #strip{height:62px}
 }
+/* Las consultas anteriores solo miran el ancho. En un portátil de Windows con
+   escalado al 125 % lo que escasea es el ALTO: el viewport CSS baja a ~730 px y la
+   leyenda flotante se le monta a las etiquetas de profundidad de la escena. */
+@media (max-height:780px){
+  #legendHud{padding:8px 10px}
+  #legendHud .mags{display:none}
+  #strip{height:62px}
+}
+@media (max-height:660px){
+  #topbar{padding:6px 12px;gap:10px}
+  #legendHud .lgroup:first-of-type{display:none}   /* deja solo la rampa de referencia */
+  #strip{height:52px}
+  #compass{display:none}
+}
 @media (max-width:620px){
   #topbar{padding:8px 10px;gap:8px}
   .chips .chip.opt{display:none}
@@ -717,6 +731,13 @@ dialog#methodDlg::backdrop{background:rgba(5,5,5,.72);backdrop-filter:blur(3px)}
             <button data-reframp="gris" aria-pressed="false">Gris</button>
           </div>
           <p class="hint">«Contraste» aclara la placa a medida que se hunde: es la lectura del visor original y es la que deja ver el plano de subducción y sus rupturas contra el fondo.</p>
+
+          <div class="row" style="margin-top:12px"><label class="sw"><input type="checkbox" id="showSlab"><i></i>Volumen de la placa (&gt;35&nbsp;km)</label></div>
+          <div class="field">
+            <div class="cap"><label for="slabOp">Opacidad del volumen</label><span class="val" id="slabOpVal">30 %</span></div>
+            <input type="range" id="slabOp" min="5" max="80" value="30">
+          </div>
+          <p class="hint" id="slabStats">Ajusta un sólido a la sismicidad por debajo de los 35 km, que ya no es cortical sino de la placa en subducción.</p>
         </div>
 
         <div class="group">
@@ -965,7 +986,7 @@ const state = {
   filt:{magMin:0.9, depthMin:0, depthMax:450, onlySwarm:false},
   view:{vexag:3, base:150, magScale:1.3},
   layers:{map:true, mapOp:.55, events:true, plate:true, plateOp:.45, plateSize:1,
-          refRamp:'azul', grid:true, labels:true, main:true, nest:true, autoRot:false,
+          refRamp:'azul', slab:false, slabOp:0.30, grid:true, labels:true, main:true, nest:true, autoRot:false,
           proj:false, contours:false, moho:true},
   hist:'swarm', an:'swarm',
   prof:{a:null, b:null, swath:25, picking:null, trueScale:false},
@@ -1242,6 +1263,7 @@ async function init(){
   controls=new THREE.OrbitControls(camera, renderer.domElement);
   controls.enableDamping=true; controls.dampingFactor=.09;
   controls.minDistance=4; controls.maxDistance=120;
+  controls.addEventListener('start', ()=>{ camaraMovida=true; });   // a partir de aquí no le reencuadramos encima
   controls.addEventListener('change', invalidate);
 
   raycaster=new THREE.Raycaster();
@@ -1390,6 +1412,222 @@ function updatePlate(){
   invalidate();
 }
 
+
+/* ==========================================================================
+   6c · VOLUMEN DE LA PLACA EN SUBDUCCIÓN
+   Por debajo de los ~35 km la sismicidad deja de ser cortical: es la zona de
+   Wadati-Benioff, el plano sísmico que va dibujando la placa de Nazca a medida
+   que se hunde. Como nube de puntos cuesta leerla; como sólido se interpreta de
+   una, que es justo lo que hace falta para separarla de la corteza.
+
+   Método, siguiendo el criterio de Slab2 (Hayes et al., 2018, Science), que
+   modela el TECHO de la placa y no su centro:
+     · se toman solo los hipocentros con profundidad > 35 km (MOHO);
+     · la ventana se divide en una malla y en cada nodo se buscan los eventos
+       dentro de un radio de búsqueda;
+     · el techo es el percentil 15 de esas profundidades y el piso el 85. Entre
+       las dos superficies queda el espesor sísmico de la placa.
+   Deliberadamente NO es un casco convexo: ese englobaría los huecos sin sismos
+   y mentiría sobre la geometría. Los nodos sin datos suficientes no se dibujan,
+   así que el sólido existe solo donde la sismicidad lo sostiene.
+
+   Se reportan el buzamiento (ajuste de plano por mínimos cuadrados) y el
+   espesor mediano, que son las dos cifras con que se describe una zona de
+   Benioff. Como referencia, las zonas dobles del mundo van separadas 15-30 km.
+   ========================================================================== */
+const SLAB_NX=18, SLAB_NY=18, SLAB_MIN_EV=8, SLAB_P_TECHO=0.15, SLAB_P_PISO=0.85;
+let slabGroup=null;
+
+function eventosProfundos(){
+  const out=[];
+  for(const p of plateData) if(p[2]>MOHO) out.push([p[0],p[1],p[2]]);
+  for(const e of eventos) if(e.prof>MOHO && inWindow(e.lat,e.lon)) out.push([e.lon,e.lat,e.prof]);
+  return out;
+}
+
+function percentil(a,q){
+  if(!a.length) return null;
+  const v=a.slice().sort((x,y)=>x-y), i=(v.length-1)*q;
+  const lo=Math.floor(i), hi=Math.ceil(i);
+  return lo===hi ? v[lo] : v[lo]+(v[hi]-v[lo])*(i-lo);
+}
+
+/* Plano de mínimos cuadrados prof ≈ a·este + c·norte + k → buzamiento y dirección. */
+function planoBenioff(pts){
+  if(pts.length<12) return null;
+  const b=GEO.b, latMid=(b.north+b.south)/2, lonMid=(b.west+b.east)/2;
+  const kx=111.320*Math.cos(latMid*Math.PI/180), ky=110.574;
+  let mx=0,my=0,mz=0;
+  const X=new Float64Array(pts.length), Y=new Float64Array(pts.length), Z=new Float64Array(pts.length);
+  pts.forEach(([lon,lat,d],i)=>{
+    X[i]=(lon-lonMid)*kx; Y[i]=(lat-latMid)*ky; Z[i]=d;
+    mx+=X[i]; my+=Y[i]; mz+=d;
+  });
+  const n=pts.length; mx/=n; my/=n; mz/=n;
+  let xx=0,xy=0,yy=0,xz=0,yz=0;
+  for(let i=0;i<n;i++){
+    const dx=X[i]-mx, dy=Y[i]-my, dz=Z[i]-mz;
+    xx+=dx*dx; xy+=dx*dy; yy+=dy*dy; xz+=dx*dz; yz+=dy*dz;
+  }
+  const det=xx*yy-xy*xy;
+  if(Math.abs(det)<1e-9) return null;
+  const a=(yy*xz-xy*yz)/det, c=(xx*yz-xy*xz)/det;
+  return {buz:Math.atan(Math.hypot(a,c))*180/Math.PI,
+          az:(Math.atan2(a,c)*180/Math.PI+360)%360, n};
+}
+const RUMBOS=['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSO','SO','OSO','O','ONO','NO','NNO'];
+const rumbo = az => RUMBOS[Math.round(az/22.5)%16];
+
+function limpiarVolumenPlaca(){
+  if(!slabGroup) return;
+  scene.remove(slabGroup);
+  slabGroup.traverse(o=>{ if(o.geometry) o.geometry.dispose(); if(o.material) o.material.dispose(); });
+  slabGroup=null;
+}
+
+function construirVolumenPlaca(){
+  limpiarVolumenPlaca();
+  const nota=document.getElementById('slabStats');
+  if(!state.layers.slab){
+    nota.textContent='Ajusta un sólido a la sismicidad por debajo de los 35 km, que ya no es cortical sino de la placa en subducción.';
+    invalidate(); return;
+  }
+  const pts=eventosProfundos();
+  if(pts.length<40){
+    nota.innerHTML=`⚠ Solo hay <b>${pts.length}</b> sismos por debajo de 35 km en esta ventana: no alcanzan para ajustar un volumen.`;
+    invalidate(); return;
+  }
+
+  const b=GEO.b;
+  const dLon=(b.east-b.west)/SLAB_NX, dLat=(b.north-b.south)/SLAB_NY;
+  const rLon=dLon*1.5, rLat=dLat*1.5;          // radio de búsqueda: solapa con los vecinos y suaviza
+  const NX=SLAB_NX+1, NY=SLAB_NY+1;
+  const techo=new Array(NX*NY).fill(null), piso=new Array(NX*NY).fill(null);
+
+  /* Malla de cubetas para no comparar cada nodo contra los miles de eventos. */
+  const cubetas=new Map();
+  const clave=(i,j)=>i+'|'+j;
+  for(const q of pts){
+    const i=Math.floor((q[0]-b.west)/dLon), j=Math.floor((q[1]-b.south)/dLat);
+    const k=clave(i,j);
+    if(!cubetas.has(k)) cubetas.set(k,[]);
+    cubetas.get(k).push(q);
+  }
+
+  for(let jy=0; jy<NY; jy++) for(let ix=0; ix<NX; ix++){
+    const lon=b.west+ix*dLon, lat=b.south+jy*dLat;
+    const ci=Math.floor((lon-b.west)/dLon), cj=Math.floor((lat-b.south)/dLat);
+    const prof=[];
+    for(let di=-2; di<=2; di++) for(let dj=-2; dj<=2; dj++){
+      const arr=cubetas.get(clave(ci+di,cj+dj));
+      if(!arr) continue;
+      for(const q of arr){
+        if(Math.abs(q[0]-lon)<=rLon && Math.abs(q[1]-lat)<=rLat) prof.push(q[2]);
+      }
+    }
+    if(prof.length>=SLAB_MIN_EV){
+      const n=jy*NX+ix;
+      techo[n]=percentil(prof,SLAB_P_TECHO);
+      piso[n] =percentil(prof,SLAB_P_PISO);
+    }
+  }
+
+  /* Las superficies crudas salen rugosas porque cada nodo ve pocos eventos. Tres
+     pasadas de promedio con los vecinos válidos las dejan leerse como una placa y
+     no como un bulto, sin mover la tendencia general. */
+  const suavizar=(g,pasos)=>{
+    for(let k=0;k<pasos;k++){
+      const src=g.slice();
+      for(let jy=0; jy<NY; jy++) for(let ix=0; ix<NX; ix++){
+        const n=jy*NX+ix;
+        if(src[n]===null) continue;
+        let suma=src[n], cuenta=1;
+        for(const [di,dj] of [[1,0],[-1,0],[0,1],[0,-1]]){
+          const i2=ix+di, j2=jy+dj;
+          if(i2<0||j2<0||i2>=NX||j2>=NY) continue;
+          const v=src[j2*NX+i2];
+          if(v!==null){ suma+=v; cuenta++; }
+        }
+        g[n]=suma/cuenta;
+      }
+    }
+  };
+  suavizar(techo,3); suavizar(piso,3);
+
+  const nodo=(ix,jy)=>jy*NX+ix;
+  const valido=(ix,jy)=>ix>=0&&jy>=0&&ix<NX&&jy<NY&&techo[nodo(ix,jy)]!==null;
+  const pos3=(ix,jy,prof)=>{
+    const p=toScene(b.south+jy*dLat, b.west+ix*dLon, prof);
+    return [p.x,p.y,p.z];
+  };
+
+  const vTecho=[], cTecho=[], vPiso=[], vMuro=[], espesores=[], vWire=[];
+  const quadValido=(ix,jy)=>valido(ix,jy)&&valido(ix+1,jy)&&valido(ix,jy+1)&&valido(ix+1,jy+1);
+
+  for(let jy=0; jy<NY-1; jy++) for(let ix=0; ix<NX-1; ix++){
+    if(!quadValido(ix,jy)) continue;
+    const esq=[[ix,jy],[ix+1,jy],[ix+1,jy+1],[ix,jy+1]];
+    const T=esq.map(([a,c])=>pos3(a,c,techo[nodo(a,c)]));
+    const P=esq.map(([a,c])=>pos3(a,c,piso[nodo(a,c)]));
+    esq.forEach(([a,c])=>espesores.push(piso[nodo(a,c)]-techo[nodo(a,c)]));
+    vTecho.push(...T[0],...T[1],...T[2], ...T[0],...T[2],...T[3]);
+    /* El techo va teñido con la rampa de profundidad activa: el buzamiento se lee
+       también por color, no solo por la forma. */
+    for(const idx of [0,1,2,0,2,3]){
+      const c=refColor(techo[nodo(esq[idx][0],esq[idx][1])]);
+      cTecho.push(c[0]/255,c[1]/255,c[2]/255);
+    }
+    vWire.push(...T[0],...T[1], ...T[1],...T[2], ...T[2],...T[3], ...T[3],...T[0]);
+    vPiso .push(...P[0],...P[2],...P[1], ...P[0],...P[3],...P[2]);
+    /* Muros solo en el borde del área con datos: cierran el sólido sin inventar geometría. */
+    const vecinos=[[0,-1,0,1],[1,0,1,2],[0,1,2,3],[-1,0,3,0]];
+    for(const [di,dj,e0,e1] of vecinos){
+      if(quadValido(ix+di,jy+dj)) continue;
+      vMuro.push(...T[e0],...T[e1],...P[e1], ...T[e0],...P[e1],...P[e0]);
+    }
+  }
+
+  if(!vTecho.length){
+    nota.innerHTML='⚠ La sismicidad profunda está demasiado dispersa en esta ventana para cerrar un volumen.';
+    invalidate(); return;
+  }
+
+  slabGroup=new THREE.Group();
+  const malla=(arr,color,op,colores)=>{
+    const g=new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(arr,3));
+    if(colores) g.setAttribute('color', new THREE.Float32BufferAttribute(colores,3));
+    return new THREE.Mesh(g, new THREE.MeshBasicMaterial({
+      color, vertexColors:!!colores, transparent:true, opacity:op,
+      side:THREE.DoubleSide, depthWrite:false, fog:false }));
+  };
+  const op=state.layers.slabOp;
+  const mTecho=malla(vTecho,0xffffff,op,cTecho);   // el techo, teñido por profundidad
+  const mPiso =malla(vPiso, 0x1d4e7a,op*0.8);
+  const mMuro =malla(vMuro, 0x3d7fae,op*0.65);
+  slabGroup.add(mTecho,mPiso,mMuro);
+
+  /* Nervadura del techo por las aristas de la malla (no las diagonales): sin luces
+     en la escena, el alambre es lo único que da relieve a la superficie. */
+  const gw=new THREE.BufferGeometry();
+  gw.setAttribute('position', new THREE.Float32BufferAttribute(vWire,3));
+  slabGroup.add(new THREE.LineSegments(gw, new THREE.LineBasicMaterial({
+    color:0x9fe0ff, transparent:true, opacity:Math.min(0.45,op+0.10), fog:false })));
+
+  scene.add(slabGroup);
+  slabGroup.visible=true;
+
+  const pl=planoBenioff(pts);
+  const esp=percentil(espesores,0.5);
+  const prof=pts.map(q=>q[2]);
+  nota.innerHTML =
+    `Sólido ajustado a <b>${pts.length.toLocaleString('es-CO')}</b> sismos de más de 35 km. ` +
+    (pl ? `Buzamiento medio <b>${nf(pl.buz,0)}°</b> hacia el <b>${rumbo(pl.az)}</b>. ` : '') +
+    `Espesor sísmico mediano <b>${nf(esp,0)} km</b> · profundidades ${nf(percentil(prof,0.02),0)}–${nf(percentil(prof,0.98),0)} km. ` +
+    `Techo y piso son los percentiles 15 y 85 por celda, siguiendo a Slab2 (Hayes et al., 2018), que modela el techo de la placa.`;
+  invalidate();
+}
+
 /* ---------- retícula: sólo las paredes del fondo, para no enjaular el dato ---------- */
 function rebuildFrame(){
   [gridGroup,wallGroup,markGroup].forEach(g=>{
@@ -1489,6 +1727,7 @@ function rebuildFrame(){
 
   if(mapMesh) mapMesh.position.y=0.002;
   updateSwarm(); updatePlate(); redrawSection(); buildContours(); buildProj();
+  construirVolumenPlaca();
   invalidate();
 }
 function updateMarkVisibility(){
@@ -1790,24 +2029,63 @@ function setMapOpacity(v){
   if(mapMesh) mapMesh.material.opacity=v;
   invalidate();
 }
+/* Referencia horizontal de la caja. Se conserva para el vuelo a un evento suelto,
+   que encuadra un punto y no el bloque entero. */
 function fitDistance(){ return Math.max(GEO.sx,GEO.sz)*1.35; }
+
+/* Distancia EXACTA a la que la caja entera entra en cuadro mirándola desde `dir`:
+   proyecta las ocho esquinas sobre los ejes de la cámara y se queda con la que
+   primero se saldría. La fórmula anterior era `max(sx,sz)*1.35`, que ignoraba dos
+   cosas — el ALTO de la caja, que crece con la base (150/250/450 km) y con la
+   exageración vertical, y la relación de aspecto del panel, que es la que fija el
+   FOV horizontal. Por eso con la base en 450 km la cara superior quedaba cortada en
+   todas las vistas menos la de subducción, y por eso el recorte cambiaba según la
+   pantalla. */
+function fitDistanceFor(dir, target){
+  const H=boxH(), hx=GEO.sx/2, hz=GEO.sz/2;
+  const d=dir.clone().normalize();
+  let right=new THREE.Vector3().crossVectors(d, new THREE.Vector3(0,1,0));
+  if(right.lengthSq()<1e-8) right.set(1,0,0);      // vista en planta: se mira recto hacia abajo
+  right.normalize();
+  const up=new THREE.Vector3().crossVectors(right,d).normalize();
+  const vT=Math.tan(camera.fov*Math.PI/360);
+  const hT=vT*Math.max(camera.aspect||1.7, 0.2);
+  let need=0;
+  for(const sx of [-hx,hx]) for(const sz of [-hz,hz]) for(const y of [0,-H]){
+    const q=new THREE.Vector3(sx,y,sz).sub(target);
+    const z=q.dot(d);                               // componente hacia la cámara
+    need=Math.max(need, z+Math.abs(q.dot(right))/hT, z+Math.abs(q.dot(up))/vT);
+  }
+  return Math.max(need, 1);
+}
+
+/* Cada vista es una dirección de mirada y un punto de interés, no una posición fija:
+   la distancia la resuelve fitDistanceFor con el tamaño real de la caja y el panel. */
+const VISTAS={
+  iso : {dir:[ .55, .55, .65 ], tgt:.42, pad:1.06},
+  plan: {dir:[  0,   1, .0001], tgt:.15, pad:1.04},
+  we  : {dir:[  0,  .10,  1  ], tgt:.50, pad:1.06},
+  ns  : {dir:[  1,  .10,  0  ], tgt:.50, pad:1.06},
+  slab: {dir:[  0,  .16,  1  ], tgt:.50, pad:1.04}
+};
+
+let vistaActual='iso';
+let camaraMovida=false;      // el usuario orbitó o hizo zoom: no le reencuadramos encima
+
 function setView(k, animate=true){
-  const H=boxH(), D=fitDistance();
+  const H=boxH();
   if(mapOpAuto) setMapOpacity(k==='plan' ? 1 : 0.55);
-  const target=new THREE.Vector3(0,-H*0.42,0);
-  let pos;
-  switch(k){
-    case 'plan': pos=new THREE.Vector3(0, D*1.25, 0.001); target.set(0,-H*0.15,0); break;
-    case 'we':   pos=new THREE.Vector3(0, -H*0.4, D*1.15); target.set(0,-H*0.5,0); break;
-    case 'ns':   pos=new THREE.Vector3(D*1.15, -H*0.4, 0); target.set(0,-H*0.5,0); break;
-    case 'slab': pos=new THREE.Vector3(0, -H*0.22, D*1.52); target.set(0,-H*0.50,0); break;
-    case 'zoom': {
-      const c=toScene(CENTER.lat,CENTER.lon,60);
-      target.set(c.x,c.y,c.z);
-      pos=new THREE.Vector3(c.x+D*0.30, c.y+D*0.34, c.z+D*0.46);
-      break;
-    }
-    default:     pos=new THREE.Vector3(D*0.68, D*0.40, D*0.80);
+  vistaActual=k; camaraMovida=false;
+  let pos, target;
+  if(k==='zoom'){
+    const c=toScene(CENTER.lat,CENTER.lon,60), D=fitDistance();
+    target=new THREE.Vector3(c.x,c.y,c.z);
+    pos=new THREE.Vector3(c.x+D*0.30, c.y+D*0.34, c.z+D*0.46);
+  }else{
+    const v=VISTAS[k]||VISTAS.iso;
+    target=new THREE.Vector3(0,-H*v.tgt,0);
+    const dir=new THREE.Vector3(v.dir[0],v.dir[1],v.dir[2]).normalize();
+    pos=target.clone().addScaledVector(dir, fitDistanceFor(dir,target)*v.pad);
   }
   document.querySelectorAll('[data-view]').forEach(b=>b.setAttribute('aria-pressed', String(b.dataset.view===k)));
   if(!animate || matchMedia('(prefers-reduced-motion:reduce)').matches){
@@ -1815,6 +2093,13 @@ function setView(k, animate=true){
   }
   tween={p0:camera.position.clone(), p1:pos, t0:controls.target.clone(), t1:target, s:performance.now(), d:620};
 }
+
+/* Reencuadra tras un cambio de tamaño o de geometría de la caja, salvo que el
+   usuario haya movido la cámara a mano: ahí manda él. */
+function reencuadrar(){
+  if(!camaraMovida && vistaActual) setView(vistaActual, false);
+}
+
 function stepTween(now){
   if(!tween) return;
   let k=(now-tween.s)/tween.d;
@@ -1882,6 +2167,7 @@ function onResize(){
   camera.aspect=wrap.clientWidth/wrap.clientHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(wrap.clientWidth, wrap.clientHeight, false);
+  reencuadrar();
   invalidate(); drawStrip();
 }
 
@@ -2250,6 +2536,7 @@ async function vistaSubduccion(){
   document.querySelectorAll('[data-reframp]').forEach(b=>b.setAttribute('aria-pressed', String(b.getAttribute('data-reframp')==='contraste')));
   syncRefLegend();
   state.layers.proj=true;       $('showProj').checked=true; buildProj();
+  state.layers.slab=true;       $('showSlab').checked=true;
 
   rebuildFrame(); applyFilters(); updatePlate(); drawProfile();
   setView('slab');
@@ -2839,7 +3126,8 @@ segGroup('data-tmode', k=>setTMode(k));
 segGroup('data-speed', k=>state.speed=parseFloat(k));
 segGroup('data-hist', k=>{ state.hist=k; drawHist(); });
 segGroup('data-base', k=>{ state.view.base=+k; $('depthMax').value=Math.min(450,+k);
-  state.filt.depthMax=+$('depthMax').value; updateDepthLabel(); rebuildFrame(); applyFilters(); });
+  state.filt.depthMax=+$('depthMax').value; updateDepthLabel(); rebuildFrame(); applyFilters();
+  reencuadrar(); });
 segGroup('data-tz', k=>{ state.tz=k; drawStrip(); fillTopTable(); updatePlayhead(); });
 segGroup('data-map', async k=>{ state.basemap=k; await reloadMap(); });
 segGroup('data-win', async k=>{ state.win=k; $('winNote').textContent=WINDOWS[k].note; await reloadMap(true); });
@@ -2898,7 +3186,7 @@ $('depthMax').value=150; state.filt.depthMax=150; updateDepthLabel();
 
 // vista
 on('vexag','input',e=>{ state.view.vexag=+e.target.value;
-  $('vexagVal').textContent='×'+nf(state.view.vexag,1); rebuildFrame(); });
+  $('vexagVal').textContent='×'+nf(state.view.vexag,1); rebuildFrame(); reencuadrar(); });
 on('mapOp','input',e=>{ mapOpAuto=false; state.layers.mapOp=+e.target.value/100;
   $('mapOpVal').textContent=e.target.value+' %'; if(mapMesh) mapMesh.material.opacity=state.layers.mapOp; invalidate(); });
 on('showMap','change',e=>{ state.layers.map=e.target.checked; if(mapMesh) mapMesh.visible=e.target.checked; invalidate(); });
@@ -2911,6 +3199,9 @@ on('plateOp','input',e=>{ state.layers.plateOp=+e.target.value/100;
 on('plateSize','input',e=>{ state.layers.plateSize=+e.target.value/100;
   $('plateSizeVal').textContent=e.target.value+' %'; updatePlate(); });
 segGroup('data-reframp', k=>{ state.layers.refRamp=k; syncRefLegend(); updatePlate(); drawProfile(); });
+on('showSlab','change',e=>{ state.layers.slab=e.target.checked; construirVolumenPlaca(); });
+on('slabOp','input',e=>{ state.layers.slabOp=+e.target.value/100;
+  $('slabOpVal').textContent=e.target.value+' %'; construirVolumenPlaca(); });
 on('showGrid','change',e=>{ state.layers.grid=e.target.checked;
   gridGroup.visible=wallGroup.visible=e.target.checked; invalidate(); });
 on('showLabels','change',e=>{ state.layers.labels=e.target.checked; invalidate(); });
