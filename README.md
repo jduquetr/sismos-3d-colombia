@@ -2,7 +2,7 @@
 
 Visualizador 3D interactivo de sismicidad en Colombia, con datos reales del Servicio Geológico Colombiano (SGC) y el USGS. Permite explorar la geometría de la placa de Nazca en subducción, comparar distintas bases de datos históricas, e importar y visualizar cualquier catálogo sísmico propio en formato GeoJSON.
 
-**Demo en vivo:** https://jduquetr.github.io/sismos-3d-colombia/
+**Demo en vivo:** https://jduquetr.github.io/sismos-3d-colombia/cubo-v2.html
 
 ## Qué muestra
 
@@ -36,7 +36,8 @@ Solo una de las dos bases de datos históricas se muestra a la vez (selector des
 
 ## Archivos
 
-- `sismos-cube.html` — aplicación completa (punto de entrada real; `index.html` solo redirige aquí)
+- `cubo-v2.html` — versión 2 del visor (demo en vivo): misma base de datos, revisión de la experiencia de uso y de las gráficas, con pestaña de análisis sismológico
+- `sismos-cube.html` — versión original completa (`index.html` redirige aquí)
 - `subduccion-puntos.json` — dataset USGS 1960–2026 (subducción Nazca), formato compacto `[lon, lat, depth, mag]`
 - `historico-1900-puntos.json` — dataset USGS 1900–2026 (Colombia completa), mismo formato
 - `swtectonics-logo.png` — branding
