@@ -1,0 +1,1392 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Explorador Sísmico por Área — Consulta en Vivo</title>
+    <link rel="icon" type="image/png" href="favicon.png">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Arial', sans-serif; background: #0a0e27; color: #e0e0e0; overflow: hidden; }
+
+        .container { display: flex; height: 100vh; gap: 10px; padding: 10px; }
+
+        .main-content { flex: 1; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+
+        #map {
+            width: 100%;
+            height: 34%;
+            min-height: 190px;
+            border-radius: 8px;
+            border: 1px solid #1e293b;
+            background: #1a1f3a;
+        }
+        #map.dibujando { cursor: crosshair; }
+        #map.dibujando .leaflet-grab { cursor: crosshair; }
+
+        #canvas3d {
+            flex: 1;
+            border-radius: 8px;
+            border: 1px solid #1e293b;
+            background: #0a0e27;
+            min-height: 220px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .canvas-hint {
+            position: absolute;
+            bottom: 8px;
+            left: 10px;
+            font-size: 10px;
+            color: #4a5b7a;
+            pointer-events: none;
+        }
+
+        .canvas-vacio {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            font-size: 12px;
+            color: #64748b;
+            padding: 20px;
+            pointer-events: none;
+        }
+
+        .timeline-container {
+            width: 100%;
+            background: #1a1f3a;
+            padding: 12px;
+            border-radius: 8px;
+            border: 1px solid #1e293b;
+        }
+
+        .timeline-header { font-size: 12px; font-weight: bold; color: #64b5f6; margin-bottom: 8px; }
+
+        .timeline-slider { width: 100%; }
+
+        .timeline-info {
+            display: flex;
+            justify-content: space-between;
+            font-size: 11px;
+            color: #90caf9;
+            margin-top: 8px;
+        }
+
+        .control-panel {
+            width: 300px;
+            flex-shrink: 0;
+            background: #1a1f3a;
+            border-radius: 8px;
+            padding: 15px;
+            border: 1px solid #1e293b;
+            overflow-y: auto;
+            max-height: calc(100vh - 20px);
+        }
+
+        .panel-title {
+            font-size: 14px;
+            font-weight: bold;
+            color: #64b5f6;
+            margin-bottom: 15px;
+            border-bottom: 2px solid #64b5f6;
+            padding-bottom: 8px;
+        }
+
+        .control-group {
+            margin-bottom: 15px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid #293548;
+        }
+
+        .control-group:last-child { border-bottom: none; }
+
+        .group-title {
+            font-size: 11px;
+            font-weight: bold;
+            color: #90caf9;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+        }
+
+        .checkbox-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 6px;
+            font-size: 12px;
+        }
+
+        .checkbox-item input { cursor: pointer; width: 16px; height: 16px; accent-color: #64b5f6; }
+        .checkbox-item label { cursor: pointer; user-select: none; }
+
+        .slider-group { margin-bottom: 8px; }
+
+        .slider-label {
+            font-size: 11px;
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 6px;
+            color: #90caf9;
+        }
+
+        .slider-value {
+            background: #64b5f6;
+            color: #0a0e27;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-weight: bold;
+            font-size: 10px;
+        }
+
+        input[type="range"] {
+            width: 100%;
+            height: 4px;
+            border-radius: 2px;
+            background: #293548;
+            outline: none;
+            cursor: pointer;
+            -webkit-appearance: none;
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #64b5f6;
+            cursor: pointer;
+        }
+
+        input[type="range"]::-moz-range-thumb {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #64b5f6;
+            cursor: pointer;
+            border: none;
+        }
+
+        /* --- Área geográfica --- */
+        .bbox-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 6px;
+            margin-bottom: 8px;
+        }
+
+        .campo { display: flex; flex-direction: column; gap: 3px; }
+        .campo label { font-size: 10px; color: #90caf9; text-transform: uppercase; }
+
+        input[type="number"], input[type="date"] {
+            background: #0f1628;
+            border: 1px solid #293548;
+            border-radius: 4px;
+            color: #e0e0e0;
+            padding: 5px 6px;
+            font-size: 11px;
+            font-family: inherit;
+            width: 100%;
+        }
+
+        input[type="number"]:focus, input[type="date"]:focus {
+            outline: none;
+            border-color: #64b5f6;
+        }
+
+        input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(0.7); cursor: pointer; }
+
+        .btn {
+            width: 100%;
+            padding: 8px;
+            border-radius: 5px;
+            border: 1px solid #64b5f6;
+            background: #64b5f6;
+            color: #0a0e27;
+            font-size: 12px;
+            font-weight: bold;
+            font-family: inherit;
+            cursor: pointer;
+            transition: filter .15s;
+        }
+
+        .btn:hover:not(:disabled) { filter: brightness(1.15); }
+        .btn:disabled { opacity: .5; cursor: not-allowed; }
+
+        .btn.secundario {
+            background: transparent;
+            color: #64b5f6;
+        }
+
+        .btn.secundario.activo {
+            background: #1e3a5f;
+            color: #bbdefb;
+        }
+
+        .btn + .btn { margin-top: 6px; }
+
+        .msg {
+            font-size: 11px;
+            line-height: 1.5;
+            padding: 8px;
+            border-radius: 5px;
+            margin-top: 8px;
+            display: none;
+        }
+
+        .msg.visible { display: block; }
+        .msg.error { background: #3b1620; border: 1px solid #b3455f; color: #ffb3c1; }
+        .msg.aviso { background: #3a2f14; border: 1px solid #b38b45; color: #ffe0a3; }
+        .msg.ok { background: #12301f; border: 1px solid #3f9159; color: #a5e6bd; }
+        .msg.cargando { background: #0f2438; border: 1px solid #3f6f9e; color: #a3d1ff; }
+
+        .spinner {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            margin-right: 6px;
+            border: 2px solid #3f6f9e;
+            border-top-color: #a3d1ff;
+            border-radius: 50%;
+            animation: girar .8s linear infinite;
+            vertical-align: -1px;
+        }
+
+        @keyframes girar { to { transform: rotate(360deg); } }
+
+        .info-box {
+            background: #0f1628;
+            border: 1px solid #293548;
+            border-radius: 6px;
+            padding: 10px;
+            font-size: 11px;
+            line-height: 1.6;
+            color: #90caf9;
+        }
+
+        .info-box strong { color: #64b5f6; }
+
+        .fuente-tag {
+            display: inline-block;
+            font-size: 9px;
+            font-weight: bold;
+            padding: 1px 5px;
+            border-radius: 3px;
+            background: #1e3a5f;
+            color: #bbdefb;
+            text-transform: uppercase;
+        }
+
+        .legend { margin-top: 12px; padding-top: 12px; border-top: 1px solid #293548; }
+
+        .legend-title {
+            font-size: 11px;
+            font-weight: bold;
+            color: #90caf9;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 10px;
+            margin-bottom: 4px;
+        }
+
+        .legend-color { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+        .legend-count { margin-left: auto; color: #64748b; }
+
+        .nota { font-size: 10px; color: #64748b; line-height: 1.5; margin-top: 6px; }
+
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #0f1628; }
+        ::-webkit-scrollbar-thumb { background: #64b5f6; border-radius: 3px; }
+
+        .leaflet-container { background: #1a1f3a; }
+        .leaflet-popup-content-wrapper, .leaflet-popup-tip { background: #1a1f3a; color: #e0e0e0; }
+        .leaflet-popup-content { font-size: 11px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="main-content">
+            <div id="map"></div>
+            <div id="canvas3d">
+                <div class="canvas-hint">Arrastrar para rotar · rueda para acercar</div>
+                <div class="canvas-vacio" id="canvasVacio">Definí un área y consultá el catálogo para ver los sismos en 3D</div>
+            </div>
+            <div class="timeline-container">
+                <div class="timeline-header">⏱️ Línea de Tiempo</div>
+                <input type="range" class="timeline-slider" id="timelineSlider" min="0" max="100" value="100">
+                <div class="timeline-info">
+                    <span id="timeStart">—</span>
+                    <span id="timeValue">—</span>
+                    <span id="timeEnd">—</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="control-panel">
+            <div class="panel-title">⚙️ Consulta y Controles</div>
+
+            <div class="control-group">
+                <div class="group-title">Área geográfica (bbox)</div>
+                <div class="bbox-grid">
+                    <div class="campo">
+                        <label for="bboxN">Norte</label>
+                        <input type="number" id="bboxN" step="0.1" min="-90" max="90">
+                    </div>
+                    <div class="campo">
+                        <label for="bboxS">Sur</label>
+                        <input type="number" id="bboxS" step="0.1" min="-90" max="90">
+                    </div>
+                    <div class="campo">
+                        <label for="bboxO">Oeste</label>
+                        <input type="number" id="bboxO" step="0.1" min="-180" max="180">
+                    </div>
+                    <div class="campo">
+                        <label for="bboxE">Este</label>
+                        <input type="number" id="bboxE" step="0.1" min="-180" max="180">
+                    </div>
+                </div>
+                <button class="btn secundario" id="btnDibujar">✏️ Dibujar en el mapa</button>
+                <div class="nota" id="notaArea">Arrastrá sobre el mapa para definir el rectángulo, o escribí las coordenadas.</div>
+            </div>
+
+            <div class="control-group">
+                <div class="group-title">Parámetros de consulta</div>
+                <div class="bbox-grid">
+                    <div class="campo">
+                        <label for="fechaIni">Desde</label>
+                        <input type="date" id="fechaIni">
+                    </div>
+                    <div class="campo">
+                        <label for="fechaFin">Hasta</label>
+                        <input type="date" id="fechaFin">
+                    </div>
+                </div>
+                <div class="slider-group" style="margin-top:8px">
+                    <div class="slider-label">
+                        <span>Magnitud mínima</span>
+                        <span class="slider-value" id="magValue">M2.5</span>
+                    </div>
+                    <input type="range" id="magSlider" min="0" max="70" value="25">
+                </div>
+                <div class="campo" style="margin-top:8px">
+                    <label for="limite">Límite de resultados</label>
+                    <input type="number" id="limite" min="1" max="5000" step="100" value="500">
+                </div>
+            </div>
+
+            <div class="control-group">
+                <button class="btn" id="btnConsultar">🔍 Consultar catálogo</button>
+                <div class="msg" id="mensaje"></div>
+            </div>
+
+            <div class="control-group">
+                <div class="group-title">Capas Visibles</div>
+                <div class="checkbox-item">
+                    <input type="checkbox" id="showEvents" checked>
+                    <label for="showEvents">Eventos 3D</label>
+                </div>
+                <div class="checkbox-item">
+                    <input type="checkbox" id="showMap" checked>
+                    <label for="showMap">Mapa 2D</label>
+                </div>
+                <div class="checkbox-item">
+                    <input type="checkbox" id="showCaja" checked>
+                    <label for="showCaja">Caja y referencias</label>
+                </div>
+            </div>
+
+            <div class="control-group">
+                <div class="group-title">Opacidad - Eventos 3D</div>
+                <div class="slider-group">
+                    <div class="slider-label">
+                        <span>Opacidad</span>
+                        <span class="slider-value" id="opacityValue">100%</span>
+                    </div>
+                    <input type="range" id="opacitySlider" min="0" max="100" value="100">
+                </div>
+            </div>
+
+            <div class="control-group">
+                <div class="group-title">Tamaño - Esferas</div>
+                <div class="slider-group">
+                    <div class="slider-label">
+                        <span>Escala</span>
+                        <span class="slider-value" id="sizeValue">100%</span>
+                    </div>
+                    <input type="range" id="sizeSlider" min="50" max="200" value="100">
+                </div>
+            </div>
+
+            <div class="control-group">
+                <div class="group-title">Velocidad Rotación</div>
+                <div class="slider-group">
+                    <div class="slider-label">
+                        <span>Velocidad</span>
+                        <span class="slider-value" id="speedValue">40%</span>
+                    </div>
+                    <input type="range" id="speedSlider" min="0" max="200" value="40">
+                </div>
+            </div>
+
+            <div class="control-group">
+                <div class="info-box">
+                    <strong>Fuente:</strong> <span id="infoFuente">—</span><br>
+                    <strong>Total de eventos:</strong> <span id="totalEvents">0</span><br>
+                    <strong>Período:</strong> <span id="infoPeriodo">—</span><br>
+                    <strong>Magnitudes:</strong> <span id="infoMag">—</span><br>
+                    <strong>Profundidades:</strong> <span id="infoProf">—</span><br>
+                    <strong>Mostrando:</strong> <span id="visibleEvents">0</span> eventos
+                </div>
+
+                <div class="legend">
+                    <div class="legend-title">Escala de Profundidad</div>
+                    <div id="leyenda"></div>
+                </div>
+            </div>
+
+            <div class="control-group">
+                <button class="btn secundario" id="btnExportar" disabled>⬇️ Exportar GeoJSON</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    (function () {
+        'use strict';
+
+        // ============================================================
+        // 1. Constantes y estado
+        // ============================================================
+
+        const EMSC = 'https://www.seismicportal.eu/fdsnws/event/1/';
+        const USGS = 'https://earthquake.usgs.gov/fdsnws/event/1/';
+
+        const ANCHO_MUNDO = 34;     // unidades 3D del lado mayor del bbox
+        const PROF_MUNDO = 20;      // unidades 3D del alto de la caja
+        const MAX_ESFERAS = 1000;   // tope de esferas renderizadas
+        const AREA_GRANDE = 40;     // grados; a partir de aquí se advierte
+        const CLAVE_LS = 'explorador-area-sismos';
+
+        const COLORES = ['#00ff00', '#ffff00', '#ff8800', '#ff0000'];
+
+        // Todo el estado de la consulta vigente vive acá: al llegar una
+        // consulta nueva se reemplaza entero, así no quedan residuos.
+        let datos = {
+            eventos: [],        // {id, lat, lon, prof, mag, time, auth, region}
+            bbox: null,         // {n, s, e, o}
+            fuente: null,       // 'EMSC' | 'USGS'
+            total: null,        // total disponible en la API (via /count)
+            truncado: false,
+            descartados: 0,
+            params: null,
+            buckets: [],
+            profTope: 0,        // km en el techo de la caja
+            profPiso: 1,        // km en el piso de la caja
+            minTime: null,
+            maxTime: null
+        };
+
+        let visibles = 0;       // cuántos eventos muestra el timeline (van ordenados por fecha)
+        let consultando = false;
+
+        // ============================================================
+        // 2. Utilidades
+        // ============================================================
+
+        const $ = (id) => document.getElementById(id);
+
+        const MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+        const pad = (n) => String(n).padStart(2, '0');
+
+        function fechaCorta(d) {
+            return `${pad(d.getDate())} ${MESES[d.getMonth()]} ${d.getFullYear()}`;
+        }
+
+        function fechaHora(d) {
+            return `${pad(d.getDate())} ${MESES[d.getMonth()]} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+        }
+
+        function isoDia(d) {
+            return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+        }
+
+        function extremos(arr, get) {
+            let min = Infinity, max = -Infinity;
+            for (const it of arr) {
+                const v = get(it);
+                if (v < min) min = v;
+                if (v > max) max = v;
+            }
+            return { min, max };
+        }
+
+        function mensaje(texto, tipo) {
+            const el = $('mensaje');
+            el.className = 'msg visible ' + tipo;
+            el.innerHTML = (tipo === 'cargando' ? '<span class="spinner"></span>' : '') + texto;
+        }
+
+        function limpiarMensaje() {
+            $('mensaje').className = 'msg';
+            $('mensaje').innerHTML = '';
+        }
+
+        // ============================================================
+        // 3. Mapa Leaflet + dibujo del bbox
+        // ============================================================
+
+        let map, rectangulo, capaMarcadores, marcadores = [], modoDibujo = false, dibujando = null;
+
+        function initMap() {
+            map = L.map('map', { zoomControl: true }).setView([4.5, -76.5], 6);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '© OpenStreetMap',
+                maxZoom: 19
+            }).addTo(map);
+
+            capaMarcadores = L.layerGroup().addTo(map);
+
+            map.on('mousedown', (e) => {
+                if (!modoDibujo) return;
+                dibujando = e.latlng;
+                if (rectangulo) { map.removeLayer(rectangulo); rectangulo = null; }
+            });
+
+            map.on('mousemove', (e) => {
+                if (!modoDibujo || !dibujando) return;
+                pintarRectangulo(L.latLngBounds(dibujando, e.latlng));
+            });
+
+            map.on('mouseup', (e) => {
+                if (!modoDibujo || !dibujando) return;
+                const b = L.latLngBounds(dibujando, e.latlng);
+                dibujando = null;
+                // Un clic sin arrastrar no define un área: se ignora.
+                if (b.getNorth() - b.getSouth() < 0.01 || b.getEast() - b.getWest() < 0.01) {
+                    pintarRectangulo(bboxALatLngBounds(leerBbox()));
+                    return;
+                }
+                escribirBbox({
+                    n: b.getNorth(), s: b.getSouth(),
+                    e: b.getEast(), o: b.getWest()
+                });
+                pintarRectangulo(b);
+                modoDibujo3(false);
+                validarBbox(true);
+            });
+        }
+
+        function pintarRectangulo(bounds) {
+            if (!bounds) return;
+            if (rectangulo) map.removeLayer(rectangulo);
+            rectangulo = L.rectangle(bounds, {
+                color: '#64b5f6', weight: 1, dashArray: '4 3',
+                fillColor: '#64b5f6', fillOpacity: 0.07, interactive: false
+            }).addTo(map);
+        }
+
+        function bboxALatLngBounds(b) {
+            if (!b || [b.n, b.s, b.e, b.o].some(v => !isFinite(v))) return null;
+            return L.latLngBounds([b.s, b.o], [b.n, b.e]);
+        }
+
+        // Activa/desactiva el modo dibujo (nombre corto para no chocar con la variable)
+        function modoDibujo3(activar) {
+            modoDibujo = activar;
+            $('btnDibujar').classList.toggle('activo', activar);
+            $('btnDibujar').textContent = activar ? '✏️ Dibujando… (clic y arrastrar)' : '✏️ Dibujar en el mapa';
+            $('map').classList.toggle('dibujando', activar);
+            if (activar) { map.dragging.disable(); map.boxZoom.disable(); }
+            else { map.dragging.enable(); map.boxZoom.enable(); }
+        }
+
+        function actualizarMarcadores() {
+            // Los eventos van ordenados por fecha, así que el timeline solo
+            // agrega o quita del final: no se reconstruye toda la capa.
+            while (marcadores.length > visibles) {
+                capaMarcadores.removeLayer(marcadores.pop());
+            }
+            while (marcadores.length < visibles) {
+                const ev = datos.eventos[marcadores.length];
+                const m = L.circleMarker([ev.lat, ev.lon], {
+                    radius: 3 + Math.max(0, ev.mag - 1) * 1.4,
+                    fillColor: colorProf(ev.prof),
+                    color: '#fff', weight: 1, opacity: 0.8, fillOpacity: 0.8
+                });
+                m.bindPopup(
+                    `<strong>M ${ev.mag.toFixed(1)}</strong> · ${ev.prof.toFixed(1)} km<br>` +
+                    `${fechaHora(ev.time)}<br>${ev.region || ''}`
+                );
+                capaMarcadores.addLayer(m);
+                marcadores.push(m);
+            }
+        }
+
+        function limpiarMarcadores() {
+            capaMarcadores.clearLayers();
+            marcadores = [];
+        }
+
+        // ============================================================
+        // 4. Formulario: bbox, parámetros y validación
+        // ============================================================
+
+        function leerBbox() {
+            return {
+                n: parseFloat($('bboxN').value),
+                s: parseFloat($('bboxS').value),
+                e: parseFloat($('bboxE').value),
+                o: parseFloat($('bboxO').value)
+            };
+        }
+
+        function escribirBbox(b) {
+            $('bboxN').value = b.n.toFixed(2);
+            $('bboxS').value = b.s.toFixed(2);
+            $('bboxE').value = b.e.toFixed(2);
+            $('bboxO').value = b.o.toFixed(2);
+        }
+
+        // Devuelve null si está todo bien, o {texto, tipo} si hay algo que decir.
+        function revisarBbox(b) {
+            if ([b.n, b.s, b.e, b.o].some(v => !isFinite(v))) {
+                return { texto: 'Faltan coordenadas: completá Norte, Sur, Este y Oeste.', tipo: 'error' };
+            }
+            if (b.n < -90 || b.n > 90 || b.s < -90 || b.s > 90) {
+                return { texto: 'Las latitudes deben estar entre -90 y 90.', tipo: 'error' };
+            }
+            if (b.e < -180 || b.e > 180 || b.o < -180 || b.o > 180) {
+                return { texto: 'Las longitudes deben estar entre -180 y 180.', tipo: 'error' };
+            }
+            if (b.n <= b.s) {
+                return { texto: `Norte (${b.n}) debe ser mayor que Sur (${b.s}).`, tipo: 'error' };
+            }
+            if (b.e <= b.o) {
+                return { texto: `Este (${b.e}) debe ser mayor que Oeste (${b.o}).`, tipo: 'error' };
+            }
+            if ((b.n - b.s) > AREA_GRANDE || (b.e - b.o) > AREA_GRANDE) {
+                return {
+                    texto: `Área muy grande (${(b.n - b.s).toFixed(0)}° × ${(b.e - b.o).toFixed(0)}°). ` +
+                           'La consulta puede devolver miles de eventos y tardar.',
+                    tipo: 'aviso'
+                };
+            }
+            return null;
+        }
+
+        // Devuelve true si se puede consultar (los avisos no bloquean).
+        function validarBbox(silencioso) {
+            const problema = revisarBbox(leerBbox());
+            if (!problema) { if (!silencioso) limpiarMensaje(); return true; }
+            mensaje(problema.texto, problema.tipo);
+            return problema.tipo !== 'error';
+        }
+
+        function leerParams() {
+            return {
+                bbox: leerBbox(),
+                inicio: $('fechaIni').value,
+                fin: $('fechaFin').value,
+                minmag: parseInt($('magSlider').value, 10) / 10,
+                limite: Math.max(1, Math.min(5000, parseInt($('limite').value, 10) || 500))
+            };
+        }
+
+        // ============================================================
+        // 5. Consulta a los catálogos y normalización
+        // ============================================================
+
+        function urlEMSC(p, metodo) {
+            const b = p.bbox;
+            return `${EMSC}${metodo}?format=json` +
+                `&minlat=${b.s}&maxlat=${b.n}&minlon=${b.o}&maxlon=${b.e}` +
+                `&start=${p.inicio}&end=${p.fin}&minmag=${p.minmag}` +
+                (metodo === 'query' ? `&limit=${p.limite}` : '');
+        }
+
+        function urlUSGS(p, metodo) {
+            const b = p.bbox;
+            return `${USGS}${metodo}?format=geojson` +
+                `&minlatitude=${b.s}&maxlatitude=${b.n}&minlongitude=${b.o}&maxlongitude=${b.e}` +
+                `&starttime=${p.inicio}&endtime=${p.fin}&minmagnitude=${p.minmag}` +
+                (metodo === 'query' ? `&limit=${p.limite}` : '');
+        }
+
+        // EMSC: properties trae lat/lon/depth positivos; geometry.coordinates[2] es negativo.
+        function normalizarEMSC(features) {
+            const out = [];
+            let descartados = 0;
+            for (const f of features) {
+                const p = f.properties || {};
+                const lat = Number(p.lat), lon = Number(p.lon);
+                const prof = Number(p.depth), mag = Number(p.mag);
+                const t = p.time ? new Date(p.time) : null;
+                if (![lat, lon, prof, mag].every(isFinite) || !t || isNaN(t.getTime())) { descartados++; continue; }
+                out.push({
+                    id: f.id || p.source_id, lat, lon, prof: Math.abs(prof), mag,
+                    time: t, auth: p.auth || p.source_catalog || 'EMSC', region: p.flynn_region || ''
+                });
+            }
+            return { eventos: out, descartados };
+        }
+
+        // USGS: profundidad positiva en geometry.coordinates[2], time en epoch ms.
+        function normalizarUSGS(features) {
+            const out = [];
+            let descartados = 0;
+            for (const f of features) {
+                const p = f.properties || {};
+                const c = (f.geometry && f.geometry.coordinates) || [];
+                const lon = Number(c[0]), lat = Number(c[1]), prof = Number(c[2]);
+                const mag = Number(p.mag);
+                const t = p.time ? new Date(p.time) : null;
+                if (![lat, lon, prof, mag].every(isFinite) || !t || isNaN(t.getTime())) { descartados++; continue; }
+                out.push({
+                    id: f.id, lat, lon, prof: Math.abs(prof), mag,
+                    time: t, auth: (p.net || 'us').toUpperCase(), region: p.place || ''
+                });
+            }
+            return { eventos: out, descartados };
+        }
+
+        // Pide el total disponible sin traerse los eventos. Si falla, no pasa nada.
+        async function pedirTotal(url) {
+            try {
+                const res = await fetch(url);
+                if (!res.ok) return null;
+                const j = await res.json();
+                return typeof j.count === 'number' ? j.count : null;
+            } catch (e) { return null; }
+        }
+
+        async function consultar() {
+            if (consultando) return;
+
+            const problema = revisarBbox(leerBbox());
+            if (problema && problema.tipo === 'error') {
+                mensaje(problema.texto, 'error');   // no se llama a la API
+                return;
+            }
+
+            const p = leerParams();
+            if (!p.inicio || !p.fin) { mensaje('Definí el rango de fechas.', 'error'); return; }
+            if (p.inicio > p.fin) { mensaje('La fecha "desde" es posterior a la fecha "hasta".', 'error'); return; }
+
+            consultando = true;
+            $('btnConsultar').disabled = true;
+            mensaje('Consultando EMSC…', 'cargando');
+
+            let fuente = null, crudos = null, notas = [];
+
+            // --- Fuente primaria: EMSC ---
+            try {
+                const res = await fetch(urlEMSC(p, 'query'));
+                if (res.status === 204) {
+                    // EMSC responde 204 SIN CUERPO cuando no hay eventos: res.json() reventaría.
+                    notas.push('EMSC no reportó eventos (HTTP 204); se verificó contra USGS.');
+                } else if (!res.ok) {
+                    notas.push(`EMSC respondió HTTP ${res.status}; se usó USGS.`);
+                } else {
+                    const j = await res.json();
+                    crudos = { tipo: 'EMSC', features: (j && j.features) || [] };
+                    fuente = 'EMSC';
+                }
+            } catch (err) {
+                notas.push('El navegador bloqueó o falló la petición a EMSC (posible CORS o red); se usó USGS.');
+            }
+
+            // --- Respaldo: USGS ---
+            if (!fuente) {
+                mensaje('EMSC no respondió con datos. Consultando USGS…', 'cargando');
+                try {
+                    const res = await fetch(urlUSGS(p, 'query'));
+                    if (!res.ok) throw new Error('HTTP ' + res.status);
+                    const j = await res.json();
+                    crudos = { tipo: 'USGS', features: (j && j.features) || [] };
+                    fuente = 'USGS';
+                } catch (err) {
+                    consultando = false;
+                    $('btnConsultar').disabled = false;
+                    mensaje(
+                        '<strong>No se pudo consultar ningún catálogo.</strong><br>' +
+                        notas.join('<br>') + '<br>USGS: ' + err.message +
+                        '<br>Revisá la conexión y volvé a intentar con el botón «Consultar catálogo».',
+                        'error'
+                    );
+                    return;
+                }
+            }
+
+            const norm = crudos.tipo === 'EMSC'
+                ? normalizarEMSC(crudos.features)
+                : normalizarUSGS(crudos.features);
+
+            norm.eventos.sort((a, b) => a.time - b.time);
+
+            const total = await pedirTotal(fuente === 'EMSC' ? urlEMSC(p, 'count') : urlUSGS(p, 'count'));
+
+            aplicarResultado(norm, p, fuente, total, notas);
+
+            consultando = false;
+            $('btnConsultar').disabled = false;
+            guardarPreferencias(p);
+        }
+
+        // ============================================================
+        // 6. Aplicar el resultado: reconstruye TODO lo dependiente de los datos
+        // ============================================================
+
+        function aplicarResultado(norm, p, fuente, total, notas) {
+            // Estado nuevo, sin arrastrar nada de la consulta anterior.
+            datos = {
+                eventos: norm.eventos, bbox: p.bbox, fuente, total,
+                truncado: norm.eventos.length >= p.limite,
+                descartados: norm.descartados, params: p,
+                buckets: [], profTope: 0, profPiso: 1, minTime: null, maxTime: null
+            };
+
+            limpiarMarcadores();
+            limpiarEscena();
+
+            const b = p.bbox;
+            map.fitBounds(bboxALatLngBounds(b), { padding: [12, 12] });
+            pintarRectangulo(bboxALatLngBounds(b));
+
+            if (!norm.eventos.length) {
+                visibles = 0;
+                $('canvasVacio').style.display = 'flex';
+                $('btnExportar').disabled = true;
+                actualizarPanel();
+                actualizarTimeline(1);
+                mensaje(
+                    '<strong>No se encontraron sismos en esta área y rango de fechas.</strong><br>' +
+                    (notas.length ? notas.join('<br>') + '<br>' : '') +
+                    `Consultado en ${fuente} con M≥${p.minmag}. Probá bajando la magnitud mínima o ampliando el rango.`,
+                    'aviso'
+                );
+                return;
+            }
+
+            const prof = extremos(datos.eventos, e => e.prof);
+            // El techo de la caja se ancla en 0 km (superficie) salvo que todos
+            // los sismos sean profundos: ahí se acerca para no desperdiciar el volumen.
+            datos.profTope = prof.min > prof.max * 0.25 ? prof.min : 0;
+            datos.profPiso = Math.max(prof.max, datos.profTope + 1);
+            datos.buckets = calcularBuckets(datos.eventos);
+            datos.minTime = datos.eventos[0].time;
+            datos.maxTime = datos.eventos[datos.eventos.length - 1].time;
+
+            $('canvasVacio').style.display = 'none';
+            construirEscena();
+
+            visibles = datos.eventos.length;
+            $('timelineSlider').value = 100;
+            actualizarPanel();
+            actualizarTimeline(1);
+            $('btnExportar').disabled = false;
+
+            const partes = [`<strong>${datos.eventos.length} eventos</strong> desde ${fuente}.`];
+            if (total !== null && total > datos.eventos.length) {
+                partes.push(`Mostrando ${datos.eventos.length} de ${total} disponibles (tope de ${p.limite}). Subí el límite para ver más.`);
+            }
+            if (datos.eventos.length > MAX_ESFERAS) {
+                partes.push(`En 3D se dibujan los ${MAX_ESFERAS} de mayor magnitud por rendimiento; el mapa y las estadísticas usan todos.`);
+            }
+            if (norm.descartados) {
+                partes.push(`${norm.descartados} eventos se descartaron por venir sin magnitud o profundidad.`);
+            }
+            if (notas.length) partes.push(notas.join(' '));
+            mensaje(partes.join('<br>'), 'ok');
+        }
+
+        function calcularBuckets(eventos) {
+            const fijos = [[0, 30], [30, 60], [60, 90], [90, Infinity]];
+            let ocupados = 0;
+            for (const [a, z] of fijos) {
+                if (eventos.some(e => e.prof >= a && e.prof < z)) ocupados++;
+            }
+            if (ocupados >= 2) return fijos;
+
+            // Todos los sismos caen en un mismo tramo fijo: se reparte el rango real en 4.
+            const { min, max } = extremos(eventos, e => e.prof);
+            if (max - min < 1) return fijos;
+            const paso = (max - min) / 4;
+            return [0, 1, 2, 3].map(i => [min + paso * i, i === 3 ? Infinity : min + paso * (i + 1)]);
+        }
+
+        function indiceBucket(prof) {
+            const bs = datos.buckets.length ? datos.buckets : [[0, 30], [30, 60], [60, 90], [90, Infinity]];
+            for (let i = 0; i < bs.length; i++) {
+                if (prof >= bs[i][0] && prof < bs[i][1]) return i;
+            }
+            return prof < bs[0][0] ? 0 : bs.length - 1;
+        }
+
+        const colorProf = (prof) => COLORES[indiceBucket(prof)];
+
+        // ============================================================
+        // 7. Escena 3D
+        // ============================================================
+
+        let scene, camera, renderer, grupo, malla, refs, animando = false;
+        let rot = { x: -0.5, y: 0.4 };
+        let arrastre = null;
+        let distancia = 60;
+        let indices3D = [];   // qué evento corresponde a cada instancia
+
+        function init3D() {
+            const cont = $('canvas3d');
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x0a0e27);
+
+            camera = new THREE.PerspectiveCamera(55, cont.clientWidth / cont.clientHeight, 0.1, 2000);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.setSize(cont.clientWidth, cont.clientHeight);
+            cont.appendChild(renderer.domElement);
+
+            scene.add(new THREE.AmbientLight(0xffffff, 0.75));
+            const luz = new THREE.DirectionalLight(0xffffff, 0.7);
+            luz.position.set(20, 30, 40);
+            scene.add(luz);
+
+            grupo = new THREE.Group();
+            scene.add(grupo);
+
+            renderer.domElement.addEventListener('mousedown', (e) => {
+                arrastre = { x: e.clientX, y: e.clientY };
+            });
+            window.addEventListener('mousemove', (e) => {
+                if (!arrastre) return;
+                rot.y += (e.clientX - arrastre.x) * 0.008;
+                rot.x += (e.clientY - arrastre.y) * 0.008;
+                rot.x = Math.max(-1.4, Math.min(1.4, rot.x));
+                arrastre = { x: e.clientX, y: e.clientY };
+            });
+            window.addEventListener('mouseup', () => { arrastre = null; });
+            renderer.domElement.addEventListener('wheel', (e) => {
+                e.preventDefault();
+                distancia = Math.max(15, Math.min(200, distancia + e.deltaY * 0.05));
+            }, { passive: false });
+
+            window.addEventListener('resize', redimensionar3D);
+
+            if (!animando) { animando = true; animar(); }
+        }
+
+        function redimensionar3D() {
+            const cont = $('canvas3d');
+            if (!cont.clientWidth || !cont.clientHeight) return;
+            camera.aspect = cont.clientWidth / cont.clientHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(cont.clientWidth, cont.clientHeight);
+        }
+
+        function limpiarEscena() {
+            if (!grupo) return;
+            while (grupo.children.length) {
+                const hijo = grupo.children.pop();
+                grupo.remove(hijo);
+                if (hijo.geometry) hijo.geometry.dispose();
+                if (hijo.material) {
+                    if (hijo.material.map) hijo.material.map.dispose();
+                    hijo.material.dispose();
+                }
+            }
+            malla = null;
+            refs = null;
+            indices3D = [];
+        }
+
+        // Proyección geográfica → 3D, calculada del bbox real de la consulta.
+        function proyector() {
+            const b = datos.bbox;
+            const centroLat = (b.n + b.s) / 2, centroLon = (b.e + b.o) / 2;
+            const kmLat = 111.32, kmLon = 111.32 * Math.cos(centroLat * Math.PI / 180);
+            const anchoKm = (b.e - b.o) * kmLon, altoKm = (b.n - b.s) * kmLat;
+            const escala = ANCHO_MUNDO / Math.max(anchoKm, altoKm, 1);   // unidades por km
+            const rangoProf = datos.profPiso - datos.profTope;
+            return {
+                centroLat, centroLon, escala, anchoKm, altoKm,
+                x: (lon) => (lon - centroLon) * kmLon * escala,
+                y: (lat) => (lat - centroLat) * kmLat * escala,
+                z: (prof) => -((prof - datos.profTope) / rangoProf) * PROF_MUNDO
+            };
+        }
+
+        function construirEscena() {
+            limpiarEscena();
+            const P = proyector();
+
+            // --- Eventos: una sola InstancedMesh para que 1000 esferas no ahoguen el render ---
+            let lista = datos.eventos;
+            if (lista.length > MAX_ESFERAS) {
+                // Se conservan los de mayor magnitud, pero ordenados por fecha
+                // para que el timeline siga siendo coherente.
+                lista = lista.slice().sort((a, b) => b.mag - a.mag).slice(0, MAX_ESFERAS)
+                             .sort((a, b) => a.time - b.time);
+            }
+            indices3D = lista;
+
+            const geo = new THREE.SphereGeometry(1, 10, 10);
+            const mat = new THREE.MeshStandardMaterial({
+                transparent: true, opacity: 1, emissiveIntensity: 0.35, roughness: 0.6
+            });
+            malla = new THREE.InstancedMesh(geo, mat, lista.length);
+            malla.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+            grupo.add(malla);
+            colocarInstancias();
+
+            const color = new THREE.Color();
+            lista.forEach((ev, i) => {
+                color.set(colorProf(ev.prof));
+                malla.setColorAt(i, color);
+            });
+            if (malla.instanceColor) malla.instanceColor.needsUpdate = true;
+
+            // --- Caja de referencia, superficie y etiquetas ---
+            refs = new THREE.Group();
+            const x0 = P.x(datos.bbox.o), x1 = P.x(datos.bbox.e);
+            const y0 = P.y(datos.bbox.s), y1 = P.y(datos.bbox.n);
+            const z0 = 0, z1 = -PROF_MUNDO;
+
+            const caja = new THREE.BoxGeometry(x1 - x0, y1 - y0, z0 - z1);
+            const bordes = new THREE.LineSegments(
+                new THREE.EdgesGeometry(caja),
+                new THREE.LineBasicMaterial({ color: 0x2c4a6e })
+            );
+            bordes.position.set((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2);
+            refs.add(bordes);
+            caja.dispose();
+
+            const sup = new THREE.Mesh(
+                new THREE.PlaneGeometry(x1 - x0, y1 - y0),
+                new THREE.MeshBasicMaterial({ color: 0x14274a, transparent: true, opacity: 0.55, side: THREE.DoubleSide })
+            );
+            sup.position.set((x0 + x1) / 2, (y0 + y1) / 2, 0);
+            refs.add(sup);
+
+            refs.add(etiqueta(`${datos.profTope.toFixed(0)} km`, x0 - 2.5, y1, 0));
+            refs.add(etiqueta(`${datos.profPiso.toFixed(0)} km`, x0 - 2.5, y1, -PROF_MUNDO));
+            refs.add(etiqueta('N', (x0 + x1) / 2, y1 + 2.2, 0));
+            grupo.add(refs);
+            refs.visible = $('showCaja').checked;
+
+            // Encuadre: distancia justa para que quepa la esfera que envuelve la caja.
+            const radio = Math.hypot((x1 - x0) / 2, (y1 - y0) / 2, PROF_MUNDO / 2);
+            distancia = Math.max(24, radio / Math.sin(55 / 2 * Math.PI / 180) * 0.82);
+            aplicarOpacidad();
+        }
+
+        function colocarInstancias() {
+            if (!malla) return;
+            const P = proyector();
+            const escalaUsuario = parseFloat($('sizeSlider').value) / 100;
+            const m = new THREE.Matrix4();
+            const q = new THREE.Quaternion();
+            const pos = new THREE.Vector3();
+            const esc = new THREE.Vector3();
+
+            indices3D.forEach((ev, i) => {
+                const r = escalaUsuario * (0.28 + Math.max(0, ev.mag) * 0.13);
+                pos.set(P.x(ev.lon), P.y(ev.lat), P.z(ev.prof));
+                esc.set(r, r, r);
+                m.compose(pos, q, esc);
+                malla.setMatrixAt(i, m);
+            });
+            malla.instanceMatrix.needsUpdate = true;
+        }
+
+        function etiqueta(texto, x, y, z) {
+            const cv = document.createElement('canvas');
+            cv.width = 128; cv.height = 40;
+            const ctx = cv.getContext('2d');
+            ctx.fillStyle = '#8fb4dd';
+            ctx.font = 'bold 22px Arial';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(texto, 64, 20);
+            const sp = new THREE.Sprite(new THREE.SpriteMaterial({
+                map: new THREE.CanvasTexture(cv), transparent: true, depthTest: false
+            }));
+            sp.position.set(x, y, z);
+            sp.scale.set(5, 1.6, 1);
+            return sp;
+        }
+
+        function aplicarOpacidad() {
+            if (malla) malla.material.opacity = parseFloat($('opacitySlider').value) / 100;
+        }
+
+        function animar() {
+            requestAnimationFrame(animar);
+            if (!renderer) return;
+
+            const vel = parseFloat($('speedSlider').value) / 100;
+            if (!arrastre) rot.y += 0.004 * vel;
+
+            grupo.rotation.x = rot.x;
+            grupo.rotation.z = rot.y;   // giro tipo tornamesa sobre el eje de profundidad
+
+            camera.position.set(0, -distancia * 0.75, distancia * 0.55);
+            camera.up.set(0, 0, 1);
+            camera.lookAt(0, 0, -PROF_MUNDO / 2);
+
+            renderer.render(scene, camera);
+        }
+
+        // ============================================================
+        // 8. Timeline, panel y leyenda
+        // ============================================================
+
+        function actualizarTimeline(fraccion) {
+            if (!datos.eventos.length) {
+                $('timeStart').textContent = '—';
+                $('timeEnd').textContent = '—';
+                $('timeValue').textContent = '—';
+                visibles = 0;
+                actualizarVisibles();
+                return;
+            }
+            const t0 = datos.minTime.getTime(), t1 = datos.maxTime.getTime();
+            const corte = new Date(t0 + (t1 - t0) * fraccion);
+
+            // Los eventos están ordenados por fecha: basta contar hasta el corte.
+            let n = 0;
+            while (n < datos.eventos.length && datos.eventos[n].time <= corte) n++;
+            visibles = fraccion >= 1 ? datos.eventos.length : n;
+
+            $('timeStart').textContent = fechaHora(datos.minTime);
+            $('timeEnd').textContent = fechaHora(datos.maxTime);
+            $('timeValue').textContent = fraccion >= 1 ? 'Todos' : fechaHora(corte);
+            actualizarVisibles();
+        }
+
+        function actualizarVisibles() {
+            actualizarMarcadores();
+            if (malla) {
+                // Como las instancias van en orden cronológico, mover el "count"
+                // basta para revelar u ocultar el final de la serie.
+                let n = 0;
+                if (visibles > 0) {
+                    const corte = datos.eventos[Math.min(visibles, datos.eventos.length) - 1].time;
+                    while (n < indices3D.length && indices3D[n].time <= corte) n++;
+                }
+                malla.count = n;
+            }
+            $('visibleEvents').textContent = visibles;
+        }
+
+        function actualizarPanel() {
+            $('totalEvents').textContent = datos.eventos.length;
+            $('visibleEvents').textContent = visibles;
+
+            if (!datos.eventos.length) {
+                $('infoFuente').innerHTML = datos.fuente ? `<span class="fuente-tag">${datos.fuente}</span> sin resultados` : '—';
+                $('infoPeriodo').textContent = '—';
+                $('infoMag').textContent = '—';
+                $('infoProf').textContent = '—';
+                $('leyenda').innerHTML = '<div class="nota">Sin datos para clasificar.</div>';
+                return;
+            }
+
+            const mag = extremos(datos.eventos, e => e.mag);
+            const prof = extremos(datos.eventos, e => e.prof);
+
+            $('infoFuente').innerHTML = `<span class="fuente-tag">${datos.fuente}</span>`;
+            $('infoPeriodo').textContent = `${fechaCorta(datos.minTime)} – ${fechaCorta(datos.maxTime)}`;
+            $('infoMag').textContent = `M ${mag.min.toFixed(1)} – ${mag.max.toFixed(1)}`;
+            $('infoProf').textContent = `${prof.min.toFixed(1)} – ${prof.max.toFixed(1)} km`;
+
+            const conteos = datos.buckets.map(() => 0);
+            datos.eventos.forEach(e => { conteos[indiceBucket(e.prof)]++; });
+
+            $('leyenda').innerHTML = datos.buckets.map(([a, z], i) => {
+                const etiq = z === Infinity ? `${a.toFixed(0)}+ km` : `${a.toFixed(0)}–${z.toFixed(0)} km`;
+                return `<div class="legend-item">
+                    <div class="legend-color" style="background-color:${COLORES[i]}"></div>
+                    <span>${etiq}</span><span class="legend-count">${conteos[i]}</span>
+                </div>`;
+            }).join('');
+        }
+
+        // ============================================================
+        // 9. Exportar GeoJSON
+        // ============================================================
+
+        function exportarGeoJSON() {
+            if (!datos.eventos.length) return;
+            const b = datos.bbox;
+            const fc = {
+                type: 'FeatureCollection',
+                bbox: [b.o, b.s, b.e, b.n],
+                metadata: {
+                    generado: new Date().toISOString(),
+                    fuente: datos.fuente,
+                    endpoint: datos.fuente === 'EMSC' ? EMSC + 'query' : USGS + 'query',
+                    bbox: { norte: b.n, sur: b.s, este: b.e, oeste: b.o },
+                    rango_fechas: { desde: datos.params.inicio, hasta: datos.params.fin },
+                    magnitud_minima: datos.params.minmag,
+                    limite_solicitado: datos.params.limite,
+                    cantidad: datos.eventos.length,
+                    total_disponible: datos.total,
+                    truncado: datos.total !== null && datos.total > datos.eventos.length,
+                    generador: 'explorador-area.html'
+                },
+                features: datos.eventos.map(e => ({
+                    type: 'Feature',
+                    geometry: { type: 'Point', coordinates: [e.lon, e.lat, -e.prof] },
+                    properties: {
+                        id: e.id, mag: e.mag, prof_km: e.prof,
+                        time: e.time.toISOString(), auth: e.auth, region: e.region
+                    }
+                }))
+            };
+
+            const blob = new Blob([JSON.stringify(fc, null, 2)], { type: 'application/geo+json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            const coord = (v, pos, neg) => `${Math.abs(v).toFixed(1)}${v >= 0 ? pos : neg}`;
+            a.download = `sismos_${coord(b.s, 'N', 'S')}-${coord(b.n, 'N', 'S')}_` +
+                         `${coord(b.o, 'E', 'O')}-${coord(b.e, 'E', 'O')}.geojson`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
+        }
+
+        // ============================================================
+        // 10. Persistencia ligera
+        // ============================================================
+
+        function guardarPreferencias(p) {
+            try {
+                localStorage.setItem(CLAVE_LS, JSON.stringify({
+                    bbox: p.bbox, inicio: p.inicio, fin: p.fin,
+                    minmag: p.minmag, limite: p.limite
+                }));
+            } catch (e) { /* modo privado o storage lleno: no es crítico */ }
+        }
+
+        function cargarPreferencias() {
+            const hoy = new Date();
+            const haceUnAnio = new Date(hoy.getTime());
+            haceUnAnio.setFullYear(hoy.getFullYear() - 1);
+
+            let guardado = null;
+            try {
+                const raw = localStorage.getItem(CLAVE_LS);
+                if (raw) guardado = JSON.parse(raw);
+            } catch (e) { guardado = null; }
+
+            const bbox = (guardado && guardado.bbox) || { n: 6, s: 3, e: -75.5, o: -78 };
+            escribirBbox(bbox);
+            $('fechaIni').value = (guardado && guardado.inicio) || isoDia(haceUnAnio);
+            $('fechaFin').value = (guardado && guardado.fin) || isoDia(hoy);
+            $('magSlider').value = Math.round(((guardado && guardado.minmag) || 2.5) * 10);
+            $('limite').value = (guardado && guardado.limite) || 500;
+            $('magValue').textContent = 'M' + (parseInt($('magSlider').value, 10) / 10).toFixed(1);
+        }
+
+        // ============================================================
+        // 11. Controles e inicio
+        // ============================================================
+
+        function conectarControles() {
+            $('btnDibujar').addEventListener('click', () => modoDibujo3(!modoDibujo));
+            $('btnConsultar').addEventListener('click', consultar);
+            $('btnExportar').addEventListener('click', exportarGeoJSON);
+
+            ['bboxN', 'bboxS', 'bboxE', 'bboxO'].forEach(id => {
+                $(id).addEventListener('input', () => {
+                    const b = leerBbox();
+                    if ([b.n, b.s, b.e, b.o].every(isFinite) && b.n > b.s && b.e > b.o) {
+                        pintarRectangulo(bboxALatLngBounds(b));
+                    }
+                });
+                $(id).addEventListener('change', () => {
+                    validarBbox(false);
+                    const b = leerBbox();
+                    if ([b.n, b.s, b.e, b.o].every(isFinite) && b.n > b.s && b.e > b.o) {
+                        map.fitBounds(bboxALatLngBounds(b), { padding: [12, 12] });
+                    }
+                });
+            });
+
+            $('magSlider').addEventListener('input', () => {
+                $('magValue').textContent = 'M' + (parseInt($('magSlider').value, 10) / 10).toFixed(1);
+            });
+
+            $('showEvents').addEventListener('change', (e) => {
+                if (malla) malla.visible = e.target.checked;
+            });
+
+            $('showCaja').addEventListener('change', (e) => {
+                if (refs) refs.visible = e.target.checked;
+            });
+
+            $('showMap').addEventListener('change', (e) => {
+                $('map').style.display = e.target.checked ? 'block' : 'none';
+                if (e.target.checked) setTimeout(() => map.invalidateSize(), 100);
+                setTimeout(redimensionar3D, 120);
+            });
+
+            $('opacitySlider').addEventListener('input', () => {
+                $('opacityValue').textContent = $('opacitySlider').value + '%';
+                aplicarOpacidad();
+            });
+
+            $('sizeSlider').addEventListener('input', () => {
+                $('sizeValue').textContent = $('sizeSlider').value + '%';
+                colocarInstancias();
+            });
+
+            $('speedSlider').addEventListener('input', () => {
+                $('speedValue').textContent = $('speedSlider').value + '%';
+            });
+
+            $('timelineSlider').addEventListener('input', (e) => {
+                actualizarTimeline(parseFloat(e.target.value) / 100);
+            });
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            cargarPreferencias();
+            initMap();
+            init3D();
+            conectarControles();
+            pintarRectangulo(bboxALatLngBounds(leerBbox()));
+            actualizarPanel();
+            setTimeout(() => {
+                map.invalidateSize();
+                const b = bboxALatLngBounds(leerBbox());
+                if (b) map.fitBounds(b, { padding: [12, 12] });
+                redimensionar3D();
+            }, 200);
+        });
+
+        // Expuesto para las pruebas automatizadas del navegador.
+        window.__explorador = {
+            estado: () => datos,
+            visibles: () => visibles,
+            consultar,
+            setBbox: (b) => { escribirBbox(b); pintarRectangulo(bboxALatLngBounds(b)); }
+        };
+    })();
+    </script>
+</body>
+</html>
