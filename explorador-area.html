@@ -519,7 +519,7 @@
                             <span>Scale</span>
                             <span class="slider-value" id="sizeValue">100%</span>
                         </div>
-                        <input type="range" id="sizeSlider" min="50" max="200" value="100">
+                        <input type="range" id="sizeSlider" min="0" max="200" value="100">
                     </div>
                 </div>
 
@@ -1009,7 +1009,17 @@
         // circunscrito si el modo es círculo) — no hace falta esperar a que
         // haya datos consultados para poder previsualizar la geología.
         function bboxParaGeologia() {
-            return modoArea === 'circulo' ? bboxCircunscrito(leerCirculo()) : leerBbox();
+            const b = modoArea === 'circulo' ? bboxCircunscrito(leerCirculo()) : leerBbox();
+            if ([b.n, b.s, b.e, b.o].every(isFinite)) return b;
+            // Todavía no hay un área definida en el formulario (ej. primera
+            // visita, campos vacíos): usar lo que se ve en el mapa ahora mismo,
+            // así la capa geológica siempre muestra algo en vez de quedar en
+            // blanco sin explicación.
+            const mb = map.getBounds();
+            return {
+                n: mb.getNorth(), s: mb.getSouth(),
+                e: normalizarLng(mb.getEast()), o: normalizarLng(mb.getWest())
+            };
         }
 
         // ============================================================
