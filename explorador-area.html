@@ -604,23 +604,39 @@
         const FUENTES = {
             usgs: {
                 id: 'usgs', label: 'USGS',
-                maxLimite: 20000, limiteConfigurable: true, defaultLimite: 500
+                maxLimite: 20000, limiteConfigurable: true, defaultLimite: 500,
+                fechaDesdeDefault: '1900-01-01' // catálogo global "moderno"; no hay un límite real conocido
             },
             usgs_sig: {
                 id: 'usgs_sig', label: 'USGS Significant',
-                maxLimite: 20000, limiteConfigurable: true, defaultLimite: 500
+                maxLimite: 20000, limiteConfigurable: true, defaultLimite: 500,
+                fechaDesdeDefault: '1900-01-01'
             },
             isc: {
                 id: 'isc', label: 'ISC Bulletin',
                 // Sin tope confirmado del lado del servidor: autolimitado desde el cliente.
-                maxLimite: 10000, limiteConfigurable: true, defaultLimite: 500
+                maxLimite: 10000, limiteConfigurable: true, defaultLimite: 500,
+                fechaDesdeDefault: '1900-01-01'
             },
             sgc: {
                 id: 'sgc', label: 'SGC Historical',
                 // Esta API no tiene parámetro de límite/paginación.
-                maxLimite: null, limiteConfigurable: false, defaultLimite: null
+                maxLimite: null, limiteConfigurable: false, defaultLimite: null,
+                // Rango real verificado con curl: el evento más antiguo del catálogo
+                // integrado data de 1610-02-03, y no hay datos después de FECHA_CORTE_SGC.
+                fechaDesdeDefault: '1610-01-01'
             }
         };
+
+        // Por defecto se usa TODO el rango real de la fuente elegida (desde su
+        // fecha más antigua conocida hasta la más reciente que cubre), no un
+        // rango corto arbitrario — una ventana de pocos meses/años suele traer
+        // muy pocos o cero resultados en fuentes con cobertura dispersa.
+        function rangoFechasFuente(fuenteId) {
+            const F = FUENTES[fuenteId] || FUENTES.usgs;
+            const hasta = fuenteId === 'sgc' ? FECHA_CORTE_SGC : isoDia(new Date());
+            return { desde: F.fechaDesdeDefault, hasta };
+        }
 
         // Dos datasets independientes y simultáneos: la capa de fondo (consulta
         // principal, Pestaña "Área") y la capa opcional de evento especial
@@ -2449,10 +2465,6 @@
         // (área real, no el placeholder vacío) — se usa para decidir si el
         // mapa arranca centrado en esa área o mundial (map.fitWorld()).
         function cargarPreferencias() {
-            const hoy = new Date();
-            const haceUnAnio = new Date(hoy.getTime());
-            haceUnAnio.setFullYear(hoy.getFullYear() - 1);
-
             let guardado = null;
             try {
                 const raw = localStorage.getItem(CLAVE_LS);
@@ -2468,14 +2480,20 @@
             if (guardado && guardado.bbox) escribirBbox(guardado.bbox);
             if (guardado && guardado.circulo) escribirCirculo(guardado.circulo);
 
-            $('fechaIni').value = (guardado && guardado.inicio) || isoDia(haceUnAnio);
-            $('fechaFin').value = (guardado && guardado.fin) || isoDia(hoy);
-            $('magSlider').value = Math.round(((guardado && guardado.minmag) || 2.5) * 10);
-            $('magValue').textContent = 'M' + (parseInt($('magSlider').value, 10) / 10).toFixed(1);
-
             const fuenteId = (guardado && guardado.fuenteId) || 'usgs';
             const radio = document.querySelector(`input[name="fuente"][value="${fuenteId}"]`);
             if (radio) radio.checked = true;
+
+            // Fechas por defecto: todo el rango real de la fuente elegida (ver
+            // rangoFechasFuente), no una ventana corta — evita el caso típico de
+            // "primera consulta trae 0 o casi ningún evento" por un span de
+            // tiempo demasiado angosto.
+            const rango = rangoFechasFuente(fuenteId);
+            $('fechaIni').value = (guardado && guardado.inicio) || rango.desde;
+            $('fechaFin').value = (guardado && guardado.fin) || rango.hasta;
+            $('magSlider').value = Math.round(((guardado && guardado.minmag) || 2.5) * 10);
+            $('magValue').textContent = 'M' + (parseInt($('magSlider').value, 10) / 10).toFixed(1);
+
             $('sigThreshold').value = (guardado && guardado.minsig) || 600;
             actualizarLimiteUI();
             if (guardado && guardado.limite) $('limite').value = guardado.limite;
@@ -2556,7 +2574,16 @@
             });
 
             document.querySelectorAll('input[name="fuente"]').forEach(r => {
-                r.addEventListener('change', actualizarLimiteUI);
+                r.addEventListener('change', () => {
+                    actualizarLimiteUI();
+                    // Cada fuente cubre un rango de fechas real distinto (ver
+                    // rangoFechasFuente) — al cambiar de fuente, las fechas se
+                    // actualizan a su rango completo para no arrastrar un rango
+                    // corto que en la nueva fuente traiga pocos o cero resultados.
+                    const rango = rangoFechasFuente(r.value);
+                    $('fechaIni').value = rango.desde;
+                    $('fechaFin').value = rango.hasta;
+                });
             });
 
             $('showEvents').addEventListener('change', aplicarVisibilidad3D);
@@ -2636,7 +2663,12 @@
                 else escribirBboxEv(leerBbox());
             });
             document.querySelectorAll('input[name="fuenteEvento"]').forEach(r => {
-                r.addEventListener('change', actualizarLimiteUIEvento);
+                r.addEventListener('change', () => {
+                    actualizarLimiteUIEvento();
+                    const rango = rangoFechasFuente(r.value);
+                    $('fechaIniEv').value = rango.desde;
+                    $('fechaFinEv').value = rango.hasta;
+                });
             });
             $('btnConsultarEvento').addEventListener('click', consultarEvento);
             $('btnQuitarEvento').addEventListener('click', quitarCapaEvento);
@@ -2766,6 +2798,9 @@
             setModoAreaEvento('rect');
             setOrigenEvento('catalogo');
             setTab('area');
+            const rangoEv = rangoFechasFuente(fuenteSeleccionadaEvento());
+            $('fechaIniEv').value = rangoEv.desde;
+            $('fechaFinEv').value = rangoEv.hasta;
             actualizarLimiteUIEvento();
             actualizarBotonExportar();
             aplicarVisibilidad2D();
