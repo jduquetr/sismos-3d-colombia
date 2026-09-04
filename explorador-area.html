@@ -484,6 +484,13 @@
                         </select>
                         <div class="nota">Se recorta con el área consultada y se actualiza sola cuando cambia. El mapa geológico solo tiene datos en Colombia/Centroamérica.</div>
                     </div>
+                    <div class="slider-group">
+                        <div class="slider-label">
+                            <span>Opacidad del mapa superior</span>
+                            <span class="slider-value" id="opacidadMapaSuperiorValue">100%</span>
+                        </div>
+                        <input type="range" id="opacidadMapaSuperiorSlider" min="0" max="100" value="100">
+                    </div>
                     <div class="checkbox-item">
                         <input type="checkbox" id="showFondo" checked>
                         <label for="showFondo">Capa de fondo</label>
@@ -1003,6 +1010,11 @@
             });
         }
 
+        function leerOpacidadMapaSuperior() {
+            const el = $('opacidadMapaSuperiorSlider');
+            return el ? parseFloat(el.value) / 100 : 1;
+        }
+
         async function bakearMapaSuperior(b) {
             if (!mallaSuperior || !b || [b.n, b.s, b.e, b.o].some(v => !isFinite(v))) return;
             const miToken = ++bakeMapaToken; // si el área vuelve a cambiar antes de terminar, este resultado se descarta
@@ -1072,7 +1084,7 @@
                 if (mallaSuperior.material.map) mallaSuperior.material.map.dispose();
                 mallaSuperior.material.map = tex;
                 mallaSuperior.material.color.set(0xffffff);
-                mallaSuperior.material.opacity = 1;
+                mallaSuperior.material.opacity = leerOpacidadMapaSuperior();
                 mallaSuperior.material.needsUpdate = true;
             } catch (err) {
                 console.warn('No se pudo construir el mapa de la cara superior:', err);
@@ -2555,6 +2567,13 @@
 
             $('mapaSuperiorSelector').addEventListener('change', () => {
                 if (mallaSuperior && datosFondo.bbox) bakearMapaSuperior(datosFondo.bbox);
+            });
+
+            $('opacidadMapaSuperiorSlider').addEventListener('input', (e) => {
+                $('opacidadMapaSuperiorValue').textContent = e.target.value + '%';
+                if (mallaSuperior && $('mapaSuperiorSelector').value !== 'ninguno') {
+                    mallaSuperior.material.opacity = parseFloat(e.target.value) / 100;
+                }
             });
 
             $('showMap').addEventListener('change', (e) => {
