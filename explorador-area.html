@@ -306,6 +306,31 @@
 
         .nota { font-size: 10px; color: #64748b; line-height: 1.5; margin-top: 6px; }
 
+        /* --- Selector de fuente --- */
+        .fuente-selector { display: flex; flex-direction: column; gap: 10px; }
+        .fuente-opcion {
+            display: block;
+            cursor: pointer;
+            padding: 8px;
+            border-radius: 6px;
+            border: 1px solid #293548;
+            background: #0f1628;
+        }
+        .fuente-opcion:has(input:checked) {
+            border-color: #64b5f6;
+            background: #14233d;
+        }
+        .fuente-opcion input[type="radio"] {
+            cursor: pointer;
+            accent-color: #64b5f6;
+            margin-right: 6px;
+            vertical-align: middle;
+        }
+        .fuente-nombre { font-size: 12px; font-weight: bold; color: #e0e0e0; vertical-align: middle; }
+        .fuente-opcion .nota { margin-top: 4px; margin-left: 20px; }
+        .fuente-extra { margin-left: 20px; }
+        .fuente-extra input { width: auto; max-width: 100px; }
+
         ::-webkit-scrollbar { width: 6px; }
         ::-webkit-scrollbar-track { background: #0f1628; }
         ::-webkit-scrollbar-thumb { background: #64b5f6; border-radius: 3px; }
@@ -362,6 +387,36 @@
             </div>
 
             <div class="control-group">
+                <div class="group-title">Fuente del catálogo</div>
+                <div class="fuente-selector" id="fuenteSelector">
+                    <label class="fuente-opcion">
+                        <input type="radio" name="fuente" value="usgs" checked>
+                        <span class="fuente-nombre">USGS</span>
+                        <div class="nota">Cobertura mundial, cualquier fecha de ocurrencia. La opción más general y confiable.</div>
+                    </label>
+                    <label class="fuente-opcion">
+                        <input type="radio" name="fuente" value="usgs_sig">
+                        <span class="fuente-nombre">USGS Significativos</span>
+                        <div class="nota">Solo eventos de alto impacto (humano o material) en cualquier parte del mundo y cualquier fecha — usa el mismo criterio que la página oficial de sismos significativos de USGS.</div>
+                        <div class="campo fuente-extra" id="sigExtra" hidden style="margin-top:6px">
+                            <label for="sigThreshold">Umbral de significancia (sig ≥)</label>
+                            <input type="number" id="sigThreshold" min="0" max="2000" step="10" value="600">
+                        </div>
+                    </label>
+                    <label class="fuente-opcion">
+                        <input type="radio" name="fuente" value="isc">
+                        <span class="fuente-nombre">ISC Bulletin</span>
+                        <div class="nota">El catálogo de investigación más completo del mundo (agrega cientos de redes sismológicas locales). Los eventos muy recientes pueden tardar en consolidarse. Puede ser más lento que las otras fuentes. Es el boletín general — no el catálogo curado ISC-GEM, que no está disponible por esta API.</div>
+                    </label>
+                    <label class="fuente-opcion">
+                        <input type="radio" name="fuente" value="sgc">
+                        <span class="fuente-nombre">SGC Histórico (Colombia/Centroamérica)</span>
+                        <div class="nota">Catálogo histórico integrado de Colombia y el borde con Centroamérica (SGC + ISC + NEIC + otras redes), desde 1610 <strong>hasta finales de 2020</strong>. La mejor fuente para investigación histórica en esta región, pero no incluye sismicidad reciente ni actual.</div>
+                    </label>
+                </div>
+            </div>
+
+            <div class="control-group">
                 <div class="group-title">Parámetros de consulta</div>
                 <div class="bbox-grid">
                     <div class="campo">
@@ -382,8 +437,9 @@
                 </div>
                 <div class="campo" style="margin-top:8px">
                     <label for="limite">Límite de resultados</label>
-                    <input type="number" id="limite" min="1" max="5000" step="100" value="500">
+                    <input type="number" id="limite" min="1" max="20000" step="100" value="500">
                 </div>
+                <div class="nota" id="notaLimite"></div>
             </div>
 
             <div class="control-group">
@@ -470,8 +526,10 @@
         // 1. Constantes y estado
         // ============================================================
 
-        const EMSC = 'https://www.seismicportal.eu/fdsnws/event/1/';
         const USGS = 'https://earthquake.usgs.gov/fdsnws/event/1/';
+        const PROXY_ISC = '/api/proxy-isc';
+        const SGC_CAPARR = 'https://catalogosismico.sgc.gov.co/rest_cats/caparr';
+        const FECHA_CORTE_SGC = '2020-12-29'; // fecha real del evento más reciente confirmado en el catálogo
 
         const ANCHO_MUNDO = 34;     // unidades 3D del lado mayor del bbox
         const PROF_MUNDO = 20;      // unidades 3D del alto de la caja
@@ -481,13 +539,39 @@
 
         const COLORES = ['#00ff00', '#ffff00', '#ff8800', '#ff0000'];
 
+        // Las 4 fuentes ofrecidas — límite real de extracción verificado con
+        // pruebas en vivo contra cada servidor (ver documentación del proyecto).
+        // maxLimite=null significa "esta fuente no admite parámetro de límite".
+        const FUENTES = {
+            usgs: {
+                id: 'usgs', label: 'USGS',
+                maxLimite: 20000, limiteConfigurable: true, defaultLimite: 500
+            },
+            usgs_sig: {
+                id: 'usgs_sig', label: 'USGS Significativos',
+                maxLimite: 20000, limiteConfigurable: true, defaultLimite: 500
+            },
+            isc: {
+                id: 'isc', label: 'ISC Bulletin',
+                // Sin tope confirmado del lado del servidor: autolimitado desde el cliente.
+                maxLimite: 10000, limiteConfigurable: true, defaultLimite: 500
+            },
+            sgc: {
+                id: 'sgc', label: 'SGC Histórico',
+                // Esta API no tiene parámetro de límite/paginación.
+                maxLimite: null, limiteConfigurable: false, defaultLimite: null
+            }
+        };
+
         // Todo el estado de la consulta vigente vive acá: al llegar una
         // consulta nueva se reemplaza entero, así no quedan residuos.
         let datos = {
             eventos: [],        // {id, lat, lon, prof, mag, time, auth, region}
             bbox: null,         // {n, s, e, o}
-            fuente: null,       // 'EMSC' | 'USGS'
-            total: null,        // total disponible en la API (via /count)
+            fuente: null,       // etiqueta legible: 'USGS' | 'USGS Significativos' | 'ISC Bulletin' | 'SGC Histórico'
+            fuenteId: null,     // clave interna: 'usgs' | 'usgs_sig' | 'isc' | 'sgc'
+            urlConsulta: null,  // endpoint real usado (para exportGeoJSON/metadata)
+            total: null,        // total disponible en la API (via /count), null si no se pudo saber
             truncado: false,
             descartados: 0,
             params: null,
@@ -694,55 +778,89 @@
             return problema.tipo !== 'error';
         }
 
+        function fuenteSeleccionada() {
+            const el = document.querySelector('input[name="fuente"]:checked');
+            return el ? el.value : 'usgs';
+        }
+
         function leerParams() {
+            const fuenteId = fuenteSeleccionada();
+            const F = FUENTES[fuenteId];
+            let limite = Math.max(1, parseInt($('limite').value, 10) || F.defaultLimite || 500);
+            if (F.maxLimite != null) limite = Math.min(limite, F.maxLimite);
             return {
                 bbox: leerBbox(),
                 inicio: $('fechaIni').value,
                 fin: $('fechaFin').value,
                 minmag: parseInt($('magSlider').value, 10) / 10,
-                limite: Math.max(1, Math.min(5000, parseInt($('limite').value, 10) || 500))
+                limite,
+                minsig: Math.max(0, parseInt($('sigThreshold').value, 10) || 600)
             };
+        }
+
+        // Actualiza el tope del campo "Límite de resultados" y su nota según la
+        // fuente elegida — cada una tiene un límite real distinto (ver FUENTES).
+        function actualizarLimiteUI() {
+            const fuenteId = fuenteSeleccionada();
+            const F = FUENTES[fuenteId];
+            const campoLimite = $('limite');
+            const nota = $('notaLimite');
+            $('sigExtra').hidden = fuenteId !== 'usgs_sig';
+
+            if (!F.limiteConfigurable) {
+                campoLimite.disabled = true;
+                campoLimite.value = '';
+                nota.textContent = 'SGC Histórico no tiene parámetro de límite: siempre trae todos los eventos que calcen en el área, profundidad, magnitud y fechas pedidas. Controlá el volumen acotando esos filtros.';
+                return;
+            }
+            campoLimite.disabled = false;
+            campoLimite.max = F.maxLimite;
+            if (!campoLimite.value || parseInt(campoLimite.value, 10) > F.maxLimite) {
+                campoLimite.value = Math.min(F.defaultLimite, F.maxLimite);
+            }
+            if (fuenteId === 'isc') {
+                nota.textContent = `ISC no impone un tope fijo, pero se autolimita a ${F.maxLimite.toLocaleString('es')} eventos por consulta desde esta interfaz para evitar respuestas desproporcionadas.`;
+            } else {
+                nota.textContent = `Tope duro del servidor: ${F.maxLimite.toLocaleString('es')} eventos por consulta.`;
+            }
         }
 
         // ============================================================
         // 5. Consulta a los catálogos y normalización
         // ============================================================
 
-        function urlEMSC(p, metodo) {
-            const b = p.bbox;
-            return `${EMSC}${metodo}?format=json` +
-                `&minlat=${b.s}&maxlat=${b.n}&minlon=${b.o}&maxlon=${b.e}` +
-                `&start=${p.inicio}&end=${p.fin}&minmag=${p.minmag}` +
-                (metodo === 'query' ? `&limit=${p.limite}` : '');
-        }
-
-        function urlUSGS(p, metodo) {
+        function urlUSGS(p, metodo, minsig) {
             const b = p.bbox;
             return `${USGS}${metodo}?format=geojson` +
+                `&minlatitude=${b.s}&maxlatitude=${b.n}&minlongitude=${b.o}&maxlongitude=${b.e}` +
+                `&starttime=${p.inicio}&endtime=${p.fin}&minmagnitude=${p.minmag}` +
+                (metodo === 'query' ? `&limit=${p.limite}` : '') +
+                (minsig != null ? `&minsig=${minsig}` : '');
+        }
+
+        // ISC no tiene CORS: se pasa por el proxy serverless /api/proxy-isc,
+        // que arma la URL real de isc.ac.uk server-side y reenvía la respuesta.
+        function urlISC(p, metodo) {
+            const b = p.bbox;
+            return `${PROXY_ISC}?endpoint=${metodo}` +
                 `&minlatitude=${b.s}&maxlatitude=${b.n}&minlongitude=${b.o}&maxlongitude=${b.e}` +
                 `&starttime=${p.inicio}&endtime=${p.fin}&minmagnitude=${p.minmag}` +
                 (metodo === 'query' ? `&limit=${p.limite}` : '');
         }
 
-        // EMSC: properties trae lat/lon/depth positivos; geometry.coordinates[2] es negativo.
-        function normalizarEMSC(features) {
-            const out = [];
-            let descartados = 0;
-            for (const f of features) {
-                const p = f.properties || {};
-                const lat = Number(p.lat), lon = Number(p.lon);
-                const prof = Number(p.depth), mag = Number(p.mag);
-                const t = p.time ? new Date(p.time) : null;
-                if (![lat, lon, prof, mag].every(isFinite) || !t || isNaN(t.getTime())) { descartados++; continue; }
-                out.push({
-                    id: f.id || p.source_id, lat, lon, prof: Math.abs(prof), mag,
-                    time: t, auth: p.auth || p.source_catalog || 'EMSC', region: p.flynn_region || ''
-                });
-            }
-            return { eventos: out, descartados };
+        // SGC: ruta posicional (no query params), orden fijo ya verificado con curl.
+        // latMin/latMax/lonMin/lonMax/profMin/profMax/magMin/magMax/fechaIniMs/fechaFinMs
+        function urlSGC(p) {
+            const b = p.bbox;
+            const fechaIniMs = new Date(p.inicio + 'T00:00:00Z').getTime();
+            const fechaFinMs = new Date(p.fin + 'T23:59:59Z').getTime();
+            const profMin = 0, profMax = 40000, magMax = 1000;
+            return `${SGC_CAPARR}/${b.s}/${b.n}/${b.o}/${b.e}/${profMin}/${profMax}/${p.minmag}/${magMax}/${fechaIniMs}/${fechaFinMs}`;
         }
 
         // USGS: profundidad positiva en geometry.coordinates[2], time en epoch ms.
+        // También sirve para USGS Significativos: mismo formato, solo cambia el
+        // parámetro minsig con el que se arma la URL.
         function normalizarUSGS(features) {
             const out = [];
             let descartados = 0;
@@ -761,7 +879,51 @@
             return { eventos: out, descartados };
         }
 
+        // ISC: texto plano pipe-delimited, no GeoJSON. Formato confirmado:
+        // #EventID|Time|Latitude|Longitude|Depth/km|Author|Catalog|Contributor|
+        // ContributorID|MagType|Magnitude|MagAuthor|EventLocationName|EventType
+        function normalizarISC(texto) {
+            const out = [];
+            let descartados = 0;
+            const lineas = (texto || '').split('\n');
+            for (const linea of lineas) {
+                const l = linea.trim();
+                if (!l || l.startsWith('#')) continue;
+                const c = l.split('|');
+                if (c.length < 13) { descartados++; continue; }
+                const lat = Number(c[2]), lon = Number(c[3]), prof = Number(c[4]);
+                const mag = Number(c[10]);
+                const t = c[1] ? new Date(c[1]) : null;
+                if (![lat, lon, prof, mag].every(isFinite) || !t || isNaN(t.getTime())) { descartados++; continue; }
+                out.push({
+                    id: c[0], lat, lon, prof: Math.abs(prof), mag,
+                    time: t, auth: c[5] || 'ISC', region: c[12] || ''
+                });
+            }
+            return { eventos: out, descartados };
+        }
+
+        // SGC: GeoJSON confirmado, pero con nombres de campo propios (ESP_*).
+        function normalizarSGC(features) {
+            const out = [];
+            let descartados = 0;
+            for (const f of features) {
+                const p = f.properties || {};
+                const lat = Number(p.ESP_LATITUD), lon = Number(p.ESP_LONGITUD);
+                const prof = Number(p.ESP_PROFUNDIDAD), mag = Number(p.ESP_MAGNITUD);
+                const t = typeof p.ESP_FECHA_LONG === 'number' ? new Date(p.ESP_FECHA_LONG) : null;
+                if (![lat, lon, prof, mag].every(isFinite) || !t || isNaN(t.getTime())) { descartados++; continue; }
+                out.push({
+                    id: f.id || p.OBJECTID, lat, lon, prof: Math.abs(prof), mag,
+                    time: t, auth: p.ESP_FUENTE_LOCALIZACION || 'SGC', region: ''  // sin texto de región, solo códigos MUN_CODIGO/DEPT_CODIGO
+                });
+            }
+            return { eventos: out, descartados };
+        }
+
         // Pide el total disponible sin traerse los eventos. Si falla, no pasa nada.
+        // Solo existe /count verificado en USGS — ISC no tiene ese endpoint (404
+        // confirmado) y SGC no tiene noción de "total" (no pagina ni limita).
         async function pedirTotal(url) {
             try {
                 const res = await fetch(url);
@@ -769,6 +931,74 @@
                 const j = await res.json();
                 return typeof j.count === 'number' ? j.count : null;
             } catch (e) { return null; }
+        }
+
+        // Ejecuta la consulta contra la fuente indicada y devuelve el resultado ya
+        // normalizado al shape interno común. No toca el estado global `datos` ni
+        // el DOM — así lo puede reutilizar tanto la capa de fondo como la capa de
+        // evento especial (Parte 3) sin duplicar la lógica por fuente.
+        async function consultarFuenteRaw(p, fuenteId) {
+            const F = FUENTES[fuenteId];
+            if (!F) throw new Error('Fuente desconocida: ' + fuenteId);
+
+            let crudos, notas = [];
+
+            if (fuenteId === 'usgs' || fuenteId === 'usgs_sig') {
+                const minsig = fuenteId === 'usgs_sig' ? p.minsig : null;
+                const res = await fetch(urlUSGS(p, 'query', minsig));
+                if (!res.ok) {
+                    let detalle = '';
+                    try { const j = await res.json(); detalle = j.message || ''; } catch (e) { /* sin cuerpo JSON */ }
+                    throw new Error(`USGS respondió HTTP ${res.status}. ${detalle}`);
+                }
+                const j = await res.json();
+                crudos = { tipo: 'usgs', features: (j && j.features) || [] };
+            } else if (fuenteId === 'isc') {
+                const res = await fetch(urlISC(p, 'query'));
+                if (!res.ok) {
+                    let detalle = '';
+                    try { detalle = (await res.text()).slice(0, 200); } catch (e) { /* nada que leer */ }
+                    throw new Error(`ISC respondió HTTP ${res.status} (vía proxy). ${detalle}`);
+                }
+                const texto = await res.text();
+                crudos = { tipo: 'isc', texto };
+            } else if (fuenteId === 'sgc') {
+                const res = await fetch(urlSGC(p));
+                if (!res.ok) throw new Error('SGC respondió HTTP ' + res.status);
+                const texto = await res.text();
+                let j;
+                try { j = JSON.parse(texto); }
+                catch (e) { throw new Error('SGC devolvió una respuesta que no es JSON válido.'); }
+                crudos = { tipo: 'sgc', features: (j && j.features) || [], bytes: texto.length };
+                if (crudos.bytes > 3_000_000) {
+                    notas.push(`La respuesta cruda de SGC pesó ~${(crudos.bytes / 1e6).toFixed(1)} MB. Podés acotar fechas/magnitud para aligerarla.`);
+                }
+                if (p.fin > FECHA_CORTE_SGC) {
+                    notas.push(`SGC Histórico no tiene datos posteriores a finales de 2020 (último evento confirmado: ${FECHA_CORTE_SGC}). El rango pedido incluye fechas fuera de su cobertura.`);
+                }
+            }
+
+            let norm;
+            if (crudos.tipo === 'usgs') norm = normalizarUSGS(crudos.features);
+            else if (crudos.tipo === 'isc') norm = normalizarISC(crudos.texto);
+            else norm = normalizarSGC(crudos.features);
+
+            norm.eventos.sort((a, b) => a.time - b.time);
+
+            let total = null;
+            if (fuenteId === 'usgs' || fuenteId === 'usgs_sig') {
+                total = await pedirTotal(urlUSGS(p, 'count', fuenteId === 'usgs_sig' ? p.minsig : null));
+            }
+
+            // Truncamiento: para fuentes con tope (USGS/USGS Sig/ISC), si el
+            // resultado llegó exactamente al límite pedido, probablemente hay más.
+            const truncado = F.maxLimite != null && norm.eventos.length >= Math.min(p.limite, F.maxLimite);
+
+            const urlUsada = fuenteId === 'usgs' || fuenteId === 'usgs_sig' ? urlUSGS(p, 'query', fuenteId === 'usgs_sig' ? p.minsig : null)
+                : fuenteId === 'isc' ? urlISC(p, 'query')
+                : urlSGC(p);
+
+            return { norm, total, notas, truncado, fuenteId, fuenteLabel: F.label, urlUsada };
         }
 
         async function consultar() {
@@ -784,75 +1014,51 @@
             if (!p.inicio || !p.fin) { mensaje('Definí el rango de fechas.', 'error'); return; }
             if (p.inicio > p.fin) { mensaje('La fecha "desde" es posterior a la fecha "hasta".', 'error'); return; }
 
+            const fuenteId = fuenteSeleccionada();
+            const F = FUENTES[fuenteId];
+
             consultando = true;
             $('btnConsultar').disabled = true;
-            mensaje('Consultando EMSC…', 'cargando');
+            mensaje(`Consultando ${F.label}…`, 'cargando');
 
-            let fuente = null, crudos = null, notas = [];
-
-            // --- Fuente primaria: EMSC ---
+            let resultado;
             try {
-                const res = await fetch(urlEMSC(p, 'query'));
-                if (res.status === 204) {
-                    // EMSC responde 204 SIN CUERPO cuando no hay eventos: res.json() reventaría.
-                    notas.push('EMSC no reportó eventos (HTTP 204); se verificó contra USGS.');
-                } else if (!res.ok) {
-                    notas.push(`EMSC respondió HTTP ${res.status}; se usó USGS.`);
-                } else {
-                    const j = await res.json();
-                    crudos = { tipo: 'EMSC', features: (j && j.features) || [] };
-                    fuente = 'EMSC';
-                }
+                resultado = await consultarFuenteRaw(p, fuenteId);
             } catch (err) {
-                notas.push('El navegador bloqueó o falló la petición a EMSC (posible CORS o red); se usó USGS.');
+                consultando = false;
+                $('btnConsultar').disabled = false;
+                mensaje(
+                    `<strong>No se pudo consultar ${F.label}.</strong><br>${err.message}` +
+                    '<br>Revisá la conexión y volvé a intentar con el botón «Consultar catálogo».',
+                    'error'
+                );
+                return;
             }
 
-            // --- Respaldo: USGS ---
-            if (!fuente) {
-                mensaje('EMSC no respondió con datos. Consultando USGS…', 'cargando');
-                try {
-                    const res = await fetch(urlUSGS(p, 'query'));
-                    if (!res.ok) throw new Error('HTTP ' + res.status);
-                    const j = await res.json();
-                    crudos = { tipo: 'USGS', features: (j && j.features) || [] };
-                    fuente = 'USGS';
-                } catch (err) {
-                    consultando = false;
-                    $('btnConsultar').disabled = false;
-                    mensaje(
-                        '<strong>No se pudo consultar ningún catálogo.</strong><br>' +
-                        notas.join('<br>') + '<br>USGS: ' + err.message +
-                        '<br>Revisá la conexión y volvé a intentar con el botón «Consultar catálogo».',
-                        'error'
-                    );
-                    return;
-                }
-            }
-
-            const norm = crudos.tipo === 'EMSC'
-                ? normalizarEMSC(crudos.features)
-                : normalizarUSGS(crudos.features);
-
-            norm.eventos.sort((a, b) => a.time - b.time);
-
-            const total = await pedirTotal(fuente === 'EMSC' ? urlEMSC(p, 'count') : urlUSGS(p, 'count'));
-
-            aplicarResultado(norm, p, fuente, total, notas);
+            aplicarResultado(resultado.norm, p, resultado.fuenteLabel, resultado.total, resultado.notas, {
+                fuenteId: resultado.fuenteId,
+                urlConsulta: resultado.urlUsada,
+                truncado: resultado.truncado
+            });
 
             consultando = false;
             $('btnConsultar').disabled = false;
-            guardarPreferencias(p);
+            guardarPreferencias(p, fuenteId);
         }
 
         // ============================================================
         // 6. Aplicar el resultado: reconstruye TODO lo dependiente de los datos
         // ============================================================
 
-        function aplicarResultado(norm, p, fuente, total, notas) {
+        function aplicarResultado(norm, p, fuente, total, notas, opciones) {
+            opciones = opciones || {};
             // Estado nuevo, sin arrastrar nada de la consulta anterior.
             datos = {
-                eventos: norm.eventos, bbox: p.bbox, fuente, total,
-                truncado: norm.eventos.length >= p.limite,
+                eventos: norm.eventos, bbox: p.bbox, fuente,
+                fuenteId: opciones.fuenteId || null,
+                urlConsulta: opciones.urlConsulta || null,
+                total,
+                truncado: !!opciones.truncado,
                 descartados: norm.descartados, params: p,
                 buckets: [], profTope: 0, profPiso: 1, minTime: null, maxTime: null
             };
@@ -870,8 +1076,13 @@
                 $('btnExportar').disabled = true;
                 actualizarPanel();
                 actualizarTimeline(1);
+                // SGC no cubre fechas recientes: si el rango pedido cae después del
+                // corte, el mensaje debe explicarlo en vez de sugerir "no hubo sismos".
+                const sinCobertura = opciones.fuenteId === 'sgc' && p.fin > FECHA_CORTE_SGC;
                 mensaje(
-                    '<strong>No se encontraron sismos en esta área y rango de fechas.</strong><br>' +
+                    (sinCobertura
+                        ? `<strong>SGC Histórico no tiene datos en el rango pedido.</strong><br>Esta fuente está congelada hasta finales de 2020 (último evento confirmado: ${FECHA_CORTE_SGC}) y no es un catálogo en vivo — no significa que no hubo sismos, sino que esta fuente no los cubre. Elegí USGS, USGS Significativos o ISC Bulletin para sismicidad reciente.`
+                        : '<strong>No se encontraron sismos en esta área y rango de fechas.</strong>') + '<br>' +
                     (notas.length ? notas.join('<br>') + '<br>' : '') +
                     `Consultado en ${fuente} con M≥${p.minmag}. Probá bajando la magnitud mínima o ampliando el rango.`,
                     'aviso'
@@ -900,6 +1111,8 @@
             const partes = [`<strong>${datos.eventos.length} eventos</strong> desde ${fuente}.`];
             if (total !== null && total > datos.eventos.length) {
                 partes.push(`Mostrando ${datos.eventos.length} de ${total} disponibles (tope de ${p.limite}). Subí el límite para ver más.`);
+            } else if (datos.truncado) {
+                partes.push('Es posible que haya más eventos de los mostrados — acotá el área, el rango de fechas o subí la magnitud mínima para ver el conjunto completo.');
             }
             if (datos.eventos.length > MAX_ESFERAS) {
                 partes.push(`En 3D se dibujan los ${MAX_ESFERAS} de mayor magnitud por rendimiento; el mapa y las estadísticas usan todos.`);
@@ -908,7 +1121,7 @@
                 partes.push(`${norm.descartados} eventos se descartaron por venir sin magnitud o profundidad.`);
             }
             if (notas.length) partes.push(notas.join(' '));
-            mensaje(partes.join('<br>'), 'ok');
+            mensaje(partes.join('<br>'), notas.length && opciones.fuenteId === 'sgc' && p.fin > FECHA_CORTE_SGC ? 'aviso' : 'ok');
         }
 
         function calcularBuckets(eventos) {
@@ -1236,7 +1449,7 @@
                 metadata: {
                     generado: new Date().toISOString(),
                     fuente: datos.fuente,
-                    endpoint: datos.fuente === 'EMSC' ? EMSC + 'query' : USGS + 'query',
+                    endpoint: datos.urlConsulta,
                     bbox: { norte: b.n, sur: b.s, este: b.e, oeste: b.o },
                     rango_fechas: { desde: datos.params.inicio, hasta: datos.params.fin },
                     magnitud_minima: datos.params.minmag,
@@ -1273,11 +1486,12 @@
         // 10. Persistencia ligera
         // ============================================================
 
-        function guardarPreferencias(p) {
+        function guardarPreferencias(p, fuenteId) {
             try {
                 localStorage.setItem(CLAVE_LS, JSON.stringify({
                     bbox: p.bbox, inicio: p.inicio, fin: p.fin,
-                    minmag: p.minmag, limite: p.limite
+                    minmag: p.minmag, limite: p.limite,
+                    fuenteId, minsig: p.minsig
                 }));
             } catch (e) { /* modo privado o storage lleno: no es crítico */ }
         }
@@ -1298,8 +1512,14 @@
             $('fechaIni').value = (guardado && guardado.inicio) || isoDia(haceUnAnio);
             $('fechaFin').value = (guardado && guardado.fin) || isoDia(hoy);
             $('magSlider').value = Math.round(((guardado && guardado.minmag) || 2.5) * 10);
-            $('limite').value = (guardado && guardado.limite) || 500;
             $('magValue').textContent = 'M' + (parseInt($('magSlider').value, 10) / 10).toFixed(1);
+
+            const fuenteId = (guardado && guardado.fuenteId) || 'usgs';
+            const radio = document.querySelector(`input[name="fuente"][value="${fuenteId}"]`);
+            if (radio) radio.checked = true;
+            $('sigThreshold').value = (guardado && guardado.minsig) || 600;
+            actualizarLimiteUI();
+            if (guardado && guardado.limite) $('limite').value = guardado.limite;
         }
 
         // ============================================================
@@ -1329,6 +1549,10 @@
 
             $('magSlider').addEventListener('input', () => {
                 $('magValue').textContent = 'M' + (parseInt($('magSlider').value, 10) / 10).toFixed(1);
+            });
+
+            document.querySelectorAll('input[name="fuente"]').forEach(r => {
+                r.addEventListener('change', actualizarLimiteUI);
             });
 
             $('showEvents').addEventListener('change', (e) => {
