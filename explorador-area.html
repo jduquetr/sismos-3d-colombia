@@ -821,32 +821,35 @@
 
             map.on('mousedown', (e) => {
                 if (!modoDibujo) return;
+                const ll = normalizarLatLng(e.latlng);
                 if (modoArea === 'circulo') {
-                    dibujandoCirculo = e.latlng;
+                    dibujandoCirculo = ll;
                     if (circuloDibujo) { map.removeLayer(circuloDibujo); circuloDibujo = null; }
                 } else {
-                    dibujando = e.latlng;
+                    dibujando = ll;
                     if (rectangulo) { map.removeLayer(rectangulo); rectangulo = null; }
                 }
             });
 
             map.on('mousemove', (e) => {
                 if (!modoDibujo) return;
+                const ll = normalizarLatLng(e.latlng);
                 if (modoArea === 'circulo') {
                     if (!dibujandoCirculo) return;
-                    pintarCirculo(dibujandoCirculo, map.distance(dibujandoCirculo, e.latlng));
+                    pintarCirculo(dibujandoCirculo, map.distance(dibujandoCirculo, ll));
                 } else {
                     if (!dibujando) return;
-                    pintarRectangulo(L.latLngBounds(dibujando, e.latlng));
+                    pintarRectangulo(L.latLngBounds(dibujando, ll));
                 }
             });
 
             map.on('mouseup', (e) => {
                 if (!modoDibujo) return;
+                const ll = normalizarLatLng(e.latlng);
                 if (modoArea === 'circulo') {
                     if (!dibujandoCirculo) return;
                     const centro = dibujandoCirculo;
-                    const radioM = map.distance(centro, e.latlng);
+                    const radioM = map.distance(centro, ll);
                     dibujandoCirculo = null;
                     // Un clic sin arrastrar no define un área: se ignora.
                     if (radioM < 1000) {
@@ -861,7 +864,7 @@
                     refrescarCapaGeologicaSiActiva();
                 } else {
                     if (!dibujando) return;
-                    const b = L.latLngBounds(dibujando, e.latlng);
+                    const b = L.latLngBounds(dibujando, ll);
                     dibujando = null;
                     // Un clic sin arrastrar no define un área: se ignora.
                     if (b.getNorth() - b.getSouth() < 0.01 || b.getEast() - b.getWest() < 0.01) {
@@ -910,6 +913,18 @@
             return L.latLngBounds([b.s, b.o], [b.n, b.e]);
         }
 
+        // Leaflet deja arrastrar el mapa "dando la vuelta al mundo" varias
+        // veces (world wrap), así que un clic/arrastre lejos del centro puede
+        // devolver una longitud fuera de -180..180 (ej. 185° en vez de -175°).
+        // Se normaliza siempre al capturar coordenadas del mapa, antes de que
+        // lleguen a los campos del formulario o a la validación.
+        function normalizarLng(lng) {
+            return ((lng + 180) % 360 + 360) % 360 - 180;
+        }
+        function normalizarLatLng(latlng) {
+            return L.latLng(latlng.lat, normalizarLng(latlng.lng));
+        }
+
         // --- Marcadores de esquina arrastrables (2 puntos: NO y SE) ---
         // Un rectángulo queda completamente definido con 2 esquinas opuestas,
         // así que basta con 2 controles de arrastre, no 4.
@@ -943,8 +958,9 @@
         // El marcador NO controla bboxN/bboxO; el SE controla bboxS/bboxE.
         function moverEsquina(cual, latlng) {
             const b = leerBbox();
-            if (cual === 'NO') { b.n = latlng.lat; b.o = latlng.lng; }
-            else { b.s = latlng.lat; b.e = latlng.lng; }
+            const lng = normalizarLng(latlng.lng);
+            if (cual === 'NO') { b.n = latlng.lat; b.o = lng; }
+            else { b.s = latlng.lat; b.e = lng; }
             escribirBbox(b);
             if (rectangulo) map.removeLayer(rectangulo);
             rectangulo = L.rectangle(bboxALatLngBounds(b) || L.latLngBounds([b.s, b.o], [b.n, b.e]), {
