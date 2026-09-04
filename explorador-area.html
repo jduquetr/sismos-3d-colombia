@@ -1046,14 +1046,16 @@
                     const fabricaUrl = TILE_BASES_3D[tipo];
                     if (!fabricaUrl) return;
 
-                    // Zoom que traiga ~5 teselas del lado mayor, con tope de 64 teselas totales.
+                    // Zoom que traiga ~9 teselas del lado mayor (más detalle al acercar la
+                    // cámara), con tope de 150 teselas totales para no disparar cientos de
+                    // pedidos en áreas grandes.
                     const lonSpan = Math.max(b.e - b.o, 0.001);
-                    let z = Math.max(1, Math.min(12, Math.round(Math.log2(360 / lonSpan * 5))));
+                    let z = Math.max(1, Math.min(16, Math.round(Math.log2(360 / lonSpan * 9))));
                     let x0, x1, y0, y1;
                     do {
                         x0 = Math.floor(lon2xTile(b.o, z)); x1 = Math.floor(lon2xTile(b.e, z));
                         y0 = Math.floor(lat2yTile(b.n, z)); y1 = Math.floor(lat2yTile(b.s, z));
-                        if ((x1 - x0 + 1) * (y1 - y0 + 1) <= 64 || z <= 1) break;
+                        if ((x1 - x0 + 1) * (y1 - y0 + 1) <= 150 || z <= 1) break;
                         z--;
                     } while (true);
 
@@ -1968,7 +1970,7 @@
             window.addEventListener('mouseup', () => { arrastre = null; });
             renderer.domElement.addEventListener('wheel', (e) => {
                 e.preventDefault();
-                distancia = Math.max(15, Math.min(200, distancia + e.deltaY * 0.05));
+                distancia = Math.max(3, Math.min(300, distancia + e.deltaY * 0.05));
             }, { passive: false });
 
             window.addEventListener('resize', redimensionar3D);
