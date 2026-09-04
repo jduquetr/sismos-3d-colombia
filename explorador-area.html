@@ -364,6 +364,34 @@
         .leaflet-control-layers label { color: #e0e0e0 !important; font-size: 11px; margin-bottom: 3px; }
         .leaflet-control-layers-separator { border-top: 1px solid #293548 !important; }
         .leaflet-control-layers-selector { accent-color: #64b5f6; }
+
+        /* --- Pestañas del panel --- */
+        .tabs { display: flex; gap: 4px; margin-bottom: 14px; }
+        .tab-btn {
+            flex: 1; padding: 7px 4px; font-size: 11px; font-weight: bold;
+            background: transparent; color: #64b5f6; border: 1px solid #293548;
+            border-radius: 5px; cursor: pointer; font-family: inherit;
+        }
+        .tab-btn.activo { background: #1e3a5f; color: #bbdefb; border-color: #64b5f6; }
+        .tab-btn:hover:not(.activo) { border-color: #64b5f6; }
+
+        select {
+            background: #0f1628; border: 1px solid #293548; border-radius: 4px;
+            color: #e0e0e0; padding: 5px 6px; font-size: 11px; font-family: inherit; width: 100%;
+        }
+        select:focus { outline: none; border-color: #64b5f6; }
+
+        input[type="color"] {
+            width: 100%; height: 28px; padding: 2px; border-radius: 4px;
+            border: 1px solid #293548; background: #0f1628; cursor: pointer;
+        }
+
+        /* --- Controles de reproducción del timeline --- */
+        .timeline-controls { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; flex-wrap: wrap; }
+        #btnPlay { width: auto; padding: 6px 14px; margin-top: 0; }
+        .velocidad-selector { display: flex; gap: 4px; }
+        .vel-btn { width: auto; padding: 4px 9px; font-size: 10px; margin-top: 0; }
+        .vel-btn.activo { background: #1e3a5f; color: #bbdefb; }
     </style>
 </head>
 <body>
@@ -376,6 +404,15 @@
             </div>
             <div class="timeline-container">
                 <div class="timeline-header">⏱️ Línea de Tiempo</div>
+                <div class="timeline-controls">
+                    <button class="btn secundario" id="btnPlay" type="button">▶ Reproducir</button>
+                    <div class="velocidad-selector" id="velocidadSelector">
+                        <button class="btn secundario vel-btn" data-vel="0.25" type="button">0.25×</button>
+                        <button class="btn secundario vel-btn" data-vel="0.5" type="button">0.5×</button>
+                        <button class="btn secundario vel-btn activo" data-vel="1" type="button">1×</button>
+                        <button class="btn secundario vel-btn" data-vel="2" type="button">2×</button>
+                    </div>
+                </div>
                 <input type="range" class="timeline-slider" id="timelineSlider" min="0" max="100" value="100">
                 <div class="timeline-info">
                     <span id="timeStart">—</span>
@@ -388,183 +425,337 @@
         <div class="control-panel">
             <div class="panel-title">⚙️ Consulta y Controles</div>
 
-            <div class="control-group">
-                <div class="group-title">Área geográfica</div>
-                <div class="modo-area-selector">
-                    <button class="btn secundario activo" id="btnModoRect" type="button">▭ Rectángulo</button>
-                    <button class="btn secundario" id="btnModoCirculo" type="button">◯ Círculo</button>
+            <div class="tabs">
+                <button class="tab-btn activo" data-tab="area" type="button">Área</button>
+                <button class="tab-btn" data-tab="evento" type="button">Evento especial</button>
+                <button class="tab-btn" data-tab="vista" type="button">Vista</button>
+            </div>
+
+            <!-- ============ PESTAÑA 1: ÁREA (capa de fondo) ============ -->
+            <div class="tab-panel" id="tabArea">
+                <div class="control-group">
+                    <div class="group-title">Área geográfica</div>
+                    <div class="modo-area-selector">
+                        <button class="btn secundario activo" id="btnModoRect" type="button">▭ Rectángulo</button>
+                        <button class="btn secundario" id="btnModoCirculo" type="button">◯ Círculo</button>
+                    </div>
+
+                    <div id="camposRect">
+                        <div class="bbox-grid">
+                            <div class="campo">
+                                <label for="bboxN">Norte</label>
+                                <input type="number" id="bboxN" step="0.1" min="-90" max="90" placeholder="ej. 10">
+                            </div>
+                            <div class="campo">
+                                <label for="bboxS">Sur</label>
+                                <input type="number" id="bboxS" step="0.1" min="-90" max="90" placeholder="ej. 0">
+                            </div>
+                            <div class="campo">
+                                <label for="bboxO">Oeste</label>
+                                <input type="number" id="bboxO" step="0.1" min="-180" max="180" placeholder="ej. -80">
+                            </div>
+                            <div class="campo">
+                                <label for="bboxE">Este</label>
+                                <input type="number" id="bboxE" step="0.1" min="-180" max="180" placeholder="ej. -70">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="camposCirculo" hidden>
+                        <div class="bbox-grid">
+                            <div class="campo">
+                                <label for="circLat">Centro lat</label>
+                                <input type="number" id="circLat" step="0.1" min="-90" max="90" placeholder="ej. 4.5">
+                            </div>
+                            <div class="campo">
+                                <label for="circLon">Centro lon</label>
+                                <input type="number" id="circLon" step="0.1" min="-180" max="180" placeholder="ej. -76">
+                            </div>
+                        </div>
+                        <div class="campo" style="margin-top:6px">
+                            <label for="circRadio">Radio (km)</label>
+                            <input type="number" id="circRadio" min="1" step="10" value="500">
+                        </div>
+                    </div>
+
+                    <button class="btn secundario" id="btnDibujar">✏️ Dibujar en el mapa</button>
+                    <div class="nota" id="notaArea">Arrastrá sobre el mapa para definir el área, o escribí las coordenadas.</div>
                 </div>
 
-                <div id="camposRect">
+                <div class="control-group">
+                    <div class="group-title">Fuente del catálogo</div>
+                    <div class="fuente-selector" id="fuenteSelector">
+                        <label class="fuente-opcion">
+                            <input type="radio" name="fuente" value="usgs" checked>
+                            <span class="fuente-nombre">USGS</span>
+                            <div class="nota">Cobertura mundial, cualquier fecha de ocurrencia. La opción más general y confiable.</div>
+                        </label>
+                        <label class="fuente-opcion">
+                            <input type="radio" name="fuente" value="usgs_sig">
+                            <span class="fuente-nombre">USGS Significativos</span>
+                            <div class="nota">Solo eventos de alto impacto (humano o material) en cualquier parte del mundo y cualquier fecha — usa el mismo criterio que la página oficial de sismos significativos de USGS.</div>
+                            <div class="campo fuente-extra" id="sigExtra" hidden style="margin-top:6px">
+                                <label for="sigThreshold">Umbral de significancia (sig ≥)</label>
+                                <input type="number" id="sigThreshold" min="0" max="2000" step="10" value="600">
+                            </div>
+                        </label>
+                        <label class="fuente-opcion">
+                            <input type="radio" name="fuente" value="isc">
+                            <span class="fuente-nombre">ISC Bulletin</span>
+                            <div class="nota">El catálogo de investigación más completo del mundo (agrega cientos de redes sismológicas locales). Los eventos muy recientes pueden tardar en consolidarse. Puede ser más lento que las otras fuentes. Es el boletín general — no el catálogo curado ISC-GEM, que no está disponible por esta API.</div>
+                        </label>
+                        <label class="fuente-opcion">
+                            <input type="radio" name="fuente" value="sgc">
+                            <span class="fuente-nombre">SGC Histórico (Colombia/Centroamérica)</span>
+                            <div class="nota">Catálogo histórico integrado de Colombia y el borde con Centroamérica (SGC + ISC + NEIC + otras redes), desde 1610 <strong>hasta finales de 2020</strong>. La mejor fuente para investigación histórica en esta región, pero no incluye sismicidad reciente ni actual.</div>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <div class="group-title">Parámetros de consulta</div>
                     <div class="bbox-grid">
                         <div class="campo">
-                            <label for="bboxN">Norte</label>
-                            <input type="number" id="bboxN" step="0.1" min="-90" max="90" placeholder="ej. 10">
+                            <label for="fechaIni">Desde</label>
+                            <input type="date" id="fechaIni">
                         </div>
                         <div class="campo">
-                            <label for="bboxS">Sur</label>
-                            <input type="number" id="bboxS" step="0.1" min="-90" max="90" placeholder="ej. 0">
+                            <label for="fechaFin">Hasta</label>
+                            <input type="date" id="fechaFin">
                         </div>
-                        <div class="campo">
-                            <label for="bboxO">Oeste</label>
-                            <input type="number" id="bboxO" step="0.1" min="-180" max="180" placeholder="ej. -80">
+                    </div>
+                    <div class="slider-group" style="margin-top:8px">
+                        <div class="slider-label">
+                            <span>Magnitud mínima</span>
+                            <span class="slider-value" id="magValue">M2.5</span>
                         </div>
-                        <div class="campo">
-                            <label for="bboxE">Este</label>
-                            <input type="number" id="bboxE" step="0.1" min="-180" max="180" placeholder="ej. -70">
-                        </div>
+                        <input type="range" id="magSlider" min="0" max="70" value="25">
+                    </div>
+                    <div class="campo" style="margin-top:8px">
+                        <label for="limite">Límite de resultados</label>
+                        <input type="number" id="limite" min="1" max="20000" step="100" value="500">
+                    </div>
+                    <div class="nota" id="notaLimite"></div>
+                </div>
+
+                <div class="control-group">
+                    <button class="btn" id="btnConsultar">🔍 Consultar catálogo (capa de fondo)</button>
+                    <div class="msg" id="mensaje"></div>
+                </div>
+            </div>
+
+            <!-- ============ PESTAÑA 2: EVENTO ESPECIAL ============ -->
+            <div class="tab-panel" id="tabEvento" hidden>
+                <div class="control-group">
+                    <div class="group-title">Evento especial (capa superpuesta)</div>
+                    <div class="nota">Segunda capa de datos opcional, independiente de la capa de fondo — se dibuja al mismo tiempo, con su propio degradado de color.</div>
+                </div>
+
+                <div class="control-group">
+                    <div class="group-title">Origen de los datos</div>
+                    <div class="modo-area-selector">
+                        <button class="btn secundario activo" id="btnOrigenCatalogo" type="button">Catálogo</button>
+                        <button class="btn secundario" id="btnOrigenArchivo" type="button">Archivo GeoJSON</button>
                     </div>
                 </div>
 
-                <div id="camposCirculo" hidden>
+                <div id="origenCatalogo">
+                    <div class="control-group">
+                        <div class="group-title">Área de esta capa</div>
+                        <div class="modo-area-selector">
+                            <button class="btn secundario activo" id="btnModoRectEv" type="button">▭ Rectángulo</button>
+                            <button class="btn secundario" id="btnModoCirculoEv" type="button">◯ Círculo</button>
+                        </div>
+                        <div id="camposRectEv">
+                            <div class="bbox-grid">
+                                <div class="campo"><label for="bboxNEv">Norte</label><input type="number" id="bboxNEv" step="0.1" min="-90" max="90"></div>
+                                <div class="campo"><label for="bboxSEv">Sur</label><input type="number" id="bboxSEv" step="0.1" min="-90" max="90"></div>
+                                <div class="campo"><label for="bboxOEv">Oeste</label><input type="number" id="bboxOEv" step="0.1" min="-180" max="180"></div>
+                                <div class="campo"><label for="bboxEEv">Este</label><input type="number" id="bboxEEv" step="0.1" min="-180" max="180"></div>
+                            </div>
+                        </div>
+                        <div id="camposCirculoEv" hidden>
+                            <div class="bbox-grid">
+                                <div class="campo"><label for="circLatEv">Centro lat</label><input type="number" id="circLatEv" step="0.1" min="-90" max="90"></div>
+                                <div class="campo"><label for="circLonEv">Centro lon</label><input type="number" id="circLonEv" step="0.1" min="-180" max="180"></div>
+                            </div>
+                            <div class="campo" style="margin-top:6px"><label for="circRadioEv">Radio (km)</label><input type="number" id="circRadioEv" min="1" step="10" value="200"></div>
+                        </div>
+                        <button class="btn secundario" id="btnCopiarAreaFondo" type="button">⧉ Usar la misma área que la capa de Fondo</button>
+                        <div class="nota">Esta capa no se dibuja arrastrando en el mapa — escribí las coordenadas o copiá el área de la capa de fondo.</div>
+                    </div>
+
+                    <div class="control-group">
+                        <div class="group-title">Fuente del catálogo</div>
+                        <div class="fuente-selector" id="fuenteSelectorEvento">
+                            <label class="fuente-opcion">
+                                <input type="radio" name="fuenteEvento" value="usgs" checked>
+                                <span class="fuente-nombre">USGS</span>
+                            </label>
+                            <label class="fuente-opcion">
+                                <input type="radio" name="fuenteEvento" value="usgs_sig">
+                                <span class="fuente-nombre">USGS Significativos</span>
+                                <div class="campo fuente-extra" id="sigExtraEv" hidden style="margin-top:6px">
+                                    <label for="sigThresholdEv">Umbral de significancia (sig ≥)</label>
+                                    <input type="number" id="sigThresholdEv" min="0" max="2000" step="10" value="600">
+                                </div>
+                            </label>
+                            <label class="fuente-opcion">
+                                <input type="radio" name="fuenteEvento" value="isc">
+                                <span class="fuente-nombre">ISC Bulletin</span>
+                            </label>
+                            <label class="fuente-opcion">
+                                <input type="radio" name="fuenteEvento" value="sgc">
+                                <span class="fuente-nombre">SGC Histórico</span>
+                                <div class="nota">No sirve para eventos recientes (sin datos después de 2020).</div>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="control-group">
+                        <div class="group-title">Parámetros de consulta</div>
+                        <div class="bbox-grid">
+                            <div class="campo"><label for="fechaIniEv">Desde</label><input type="date" id="fechaIniEv"></div>
+                            <div class="campo"><label for="fechaFinEv">Hasta</label><input type="date" id="fechaFinEv"></div>
+                        </div>
+                        <div class="slider-group" style="margin-top:8px">
+                            <div class="slider-label"><span>Magnitud mínima</span><span class="slider-value" id="magValueEv">M2.5</span></div>
+                            <input type="range" id="magSliderEv" min="0" max="70" value="25">
+                        </div>
+                        <div class="campo" style="margin-top:8px">
+                            <label for="limiteEv">Límite de resultados</label>
+                            <input type="number" id="limiteEv" min="1" max="20000" step="100" value="500">
+                        </div>
+                        <div class="nota" id="notaLimiteEv"></div>
+                    </div>
+
+                    <div class="control-group">
+                        <button class="btn" id="btnConsultarEvento">🔍 Cargar evento especial (catálogo)</button>
+                    </div>
+                </div>
+
+                <div id="origenArchivo" hidden>
+                    <div class="control-group">
+                        <div class="group-title">Archivo GeoJSON propio</div>
+                        <input type="file" id="archivoGeoJSON" accept=".geojson,.json">
+                        <div class="nota">Se acepta cualquier FeatureCollection de puntos — se prueban varios nombres de campo comunes para profundidad, magnitud y fecha (ver normalizarGeoJSONPropio).</div>
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <div class="group-title">Color según profundidad (esta capa)</div>
                     <div class="bbox-grid">
-                        <div class="campo">
-                            <label for="circLat">Centro lat</label>
-                            <input type="number" id="circLat" step="0.1" min="-90" max="90" placeholder="ej. 4.5">
-                        </div>
-                        <div class="campo">
-                            <label for="circLon">Centro lon</label>
-                            <input type="number" id="circLon" step="0.1" min="-180" max="180" placeholder="ej. -76">
-                        </div>
+                        <div class="campo"><label for="colorInicialEvento">Superficial</label><input type="color" id="colorInicialEvento" value="#ffeb3b"></div>
+                        <div class="campo"><label for="colorFinalEvento">Profundo</label><input type="color" id="colorFinalEvento" value="#b71c1c"></div>
                     </div>
-                    <div class="campo" style="margin-top:6px">
-                        <label for="circRadio">Radio (km)</label>
-                        <input type="number" id="circRadio" min="1" step="10" value="500">
-                    </div>
+                    <div class="nota">Degradado propio de esta capa — no comparte escala con la capa de fondo.</div>
                 </div>
 
-                <button class="btn secundario" id="btnDibujar">✏️ Dibujar en el mapa</button>
-                <div class="nota" id="notaArea">Arrastrá sobre el mapa para definir el área, o escribí las coordenadas.</div>
-            </div>
-
-            <div class="control-group">
-                <div class="group-title">Fuente del catálogo</div>
-                <div class="fuente-selector" id="fuenteSelector">
-                    <label class="fuente-opcion">
-                        <input type="radio" name="fuente" value="usgs" checked>
-                        <span class="fuente-nombre">USGS</span>
-                        <div class="nota">Cobertura mundial, cualquier fecha de ocurrencia. La opción más general y confiable.</div>
-                    </label>
-                    <label class="fuente-opcion">
-                        <input type="radio" name="fuente" value="usgs_sig">
-                        <span class="fuente-nombre">USGS Significativos</span>
-                        <div class="nota">Solo eventos de alto impacto (humano o material) en cualquier parte del mundo y cualquier fecha — usa el mismo criterio que la página oficial de sismos significativos de USGS.</div>
-                        <div class="campo fuente-extra" id="sigExtra" hidden style="margin-top:6px">
-                            <label for="sigThreshold">Umbral de significancia (sig ≥)</label>
-                            <input type="number" id="sigThreshold" min="0" max="2000" step="10" value="600">
-                        </div>
-                    </label>
-                    <label class="fuente-opcion">
-                        <input type="radio" name="fuente" value="isc">
-                        <span class="fuente-nombre">ISC Bulletin</span>
-                        <div class="nota">El catálogo de investigación más completo del mundo (agrega cientos de redes sismológicas locales). Los eventos muy recientes pueden tardar en consolidarse. Puede ser más lento que las otras fuentes. Es el boletín general — no el catálogo curado ISC-GEM, que no está disponible por esta API.</div>
-                    </label>
-                    <label class="fuente-opcion">
-                        <input type="radio" name="fuente" value="sgc">
-                        <span class="fuente-nombre">SGC Histórico (Colombia/Centroamérica)</span>
-                        <div class="nota">Catálogo histórico integrado de Colombia y el borde con Centroamérica (SGC + ISC + NEIC + otras redes), desde 1610 <strong>hasta finales de 2020</strong>. La mejor fuente para investigación histórica en esta región, pero no incluye sismicidad reciente ni actual.</div>
-                    </label>
+                <div class="control-group">
+                    <button class="btn secundario" id="btnQuitarEvento" disabled>🗑️ Quitar capa de evento especial</button>
+                    <div class="msg" id="mensajeEvento"></div>
                 </div>
             </div>
 
-            <div class="control-group">
-                <div class="group-title">Parámetros de consulta</div>
-                <div class="bbox-grid">
+            <!-- ============ PESTAÑA 3: VISTA ============ -->
+            <div class="tab-panel" id="tabVista" hidden>
+                <div class="control-group">
+                    <div class="group-title">Capas Visibles</div>
+                    <div class="checkbox-item">
+                        <input type="checkbox" id="showEvents" checked>
+                        <label for="showEvents">Eventos 3D</label>
+                    </div>
+                    <div class="checkbox-item">
+                        <input type="checkbox" id="showMap" checked>
+                        <label for="showMap">Mapa 2D</label>
+                    </div>
+                    <div class="checkbox-item">
+                        <input type="checkbox" id="showCaja" checked>
+                        <label for="showCaja">Caja y referencias</label>
+                    </div>
+                    <div class="checkbox-item">
+                        <input type="checkbox" id="showFondo" checked>
+                        <label for="showFondo">Capa de fondo</label>
+                    </div>
+                    <div class="checkbox-item">
+                        <input type="checkbox" id="showEventoCapa" checked>
+                        <label for="showEventoCapa">Capa de evento especial</label>
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <div class="group-title">Opacidad - Eventos 3D</div>
+                    <div class="slider-group">
+                        <div class="slider-label">
+                            <span>Opacidad</span>
+                            <span class="slider-value" id="opacityValue">100%</span>
+                        </div>
+                        <input type="range" id="opacitySlider" min="0" max="100" value="100">
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <div class="group-title">Tamaño - Esferas</div>
+                    <div class="slider-group">
+                        <div class="slider-label">
+                            <span>Escala</span>
+                            <span class="slider-value" id="sizeValue">100%</span>
+                        </div>
+                        <input type="range" id="sizeSlider" min="50" max="200" value="100">
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <div class="group-title">Velocidad Rotación</div>
+                    <div class="slider-group">
+                        <div class="slider-label">
+                            <span>Velocidad</span>
+                            <span class="slider-value" id="speedValue">40%</span>
+                        </div>
+                        <input type="range" id="speedSlider" min="0" max="200" value="40">
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <div class="info-box">
+                        <strong>Capa de fondo</strong><br>
+                        Fuente: <span id="infoFuente">—</span><br>
+                        Eventos: <span id="totalEvents">0</span> · Mostrando: <span id="visibleEventsFondo">0</span><br>
+                        Período: <span id="infoPeriodo">—</span><br>
+                        Magnitudes: <span id="infoMag">—</span><br>
+                        Profundidades: <span id="infoProf">—</span>
+                    </div>
+                    <div class="legend">
+                        <div class="legend-title">Escala de Profundidad — Fondo</div>
+                        <div id="leyenda"></div>
+                    </div>
+
+                    <div class="info-box" id="infoBoxEvento" hidden style="margin-top:10px">
+                        <strong>Evento especial</strong><br>
+                        Fuente: <span id="infoFuenteEvento">—</span><br>
+                        Eventos: <span id="totalEventsEvento">0</span> · Mostrando: <span id="visibleEventsEvento">0</span><br>
+                        Período: <span id="infoPeriodoEvento">—</span><br>
+                        Magnitudes: <span id="infoMagEvento">—</span><br>
+                        Profundidades: <span id="infoProfEvento">—</span>
+                    </div>
+                    <div class="legend" id="legendEvento" hidden>
+                        <div class="legend-title">Escala de Profundidad — Evento especial</div>
+                        <div id="leyendaEvento"></div>
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <div class="group-title">Exportar</div>
                     <div class="campo">
-                        <label for="fechaIni">Desde</label>
-                        <input type="date" id="fechaIni">
+                        <label for="exportarQue">Qué exportar</label>
+                        <select id="exportarQue">
+                            <option value="fondo">Capa de fondo</option>
+                            <option value="evento">Evento especial</option>
+                            <option value="ambas">Ambas (marcadas por capa)</option>
+                        </select>
                     </div>
-                    <div class="campo">
-                        <label for="fechaFin">Hasta</label>
-                        <input type="date" id="fechaFin">
-                    </div>
+                    <button class="btn secundario" id="btnExportar" disabled style="margin-top:8px">⬇️ Exportar GeoJSON</button>
                 </div>
-                <div class="slider-group" style="margin-top:8px">
-                    <div class="slider-label">
-                        <span>Magnitud mínima</span>
-                        <span class="slider-value" id="magValue">M2.5</span>
-                    </div>
-                    <input type="range" id="magSlider" min="0" max="70" value="25">
-                </div>
-                <div class="campo" style="margin-top:8px">
-                    <label for="limite">Límite de resultados</label>
-                    <input type="number" id="limite" min="1" max="20000" step="100" value="500">
-                </div>
-                <div class="nota" id="notaLimite"></div>
-            </div>
-
-            <div class="control-group">
-                <button class="btn" id="btnConsultar">🔍 Consultar catálogo</button>
-                <div class="msg" id="mensaje"></div>
-            </div>
-
-            <div class="control-group">
-                <div class="group-title">Capas Visibles</div>
-                <div class="checkbox-item">
-                    <input type="checkbox" id="showEvents" checked>
-                    <label for="showEvents">Eventos 3D</label>
-                </div>
-                <div class="checkbox-item">
-                    <input type="checkbox" id="showMap" checked>
-                    <label for="showMap">Mapa 2D</label>
-                </div>
-                <div class="checkbox-item">
-                    <input type="checkbox" id="showCaja" checked>
-                    <label for="showCaja">Caja y referencias</label>
-                </div>
-            </div>
-
-            <div class="control-group">
-                <div class="group-title">Opacidad - Eventos 3D</div>
-                <div class="slider-group">
-                    <div class="slider-label">
-                        <span>Opacidad</span>
-                        <span class="slider-value" id="opacityValue">100%</span>
-                    </div>
-                    <input type="range" id="opacitySlider" min="0" max="100" value="100">
-                </div>
-            </div>
-
-            <div class="control-group">
-                <div class="group-title">Tamaño - Esferas</div>
-                <div class="slider-group">
-                    <div class="slider-label">
-                        <span>Escala</span>
-                        <span class="slider-value" id="sizeValue">100%</span>
-                    </div>
-                    <input type="range" id="sizeSlider" min="50" max="200" value="100">
-                </div>
-            </div>
-
-            <div class="control-group">
-                <div class="group-title">Velocidad Rotación</div>
-                <div class="slider-group">
-                    <div class="slider-label">
-                        <span>Velocidad</span>
-                        <span class="slider-value" id="speedValue">40%</span>
-                    </div>
-                    <input type="range" id="speedSlider" min="0" max="200" value="40">
-                </div>
-            </div>
-
-            <div class="control-group">
-                <div class="info-box">
-                    <strong>Fuente:</strong> <span id="infoFuente">—</span><br>
-                    <strong>Total de eventos:</strong> <span id="totalEvents">0</span><br>
-                    <strong>Período:</strong> <span id="infoPeriodo">—</span><br>
-                    <strong>Magnitudes:</strong> <span id="infoMag">—</span><br>
-                    <strong>Profundidades:</strong> <span id="infoProf">—</span><br>
-                    <strong>Mostrando:</strong> <span id="visibleEvents">0</span> eventos
-                </div>
-
-                <div class="legend">
-                    <div class="legend-title">Escala de Profundidad</div>
-                    <div id="leyenda"></div>
-                </div>
-            </div>
-
-            <div class="control-group">
-                <button class="btn secundario" id="btnExportar" disabled>⬇️ Exportar GeoJSON</button>
             </div>
         </div>
     </div>
@@ -588,7 +779,7 @@
         const AREA_GRANDE = 40;     // grados; a partir de aquí se advierte
         const CLAVE_LS = 'explorador-area-sismos';
 
-        const COLORES = ['#00ff00', '#ffff00', '#ff8800', '#ff0000'];
+        const AZUL_CORTEZA = '#1a3a6b'; // 0-35km (corteza) en la capa de fondo
 
         // Las 4 fuentes ofrecidas — límite real de extracción verificado con
         // pruebas en vivo contra cada servidor (ver documentación del proyecto).
@@ -614,26 +805,34 @@
             }
         };
 
-        // Todo el estado de la consulta vigente vive acá: al llegar una
-        // consulta nueva se reemplaza entero, así no quedan residuos.
-        let datos = {
-            eventos: [],        // {id, lat, lon, prof, mag, time, auth, region}
-            bbox: null,         // {n, s, e, o}
-            fuente: null,       // etiqueta legible: 'USGS' | 'USGS Significativos' | 'ISC Bulletin' | 'SGC Histórico'
-            fuenteId: null,     // clave interna: 'usgs' | 'usgs_sig' | 'isc' | 'sgc'
-            urlConsulta: null,  // endpoint real usado (para exportGeoJSON/metadata)
-            total: null,        // total disponible en la API (via /count), null si no se pudo saber
-            truncado: false,
-            descartados: 0,
-            params: null,
-            buckets: [],
-            profTope: 0,        // km en el techo de la caja
-            profPiso: 1,        // km en el piso de la caja
-            minTime: null,
-            maxTime: null
-        };
+        // Dos datasets independientes y simultáneos: la capa de fondo (consulta
+        // principal, Pestaña "Área") y la capa opcional de evento especial
+        // (Pestaña "Evento especial") — cada una con su propia escala de color,
+        // su propio origen y su propio ciclo de vida. datosEvento es null hasta
+        // que se carga algo (por catálogo o por archivo).
+        function nuevaCapaFondo() {
+            return {
+                eventos: [],        // {id, lat, lon, prof, mag, time, auth, region}
+                bbox: null, modo: null, circulo: null,
+                fuente: null, fuenteId: null, urlConsulta: null,
+                total: null, truncado: false, descartados: 0, params: null,
+                profTope: 0,        // km en el techo de la caja 3D
+                profPiso: 1,        // km en el piso de la caja 3D
+                maxDepth: 0,        // profundidad máxima real -> escala colorFondo
+                minTime: null, maxTime: null
+            };
+        }
 
-        let visibles = 0;       // cuántos eventos muestra el timeline (van ordenados por fecha)
+        let datosFondo = nuevaCapaFondo();
+        let datosEvento = null;  // misma forma + colorInicial/colorFinal/minDepth/maxDepth/origen
+
+        // Estado de render específico de cada capa (mesh 3D + marcadores 2D +
+        // cuántos eventos muestra el timeline ahora mismo). Separado de
+        // datosFondo/datosEvento porque esto vive en el mundo de Three.js/Leaflet,
+        // no en el de los datos.
+        const renderFondo = { malla: null, indices: [], marcadores: [], visibles: 0 };
+        const renderEvento = { malla: null, indices: [], marcadores: [], visibles: 0 };
+
         let consultando = false;
 
         // ============================================================
@@ -678,11 +877,58 @@
             $('mensaje').innerHTML = '';
         }
 
+        function mensajeEvento(texto, tipo) {
+            const el = $('mensajeEvento');
+            el.className = 'msg visible ' + tipo;
+            el.innerHTML = (tipo === 'cargando' ? '<span class="spinner"></span>' : '') + texto;
+        }
+
+        function limpiarMensajeEvento() {
+            $('mensajeEvento').className = 'msg';
+            $('mensajeEvento').innerHTML = '';
+        }
+
+        // ============================================================
+        // 2b. Color por profundidad — una escala fija para la capa de fondo
+        // (azul/negro/blanco) y un degradado de 2 colores elegible por el
+        // usuario para la capa de evento especial. Nunca comparten escala:
+        // son conceptualmente distintas (contexto regional vs. evento puntual).
+        // ============================================================
+
+        function colorFondo(depth, maxDepth) {
+            if (depth <= 35) return AZUL_CORTEZA;
+            if (maxDepth <= 35) return '#000000';           // caso borde: todo el dataset es cortical salvo un outlier
+            const t = Math.min(1, (depth - 35) / (maxDepth - 35));
+            const v = Math.round(t * 255);
+            return `rgb(${v},${v},${v})`;
+        }
+
+        function lerpColor(hexA, hexB, t) {
+            const a = parseInt(hexA.slice(1), 16), b = parseInt(hexB.slice(1), 16);
+            const ar = (a >> 16) & 255, ag = (a >> 8) & 255, ab = a & 255;
+            const br = (b >> 16) & 255, bg = (b >> 8) & 255, bb = b & 255;
+            const r = Math.round(ar + (br - ar) * t), g = Math.round(ag + (bg - ag) * t), bl = Math.round(ab + (bb - ab) * t);
+            return `rgb(${r},${g},${bl})`;
+        }
+
+        function colorEvento(depth, minDepth, maxDepth, colorInicial, colorFinal) {
+            const t = maxDepth > minDepth ? (depth - minDepth) / (maxDepth - minDepth) : 0;
+            return lerpColor(colorInicial, colorFinal, t);
+        }
+
+        // Dispatch: qué función de color usar según a cuál de las 2 capas
+        // pertenece el evento que se está pintando.
+        function colorParaCapa(capaId, ev) {
+            if (capaId === 'fondo') return colorFondo(ev.prof, datosFondo.maxDepth);
+            const c = datosEvento;
+            return colorEvento(ev.prof, c.minDepth, c.maxDepth, c.colorInicial, c.colorFinal);
+        }
+
         // ============================================================
         // 3. Mapa Leaflet + dibujo del bbox
         // ============================================================
 
-        let map, rectangulo, capaMarcadores, marcadores = [], modoDibujo = false, dibujando = null;
+        let map, rectangulo, capaMarcadores, capaMarcadoresEvento, modoDibujo = false, dibujando = null;
         let modoArea = 'rect';   // 'rect' | 'circulo'
         let circuloDibujo = null, dibujandoCirculo = null;
         let marcadorNO = null, marcadorSE = null;
@@ -738,6 +984,7 @@
             });
 
             capaMarcadores = L.layerGroup().addTo(map);
+            capaMarcadoresEvento = L.layerGroup().addTo(map);
 
             map.on('mousedown', (e) => {
                 if (!modoDibujo) return;
@@ -989,31 +1236,39 @@
             else { map.dragging.enable(); map.boxZoom.enable(); }
         }
 
-        function actualizarMarcadores() {
-            // Los eventos van ordenados por fecha, así que el timeline solo
-            // agrega o quita del final: no se reconstruye toda la capa.
-            while (marcadores.length > visibles) {
-                capaMarcadores.removeLayer(marcadores.pop());
+        // Los eventos van ordenados por fecha, así que el timeline solo agrega
+        // o quita del final: no se reconstruye toda la capa en cada paso.
+        function actualizarMarcadoresCapa(capaId) {
+            const capa = capaId === 'fondo' ? datosFondo : datosEvento;
+            const render = capaId === 'fondo' ? renderFondo : renderEvento;
+            const grupoCapa = capaId === 'fondo' ? capaMarcadores : capaMarcadoresEvento;
+            if (!capa) { grupoCapa.clearLayers(); render.marcadores = []; return; }
+
+            while (render.marcadores.length > render.visibles) {
+                grupoCapa.removeLayer(render.marcadores.pop());
             }
-            while (marcadores.length < visibles) {
-                const ev = datos.eventos[marcadores.length];
+            while (render.marcadores.length < render.visibles) {
+                const ev = capa.eventos[render.marcadores.length];
                 const m = L.circleMarker([ev.lat, ev.lon], {
                     radius: 3 + Math.max(0, ev.mag - 1) * 1.4,
-                    fillColor: colorProf(ev.prof),
+                    fillColor: colorParaCapa(capaId, ev),
                     color: '#fff', weight: 1, opacity: 0.8, fillOpacity: 0.8
                 });
                 m.bindPopup(
                     `<strong>M ${ev.mag.toFixed(1)}</strong> · ${ev.prof.toFixed(1)} km<br>` +
-                    `${fechaHora(ev.time)}<br>${ev.region || ''}`
+                    `${fechaHora(ev.time)}<br>${ev.region || ''}` +
+                    (capaId === 'evento' ? '<br><em>Evento especial</em>' : '')
                 );
-                capaMarcadores.addLayer(m);
-                marcadores.push(m);
+                grupoCapa.addLayer(m);
+                render.marcadores.push(m);
             }
         }
 
         function limpiarMarcadores() {
             capaMarcadores.clearLayers();
-            marcadores = [];
+            renderFondo.marcadores = [];
+            capaMarcadoresEvento.clearLayers();
+            renderEvento.marcadores = [];
         }
 
         // ============================================================
@@ -1130,6 +1385,73 @@
             return problema.tipo !== 'error';
         }
 
+        // --- Área de la capa de evento especial (Pestaña 2) ---
+        // A diferencia de la capa de fondo, esta área no se dibuja arrastrando
+        // en el mapa (para no duplicar toda la maquinaria interactiva de la
+        // Parte 2) — se escribe a mano o se copia con el botón "Usar la misma
+        // área que la capa de Fondo". Reutiliza revisarBbox/revisarCirculo
+        // (funciones puras, no dependen de qué campos del DOM se leyeron).
+
+        let modoAreaEvento = 'rect';
+
+        function leerBboxEv() {
+            return {
+                n: parseFloat($('bboxNEv').value), s: parseFloat($('bboxSEv').value),
+                e: parseFloat($('bboxEEv').value), o: parseFloat($('bboxOEv').value)
+            };
+        }
+        function escribirBboxEv(b) {
+            $('bboxNEv').value = b.n.toFixed(2); $('bboxSEv').value = b.s.toFixed(2);
+            $('bboxEEv').value = b.e.toFixed(2); $('bboxOEv').value = b.o.toFixed(2);
+        }
+        function leerCirculoEv() {
+            return {
+                lat: parseFloat($('circLatEv').value), lon: parseFloat($('circLonEv').value),
+                radioKm: parseFloat($('circRadioEv').value)
+            };
+        }
+        function escribirCirculoEv(c) {
+            $('circLatEv').value = c.lat.toFixed(2); $('circLonEv').value = c.lon.toFixed(2);
+            $('circRadioEv').value = Math.round(c.radioKm);
+        }
+
+        function setModoAreaEvento(modo) {
+            modoAreaEvento = modo;
+            $('btnModoRectEv').classList.toggle('activo', modo === 'rect');
+            $('btnModoCirculoEv').classList.toggle('activo', modo === 'circulo');
+            $('camposRectEv').hidden = modo !== 'rect';
+            $('camposCirculoEv').hidden = modo !== 'circulo';
+        }
+
+        function revisarAreaEvento() {
+            return modoAreaEvento === 'circulo' ? revisarCirculo(leerCirculoEv()) : revisarBbox(leerBboxEv());
+        }
+
+        // --- GeoJSON propio (archivo local) ---
+        // Un GeoJSON de un tercero no necesariamente sigue las convenciones de
+        // ninguna de las 4 fuentes ya integradas: se prueban varios nombres de
+        // campo comunes en orden, no se asume uno solo.
+        function normalizarGeoJSONPropio(featureCollection) {
+            const out = [];
+            let descartados = 0;
+            for (const f of featureCollection.features || []) {
+                const p = f.properties || {};
+                const c = (f.geometry && f.geometry.coordinates) || [];
+                const lon = Number(c[0]), lat = Number(c[1]);
+                let prof = isFinite(c[2]) ? Math.abs(c[2]) : NaN;
+                if (!isFinite(prof)) prof = Number(p.depth ?? p.prof ?? p.profundidad ?? p.ESP_PROFUNDIDAD ?? NaN);
+                const mag = Number(p.mag ?? p.magnitude ?? p.magnitud ?? p.ml ?? p.mb ?? NaN);
+                const tRaw = p.time ?? p.date ?? p.fecha ?? p.ESP_FECHA_LONG;
+                const t = tRaw != null ? new Date(typeof tRaw === 'number' && tRaw < 1e12 ? tRaw * 1000 : tRaw) : null;
+                if (![lat, lon, prof, mag].every(isFinite) || !t || isNaN(t.getTime())) { descartados++; continue; }
+                out.push({
+                    id: f.id ?? p.id ?? out.length, lat, lon, prof, mag, time: t,
+                    auth: p.auth || 'archivo propio', region: p.region || p.place || p.lugar || ''
+                });
+            }
+            return { eventos: out, descartados };
+        }
+
         function fuenteSeleccionada() {
             const el = document.querySelector('input[name="fuente"]:checked');
             return el ? el.value : 'usgs';
@@ -1186,6 +1508,57 @@
             } else {
                 nota.textContent = `Tope duro del servidor: ${F.maxLimite.toLocaleString('es')} eventos por consulta.`;
             }
+        }
+
+        // --- Mismas funciones, para la consulta de la capa de evento especial ---
+
+        function fuenteSeleccionadaEvento() {
+            const el = document.querySelector('input[name="fuenteEvento"]:checked');
+            return el ? el.value : 'usgs';
+        }
+
+        function leerParamsEvento() {
+            const fuenteId = fuenteSeleccionadaEvento();
+            const F = FUENTES[fuenteId];
+            let limite = Math.max(1, parseInt($('limiteEv').value, 10) || F.defaultLimite || 500);
+            if (F.maxLimite != null) limite = Math.min(limite, F.maxLimite);
+
+            const base = {
+                modo: modoAreaEvento,
+                inicio: $('fechaIniEv').value, fin: $('fechaFinEv').value,
+                minmag: parseInt($('magSliderEv').value, 10) / 10, limite,
+                minsig: Math.max(0, parseInt($('sigThresholdEv').value, 10) || 600)
+            };
+            if (modoAreaEvento === 'circulo') {
+                base.circulo = leerCirculoEv();
+                base.bbox = bboxCircunscrito(base.circulo);
+            } else {
+                base.bbox = leerBboxEv();
+            }
+            return base;
+        }
+
+        function actualizarLimiteUIEvento() {
+            const fuenteId = fuenteSeleccionadaEvento();
+            const F = FUENTES[fuenteId];
+            const campoLimite = $('limiteEv');
+            const nota = $('notaLimiteEv');
+            $('sigExtraEv').hidden = fuenteId !== 'usgs_sig';
+
+            if (!F.limiteConfigurable) {
+                campoLimite.disabled = true;
+                campoLimite.value = '';
+                nota.textContent = 'SGC Histórico no tiene parámetro de límite.';
+                return;
+            }
+            campoLimite.disabled = false;
+            campoLimite.max = F.maxLimite;
+            if (!campoLimite.value || parseInt(campoLimite.value, 10) > F.maxLimite) {
+                campoLimite.value = Math.min(F.defaultLimite, F.maxLimite);
+            }
+            nota.textContent = fuenteId === 'isc'
+                ? `Autolimitado a ${F.maxLimite.toLocaleString('es')} eventos por consulta.`
+                : `Tope duro del servidor: ${F.maxLimite.toLocaleString('es')} eventos por consulta.`;
         }
 
         // ============================================================
@@ -1456,8 +1829,10 @@
 
         function aplicarResultado(norm, p, fuente, total, notas, opciones) {
             opciones = opciones || {};
-            // Estado nuevo, sin arrastrar nada de la consulta anterior.
-            datos = {
+            // Estado nuevo de la capa de FONDO, sin arrastrar nada de la
+            // consulta anterior (la capa de evento especial, si hay una
+            // cargada, no se toca — son independientes).
+            datosFondo = {
                 eventos: norm.eventos, bbox: p.bbox,
                 modo: p.modo, circulo: p.circulo || null,
                 fuente,
@@ -1466,21 +1841,13 @@
                 total,
                 truncado: !!opciones.truncado,
                 descartados: norm.descartados, params: p,
-                buckets: [], profTope: 0, profPiso: 1, minTime: null, maxTime: null
+                profTope: 0, profPiso: 1, maxDepth: 0, minTime: null, maxTime: null
             };
-
-            limpiarMarcadores();
-            limpiarEscena();
 
             encuadrarYPintarArea(p);
             refrescarCapaGeologicaSiActiva(true);
 
             if (!norm.eventos.length) {
-                visibles = 0;
-                $('canvasVacio').style.display = 'flex';
-                $('btnExportar').disabled = true;
-                actualizarPanel();
-                actualizarTimeline(1);
                 // SGC no cubre fechas recientes: si el rango pedido cae después del
                 // corte, el mensaje debe explicarlo en vez de sugerir "no hubo sismos".
                 const sinCobertura = opciones.fuenteId === 'sgc' && p.fin > FECHA_CORTE_SGC;
@@ -1492,77 +1859,150 @@
                     `Consultado en ${fuente} con M≥${p.minmag}. Probá bajando la magnitud mínima o ampliando el rango.`,
                     'aviso'
                 );
+                refrescarTrasCambioDeCapas();
                 return;
             }
 
-            const prof = extremos(datos.eventos, e => e.prof);
+            const prof = extremos(datosFondo.eventos, e => e.prof);
             // El techo de la caja se ancla en 0 km (superficie) salvo que todos
             // los sismos sean profundos: ahí se acerca para no desperdiciar el volumen.
-            datos.profTope = prof.min > prof.max * 0.25 ? prof.min : 0;
-            datos.profPiso = Math.max(prof.max, datos.profTope + 1);
-            datos.buckets = calcularBuckets(datos.eventos);
-            datos.minTime = datos.eventos[0].time;
-            datos.maxTime = datos.eventos[datos.eventos.length - 1].time;
+            datosFondo.profTope = prof.min > prof.max * 0.25 ? prof.min : 0;
+            datosFondo.profPiso = Math.max(prof.max, datosFondo.profTope + 1);
+            datosFondo.maxDepth = prof.max;
+            datosFondo.minTime = datosFondo.eventos[0].time;
+            datosFondo.maxTime = datosFondo.eventos[datosFondo.eventos.length - 1].time;
 
-            $('canvasVacio').style.display = 'none';
-            construirEscena();
-
-            visibles = datos.eventos.length;
             $('timelineSlider').value = 100;
-            actualizarPanel();
-            actualizarTimeline(1);
-            $('btnExportar').disabled = false;
+            refrescarTrasCambioDeCapas();
 
-            const partes = [`<strong>${datos.eventos.length} eventos</strong> desde ${fuente}.`];
-            if (total !== null && total > datos.eventos.length) {
-                partes.push(`Mostrando ${datos.eventos.length} de ${total} disponibles (tope de ${p.limite}). Subí el límite para ver más.`);
-            } else if (datos.truncado) {
+            const partes = [`<strong>${datosFondo.eventos.length} eventos</strong> desde ${fuente}.`];
+            if (total !== null && total > datosFondo.eventos.length) {
+                partes.push(`Mostrando ${datosFondo.eventos.length} de ${total} disponibles (tope de ${p.limite}). Subí el límite para ver más.`);
+            } else if (datosFondo.truncado) {
                 partes.push('Es posible que haya más eventos de los mostrados — acotá el área, el rango de fechas o subí la magnitud mínima para ver el conjunto completo.');
             }
-            if (datos.eventos.length > MAX_ESFERAS) {
+            if (datosFondo.eventos.length > MAX_ESFERAS) {
                 partes.push(`En 3D se dibujan los ${MAX_ESFERAS} de mayor magnitud por rendimiento; el mapa y las estadísticas usan todos.`);
             }
             if (norm.descartados) {
                 partes.push(`${norm.descartados} eventos se descartaron por venir sin magnitud o profundidad.`);
             }
             if (notas.length) partes.push(notas.join(' '));
-            mensaje(partes.join('<br>'), notas.length && opciones.fuenteId === 'sgc' && p.fin > FECHA_CORTE_SGC ? 'aviso' : 'ok');
+            mensaje(partes.join('<br>'), 'ok');
         }
-
-        function calcularBuckets(eventos) {
-            const fijos = [[0, 30], [30, 60], [60, 90], [90, Infinity]];
-            let ocupados = 0;
-            for (const [a, z] of fijos) {
-                if (eventos.some(e => e.prof >= a && e.prof < z)) ocupados++;
-            }
-            if (ocupados >= 2) return fijos;
-
-            // Todos los sismos caen en un mismo tramo fijo: se reparte el rango real en 4.
-            const { min, max } = extremos(eventos, e => e.prof);
-            if (max - min < 1) return fijos;
-            const paso = (max - min) / 4;
-            return [0, 1, 2, 3].map(i => [min + paso * i, i === 3 ? Infinity : min + paso * (i + 1)]);
-        }
-
-        function indiceBucket(prof) {
-            const bs = datos.buckets.length ? datos.buckets : [[0, 30], [30, 60], [60, 90], [90, Infinity]];
-            for (let i = 0; i < bs.length; i++) {
-                if (prof >= bs[i][0] && prof < bs[i][1]) return i;
-            }
-            return prof < bs[0][0] ? 0 : bs.length - 1;
-        }
-
-        const colorProf = (prof) => COLORES[indiceBucket(prof)];
 
         // ============================================================
-        // 7. Escena 3D
+        // 6b. Capa de evento especial: consulta por catálogo o carga por archivo
         // ============================================================
 
-        let scene, camera, renderer, grupo, malla, refs, animando = false;
+        async function consultarEvento() {
+            const problemaArea = revisarAreaEvento();
+            if (problemaArea && problemaArea.tipo === 'error') { mensajeEvento(problemaArea.texto, 'error'); return; }
+
+            const p = leerParamsEvento();
+            if (!p.inicio || !p.fin) { mensajeEvento('Definí el rango de fechas.', 'error'); return; }
+            if (p.inicio > p.fin) { mensajeEvento('La fecha "desde" es posterior a la fecha "hasta".', 'error'); return; }
+
+            const fuenteId = fuenteSeleccionadaEvento();
+            const F = FUENTES[fuenteId];
+            $('btnConsultarEvento').disabled = true;
+            mensajeEvento(`Consultando ${F.label}…`, 'cargando');
+
+            let resultado;
+            try {
+                resultado = await consultarFuenteRaw(p, fuenteId);
+            } catch (err) {
+                $('btnConsultarEvento').disabled = false;
+                mensajeEvento(`<strong>No se pudo consultar ${F.label}.</strong><br>${err.message}`, 'error');
+                return;
+            }
+
+            aplicarResultadoEvento(resultado.norm, p, resultado.fuenteLabel, resultado.total, resultado.notas, {
+                fuenteId: resultado.fuenteId, urlConsulta: resultado.urlUsada,
+                truncado: resultado.truncado, origen: 'catalogo'
+            });
+            $('btnConsultarEvento').disabled = false;
+        }
+
+        function aplicarResultadoEvento(norm, p, fuente, total, notas, opciones) {
+            opciones = opciones || {};
+            norm.eventos.sort((a, b) => a.time - b.time);
+            const prof = norm.eventos.length ? extremos(norm.eventos, e => e.prof) : { min: 0, max: 0 };
+
+            datosEvento = {
+                eventos: norm.eventos,
+                bbox: p ? p.bbox : null, modo: p ? p.modo : null, circulo: p ? p.circulo : null,
+                fuente,
+                fuenteId: opciones.fuenteId || null,
+                urlConsulta: opciones.urlConsulta || null,
+                total, truncado: !!opciones.truncado, descartados: norm.descartados, params: p,
+                origen: opciones.origen || 'catalogo', nombreArchivo: opciones.nombreArchivo || null,
+                minDepth: prof.min, maxDepth: prof.max,
+                colorInicial: $('colorInicialEvento').value, colorFinal: $('colorFinalEvento').value,
+                minTime: norm.eventos.length ? norm.eventos[0].time : null,
+                maxTime: norm.eventos.length ? norm.eventos[norm.eventos.length - 1].time : null
+            };
+
+            $('btnQuitarEvento').disabled = false;
+
+            if (!norm.eventos.length) {
+                mensajeEvento(
+                    `El resultado no tiene eventos con datos completos (lat/lon/profundidad/magnitud/fecha)` +
+                    (norm.descartados ? ` — ${norm.descartados} descartados.` : '.'),
+                    'aviso'
+                );
+            } else {
+                const partes = [`<strong>${norm.eventos.length} eventos</strong> cargados como evento especial (${fuente}).`];
+                if (norm.descartados) partes.push(`${norm.descartados} descartados por datos incompletos.`);
+                if (opciones.truncado) partes.push('Es posible que haya más eventos de los mostrados.');
+                if (notas.length) partes.push(notas.join(' '));
+                mensajeEvento(partes.join('<br>'), 'ok');
+            }
+            refrescarTrasCambioDeCapas();
+        }
+
+        function quitarCapaEvento() {
+            datosEvento = null;
+            $('btnQuitarEvento').disabled = true;
+            limpiarMensajeEvento();
+            refrescarTrasCambioDeCapas();
+        }
+
+        // Reconstruye todo lo que depende de tener 0, 1 o 2 capas cargadas —
+        // se llama tras cualquier cambio de datos de cualquiera de las 2 capas
+        // (nueva consulta de fondo, nueva consulta/archivo de evento, o quitar
+        // la capa de evento).
+        function refrescarTrasCambioDeCapas() {
+            limpiarMarcadores();
+            limpiarEscena();
+
+            const hayFondo = datosFondo.eventos.length > 0;
+            const hayEvento = datosEvento && datosEvento.eventos.length > 0;
+
+            if ((hayFondo || hayEvento) && datosFondo.bbox) {
+                $('canvasVacio').style.display = 'none';
+                construirEscena();
+            } else {
+                $('canvasVacio').style.display = 'flex';
+                $('canvasVacio').textContent = (hayFondo || hayEvento) && !datosFondo.bbox
+                    ? 'Consultá primero la capa de fondo (pestaña Área) para ver la escena 3D — el evento especial ya está visible en el mapa 2D.'
+                    : 'Definí un área y consultá el catálogo para ver los sismos en 3D';
+            }
+
+            actualizarPanel();
+            actualizarTimeline(parseFloat($('timelineSlider').value) / 100);
+            actualizarBotonExportar();
+        }
+
+        // ============================================================
+        // 7. Escena 3D — dos InstancedMesh (fondo + evento especial),
+        //    ambas hijas del mismo grupo para que roten juntas.
+        // ============================================================
+
+        let scene, camera, renderer, grupo, refs, animando = false;
         let rot = { x: -0.5, y: 0.4 };
         let arrastre = null;
         let distancia = 60;
-        let indices3D = [];   // qué evento corresponde a cada instancia
 
         function init3D() {
             const cont = $('canvas3d');
@@ -1624,61 +2064,76 @@
                     hijo.material.dispose();
                 }
             }
-            malla = null;
             refs = null;
-            indices3D = [];
+            renderFondo.malla = null; renderFondo.indices = [];
+            renderEvento.malla = null; renderEvento.indices = [];
         }
 
-        // Proyección geográfica → 3D, calculada del bbox real de la consulta.
+        // Proyección geográfica → 3D, calculada del bbox de la capa de FONDO —
+        // es la que ancla la escena (dimensiones de la caja, escala). La capa
+        // de evento especial se proyecta con el MISMO proyector (mismo centro y
+        // escala) para que ambas capas queden geográficamente coherentes entre
+        // sí; si sus eventos caen fuera del bbox de fondo, simplemente aparecen
+        // fuera de la caja de referencia — igual que ya pasa en modo círculo con
+        // las esquinas del bbox circunscrito.
         function proyector() {
-            const b = datos.bbox;
+            const b = datosFondo.bbox;
             const centroLat = (b.n + b.s) / 2, centroLon = (b.e + b.o) / 2;
             const kmLat = 111.32, kmLon = 111.32 * Math.cos(centroLat * Math.PI / 180);
             const anchoKm = (b.e - b.o) * kmLon, altoKm = (b.n - b.s) * kmLat;
             const escala = ANCHO_MUNDO / Math.max(anchoKm, altoKm, 1);   // unidades por km
-            const rangoProf = datos.profPiso - datos.profTope;
+            const rangoProf = datosFondo.profPiso - datosFondo.profTope;
             return {
                 centroLat, centroLon, escala, anchoKm, altoKm,
                 x: (lon) => (lon - centroLon) * kmLon * escala,
                 y: (lat) => (lat - centroLat) * kmLat * escala,
-                z: (prof) => -((prof - datos.profTope) / rangoProf) * PROF_MUNDO
+                z: (prof) => -((prof - datosFondo.profTope) / rangoProf) * PROF_MUNDO
             };
+        }
+
+        // Construye la InstancedMesh de UNA capa (fondo o evento) — se llama
+        // hasta 2 veces desde construirEscena(), una por capa cargada.
+        function construirMallaCapa(capaId, capa, P) {
+            const render = capaId === 'fondo' ? renderFondo : renderEvento;
+
+            let lista = capa.eventos;
+            if (lista.length > MAX_ESFERAS) {
+                // Se conservan los de mayor magnitud, pero ordenados por fecha
+                // para que el timeline siga siendo coherente. El tope aplica por
+                // capa: si cada una trae 800, se ven hasta 1600 esferas en total.
+                lista = lista.slice().sort((a, b) => b.mag - a.mag).slice(0, MAX_ESFERAS)
+                             .sort((a, b) => a.time - b.time);
+            }
+            render.indices = lista;
+
+            const geo = new THREE.SphereGeometry(1, 10, 10);
+            const mat = new THREE.MeshStandardMaterial({
+                transparent: true, opacity: 1, emissiveIntensity: 0.35, roughness: 0.6
+            });
+            render.malla = new THREE.InstancedMesh(geo, mat, lista.length);
+            render.malla.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+            grupo.add(render.malla);
+            colocarInstanciasCapa(capaId, P);
+
+            const color = new THREE.Color();
+            lista.forEach((ev, i) => {
+                color.set(colorParaCapa(capaId, ev));
+                render.malla.setColorAt(i, color);
+            });
+            if (render.malla.instanceColor) render.malla.instanceColor.needsUpdate = true;
         }
 
         function construirEscena() {
             limpiarEscena();
             const P = proyector();
 
-            // --- Eventos: una sola InstancedMesh para que 1000 esferas no ahoguen el render ---
-            let lista = datos.eventos;
-            if (lista.length > MAX_ESFERAS) {
-                // Se conservan los de mayor magnitud, pero ordenados por fecha
-                // para que el timeline siga siendo coherente.
-                lista = lista.slice().sort((a, b) => b.mag - a.mag).slice(0, MAX_ESFERAS)
-                             .sort((a, b) => a.time - b.time);
-            }
-            indices3D = lista;
+            if (datosFondo.eventos.length) construirMallaCapa('fondo', datosFondo, P);
+            if (datosEvento && datosEvento.eventos.length) construirMallaCapa('evento', datosEvento, P);
 
-            const geo = new THREE.SphereGeometry(1, 10, 10);
-            const mat = new THREE.MeshStandardMaterial({
-                transparent: true, opacity: 1, emissiveIntensity: 0.35, roughness: 0.6
-            });
-            malla = new THREE.InstancedMesh(geo, mat, lista.length);
-            malla.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-            grupo.add(malla);
-            colocarInstancias();
-
-            const color = new THREE.Color();
-            lista.forEach((ev, i) => {
-                color.set(colorProf(ev.prof));
-                malla.setColorAt(i, color);
-            });
-            if (malla.instanceColor) malla.instanceColor.needsUpdate = true;
-
-            // --- Caja de referencia, superficie y etiquetas ---
+            // --- Caja de referencia, superficie y etiquetas (siempre según fondo) ---
             refs = new THREE.Group();
-            const x0 = P.x(datos.bbox.o), x1 = P.x(datos.bbox.e);
-            const y0 = P.y(datos.bbox.s), y1 = P.y(datos.bbox.n);
+            const x0 = P.x(datosFondo.bbox.o), x1 = P.x(datosFondo.bbox.e);
+            const y0 = P.y(datosFondo.bbox.s), y1 = P.y(datosFondo.bbox.n);
             const z0 = 0, z1 = -PROF_MUNDO;
 
             const caja = new THREE.BoxGeometry(x1 - x0, y1 - y0, z0 - z1);
@@ -1697,8 +2152,8 @@
             sup.position.set((x0 + x1) / 2, (y0 + y1) / 2, 0);
             refs.add(sup);
 
-            refs.add(etiqueta(`${datos.profTope.toFixed(0)} km`, x0 - 2.5, y1, 0));
-            refs.add(etiqueta(`${datos.profPiso.toFixed(0)} km`, x0 - 2.5, y1, -PROF_MUNDO));
+            refs.add(etiqueta(`${datosFondo.profTope.toFixed(0)} km`, x0 - 2.5, y1, 0));
+            refs.add(etiqueta(`${datosFondo.profPiso.toFixed(0)} km`, x0 - 2.5, y1, -PROF_MUNDO));
             refs.add(etiqueta('N', (x0 + x1) / 2, y1 + 2.2, 0));
             grupo.add(refs);
             refs.visible = $('showCaja').checked;
@@ -1707,25 +2162,35 @@
             const radio = Math.hypot((x1 - x0) / 2, (y1 - y0) / 2, PROF_MUNDO / 2);
             distancia = Math.max(24, radio / Math.sin(55 / 2 * Math.PI / 180) * 0.82);
             aplicarOpacidad();
+            aplicarVisibilidad3D();
         }
 
-        function colocarInstancias() {
-            if (!malla) return;
-            const P = proyector();
+        function colocarInstanciasCapa(capaId, P) {
+            const render = capaId === 'fondo' ? renderFondo : renderEvento;
+            if (!render.malla) return;
+            P = P || proyector();
             const escalaUsuario = parseFloat($('sizeSlider').value) / 100;
             const m = new THREE.Matrix4();
             const q = new THREE.Quaternion();
             const pos = new THREE.Vector3();
             const esc = new THREE.Vector3();
 
-            indices3D.forEach((ev, i) => {
+            render.indices.forEach((ev, i) => {
                 const r = escalaUsuario * (0.28 + Math.max(0, ev.mag) * 0.13);
                 pos.set(P.x(ev.lon), P.y(ev.lat), P.z(ev.prof));
                 esc.set(r, r, r);
                 m.compose(pos, q, esc);
-                malla.setMatrixAt(i, m);
+                render.malla.setMatrixAt(i, m);
             });
-            malla.instanceMatrix.needsUpdate = true;
+            render.malla.instanceMatrix.needsUpdate = true;
+        }
+
+        // Reposiciona AMBAS capas (usado por el slider de tamaño de esferas).
+        function colocarInstancias() {
+            if (!datosFondo.bbox) return;
+            const P = proyector();
+            colocarInstanciasCapa('fondo', P);
+            colocarInstanciasCapa('evento', P);
         }
 
         function etiqueta(texto, x, y, z) {
@@ -1746,7 +2211,26 @@
         }
 
         function aplicarOpacidad() {
-            if (malla) malla.material.opacity = parseFloat($('opacitySlider').value) / 100;
+            const v = parseFloat($('opacitySlider').value) / 100;
+            if (renderFondo.malla) renderFondo.malla.material.opacity = v;
+            if (renderEvento.malla) renderEvento.malla.material.opacity = v;
+        }
+
+        // Combina el checkbox general "Eventos 3D" con los checkboxes
+        // independientes por capa (Vista) para decidir si cada mesh se ve.
+        function aplicarVisibilidad3D() {
+            const ev3d = $('showEvents').checked;
+            if (renderFondo.malla) renderFondo.malla.visible = ev3d && $('showFondo').checked;
+            if (renderEvento.malla) renderEvento.malla.visible = ev3d && $('showEventoCapa').checked;
+        }
+
+        // Igual que arriba, pero para las 2 capas de marcadores 2D del mapa.
+        function aplicarVisibilidad2D() {
+            const showF = $('showFondo').checked, showEv = $('showEventoCapa').checked;
+            if (showF) { if (!map.hasLayer(capaMarcadores)) capaMarcadores.addTo(map); }
+            else if (map.hasLayer(capaMarcadores)) map.removeLayer(capaMarcadores);
+            if (showEv) { if (!map.hasLayer(capaMarcadoresEvento)) capaMarcadoresEvento.addTo(map); }
+            else if (map.hasLayer(capaMarcadoresEvento)) map.removeLayer(capaMarcadoresEvento);
         }
 
         function animar() {
@@ -1770,123 +2254,235 @@
         // 8. Timeline, panel y leyenda
         // ============================================================
 
+        // Rango de fechas combinado: si hay 2 capas activas, el timeline
+        // recorre desde el evento más antiguo de CUALQUIERA de las 2 hasta el
+        // más reciente de CUALQUIERA de las 2 — no solo el rango de la capa de fondo.
+        function rangoTiempoCombinado() {
+            let min = datosFondo.minTime, max = datosFondo.maxTime;
+            if (datosEvento && datosEvento.minTime) {
+                if (!min || datosEvento.minTime < min) min = datosEvento.minTime;
+                if (!max || datosEvento.maxTime > max) max = datosEvento.maxTime;
+            }
+            return { min, max };
+        }
+
+        // Los eventos de cada capa están ordenados por fecha: basta contar
+        // cuántos caen antes o igual al corte absoluto (mismo corte para
+        // ambas capas, así avanzan sincronizadas cronológicamente).
+        function contarHasta(capa, corte, fraccion) {
+            if (!capa || !capa.eventos.length) return 0;
+            if (fraccion >= 1) return capa.eventos.length;
+            let n = 0;
+            while (n < capa.eventos.length && capa.eventos[n].time <= corte) n++;
+            return n;
+        }
+
         function actualizarTimeline(fraccion) {
-            if (!datos.eventos.length) {
+            const { min, max } = rangoTiempoCombinado();
+            if (!min || !max) {
                 $('timeStart').textContent = '—';
                 $('timeEnd').textContent = '—';
                 $('timeValue').textContent = '—';
-                visibles = 0;
+                renderFondo.visibles = 0;
+                renderEvento.visibles = 0;
                 actualizarVisibles();
                 return;
             }
-            const t0 = datos.minTime.getTime(), t1 = datos.maxTime.getTime();
+            const t0 = min.getTime(), t1 = max.getTime();
             const corte = new Date(t0 + (t1 - t0) * fraccion);
 
-            // Los eventos están ordenados por fecha: basta contar hasta el corte.
-            let n = 0;
-            while (n < datos.eventos.length && datos.eventos[n].time <= corte) n++;
-            visibles = fraccion >= 1 ? datos.eventos.length : n;
+            renderFondo.visibles = contarHasta(datosFondo, corte, fraccion);
+            renderEvento.visibles = contarHasta(datosEvento, corte, fraccion);
 
-            $('timeStart').textContent = fechaHora(datos.minTime);
-            $('timeEnd').textContent = fechaHora(datos.maxTime);
+            $('timeStart').textContent = fechaHora(min);
+            $('timeEnd').textContent = fechaHora(max);
             $('timeValue').textContent = fraccion >= 1 ? 'Todos' : fechaHora(corte);
             actualizarVisibles();
         }
 
-        function actualizarVisibles() {
-            actualizarMarcadores();
-            if (malla) {
-                // Como las instancias van en orden cronológico, mover el "count"
-                // basta para revelar u ocultar el final de la serie.
-                let n = 0;
-                if (visibles > 0) {
-                    const corte = datos.eventos[Math.min(visibles, datos.eventos.length) - 1].time;
-                    while (n < indices3D.length && indices3D[n].time <= corte) n++;
-                }
-                malla.count = n;
+        // Aplica el conteo de "visibles" de cada capa tanto a sus marcadores 2D
+        // como al .count de su InstancedMesh (mover el count basta para revelar
+        // u ocultar el final de la serie, porque las instancias van en orden
+        // cronológico).
+        function aplicarConteoMalla(capaId) {
+            const render = capaId === 'fondo' ? renderFondo : renderEvento;
+            const capa = capaId === 'fondo' ? datosFondo : datosEvento;
+            if (!render.malla || !capa) return;
+            let n = 0;
+            if (render.visibles > 0) {
+                const corte = capa.eventos[Math.min(render.visibles, capa.eventos.length) - 1].time;
+                while (n < render.indices.length && render.indices[n].time <= corte) n++;
             }
-            $('visibleEvents').textContent = visibles;
+            render.malla.count = n;
+        }
+
+        function actualizarVisibles() {
+            actualizarMarcadoresCapa('fondo');
+            actualizarMarcadoresCapa('evento');
+            aplicarConteoMalla('fondo');
+            aplicarConteoMalla('evento');
+        }
+
+        function leyendaFondoHTML(maxDepth) {
+            return `
+                <div class="legend-item">
+                    <div class="legend-color" style="background-color:${AZUL_CORTEZA}"></div>
+                    <span>0–35 km · corteza</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background:linear-gradient(135deg,#000,#fff); border-radius:2px; width:24px;"></div>
+                    <span>35 km → ${maxDepth.toFixed(0)} km</span>
+                </div>`;
+        }
+
+        function leyendaEventoHTML(capa) {
+            return `
+                <div class="legend-item">
+                    <div class="legend-color" style="background:linear-gradient(135deg,${capa.colorInicial},${capa.colorFinal}); border-radius:2px; width:24px;"></div>
+                    <span>${capa.minDepth.toFixed(0)} km → ${capa.maxDepth.toFixed(0)} km</span>
+                </div>`;
         }
 
         function actualizarPanel() {
-            $('totalEvents').textContent = datos.eventos.length;
-            $('visibleEvents').textContent = visibles;
+            // --- Capa de fondo ---
+            $('totalEvents').textContent = datosFondo.eventos.length;
+            $('visibleEventsFondo').textContent = renderFondo.visibles;
 
-            if (!datos.eventos.length) {
-                $('infoFuente').innerHTML = datos.fuente ? `<span class="fuente-tag">${datos.fuente}</span> sin resultados` : '—';
+            if (!datosFondo.eventos.length) {
+                $('infoFuente').innerHTML = datosFondo.fuente ? `<span class="fuente-tag">${datosFondo.fuente}</span> sin resultados` : '—';
                 $('infoPeriodo').textContent = '—';
                 $('infoMag').textContent = '—';
                 $('infoProf').textContent = '—';
                 $('leyenda').innerHTML = '<div class="nota">Sin datos para clasificar.</div>';
-                return;
+            } else {
+                const mag = extremos(datosFondo.eventos, e => e.mag);
+                const prof = extremos(datosFondo.eventos, e => e.prof);
+                $('infoFuente').innerHTML = `<span class="fuente-tag">${datosFondo.fuente}</span>`;
+                $('infoPeriodo').textContent = `${fechaCorta(datosFondo.minTime)} – ${fechaCorta(datosFondo.maxTime)}`;
+                $('infoMag').textContent = `M ${mag.min.toFixed(1)} – ${mag.max.toFixed(1)}`;
+                $('infoProf').textContent = `${prof.min.toFixed(1)} – ${prof.max.toFixed(1)} km`;
+                $('leyenda').innerHTML = leyendaFondoHTML(datosFondo.maxDepth);
             }
 
-            const mag = extremos(datos.eventos, e => e.mag);
-            const prof = extremos(datos.eventos, e => e.prof);
-
-            $('infoFuente').innerHTML = `<span class="fuente-tag">${datos.fuente}</span>`;
-            $('infoPeriodo').textContent = `${fechaCorta(datos.minTime)} – ${fechaCorta(datos.maxTime)}`;
-            $('infoMag').textContent = `M ${mag.min.toFixed(1)} – ${mag.max.toFixed(1)}`;
-            $('infoProf').textContent = `${prof.min.toFixed(1)} – ${prof.max.toFixed(1)} km`;
-
-            const conteos = datos.buckets.map(() => 0);
-            datos.eventos.forEach(e => { conteos[indiceBucket(e.prof)]++; });
-
-            $('leyenda').innerHTML = datos.buckets.map(([a, z], i) => {
-                const etiq = z === Infinity ? `${a.toFixed(0)}+ km` : `${a.toFixed(0)}–${z.toFixed(0)} km`;
-                return `<div class="legend-item">
-                    <div class="legend-color" style="background-color:${COLORES[i]}"></div>
-                    <span>${etiq}</span><span class="legend-count">${conteos[i]}</span>
-                </div>`;
-            }).join('');
+            // --- Capa de evento especial (si está cargada) ---
+            $('infoBoxEvento').hidden = !datosEvento;
+            $('legendEvento').hidden = !datosEvento;
+            if (datosEvento) {
+                $('totalEventsEvento').textContent = datosEvento.eventos.length;
+                $('visibleEventsEvento').textContent = renderEvento.visibles;
+                if (!datosEvento.eventos.length) {
+                    $('infoFuenteEvento').innerHTML = '—';
+                    $('infoPeriodoEvento').textContent = '—';
+                    $('infoMagEvento').textContent = '—';
+                    $('infoProfEvento').textContent = '—';
+                    $('leyendaEvento').innerHTML = '<div class="nota">Sin datos.</div>';
+                } else {
+                    const mag = extremos(datosEvento.eventos, e => e.mag);
+                    $('infoFuenteEvento').innerHTML = `<span class="fuente-tag">${datosEvento.fuente}</span>`;
+                    $('infoPeriodoEvento').textContent = `${fechaCorta(datosEvento.minTime)} – ${fechaCorta(datosEvento.maxTime)}`;
+                    $('infoMagEvento').textContent = `M ${mag.min.toFixed(1)} – ${mag.max.toFixed(1)}`;
+                    $('infoProfEvento').textContent = `${datosEvento.minDepth.toFixed(1)} – ${datosEvento.maxDepth.toFixed(1)} km`;
+                    $('leyendaEvento').innerHTML = leyendaEventoHTML(datosEvento);
+                }
+            }
         }
 
         // ============================================================
         // 9. Exportar GeoJSON
         // ============================================================
 
+        function metadataArea(capa) {
+            if (!capa.bbox) return null;
+            return capa.modo === 'circulo'
+                ? { tipo: 'circulo', centro: { lat: capa.circulo.lat, lon: capa.circulo.lon }, radio_km: capa.circulo.radioKm }
+                : { tipo: 'rectangulo', bbox: { norte: capa.bbox.n, sur: capa.bbox.s, este: capa.bbox.e, oeste: capa.bbox.o } };
+        }
+
+        // Mismo esquema de Feature sin importar de qué capa ni de qué fuente
+        // vino el evento — el campo "capa" es lo único que distingue origen
+        // cuando se exportan las dos juntas.
+        function construirFeature(e, capaId) {
+            return {
+                type: 'Feature',
+                geometry: { type: 'Point', coordinates: [e.lon, e.lat, -e.prof] },
+                properties: {
+                    id: e.id, mag: e.mag, prof_km: e.prof,
+                    time: e.time.toISOString(), auth: e.auth, region: e.region,
+                    capa: capaId
+                }
+            };
+        }
+
+        // Habilita/deshabilita el botón y las opciones del selector "Qué
+        // exportar" según qué capas haya cargadas con al menos 1 evento.
+        function actualizarBotonExportar() {
+            const hayFondo = datosFondo.eventos.length > 0;
+            const hayEvento = !!(datosEvento && datosEvento.eventos.length > 0);
+            $('btnExportar').disabled = !(hayFondo || hayEvento);
+
+            const sel = $('exportarQue');
+            for (const o of sel.options) {
+                if (o.value === 'fondo') o.disabled = !hayFondo;
+                else if (o.value === 'evento') o.disabled = !hayEvento;
+                else if (o.value === 'ambas') o.disabled = !(hayFondo && hayEvento);
+            }
+            if (sel.options[sel.selectedIndex].disabled) {
+                if (hayFondo) sel.value = 'fondo';
+                else if (hayEvento) sel.value = 'evento';
+            }
+        }
+
         function exportarGeoJSON() {
-            if (!datos.eventos.length) return;
-            const b = datos.bbox;
+            const que = $('exportarQue').value; // 'fondo' | 'evento' | 'ambas'
+            const hayFondo = datosFondo.eventos.length > 0;
+            const hayEvento = !!(datosEvento && datosEvento.eventos.length > 0);
+            if (que === 'fondo' && !hayFondo) return;
+            if (que === 'evento' && !hayEvento) return;
+            if (que === 'ambas' && !hayFondo && !hayEvento) return;
+
+            const features = [];
+            if ((que === 'fondo' || que === 'ambas') && hayFondo) {
+                features.push(...datosFondo.eventos.map(e => construirFeature(e, 'fondo')));
+            }
+            if ((que === 'evento' || que === 'ambas') && hayEvento) {
+                features.push(...datosEvento.eventos.map(e => construirFeature(e, 'evento')));
+            }
+
+            const bboxRef = datosFondo.bbox || (datosEvento && datosEvento.bbox);
+
             const fc = {
                 type: 'FeatureCollection',
-                bbox: [b.o, b.s, b.e, b.n],
+                bbox: bboxRef ? [bboxRef.o, bboxRef.s, bboxRef.e, bboxRef.n] : undefined,
                 metadata: {
                     generado: new Date().toISOString(),
-                    fuente: datos.fuente,
-                    endpoint: datos.urlConsulta,
-                    // area: refleja el modo real usado (círculo o rectángulo). bbox
-                    // se mantiene siempre por compatibilidad — es el circunscrito
-                    // cuando el modo fue círculo, no un recorte real de los eventos.
-                    area: datos.modo === 'circulo'
-                        ? { tipo: 'circulo', centro: { lat: datos.circulo.lat, lon: datos.circulo.lon }, radio_km: datos.circulo.radioKm }
-                        : { tipo: 'rectangulo', bbox: { norte: b.n, sur: b.s, este: b.e, oeste: b.o } },
-                    bbox: { norte: b.n, sur: b.s, este: b.e, oeste: b.o },
-                    rango_fechas: { desde: datos.params.inicio, hasta: datos.params.fin },
-                    magnitud_minima: datos.params.minmag,
-                    limite_solicitado: datos.params.limite,
-                    cantidad: datos.eventos.length,
-                    total_disponible: datos.total,
-                    truncado: datos.total !== null && datos.total > datos.eventos.length,
+                    exportado: que,
+                    capa_fondo: hayFondo ? {
+                        fuente: datosFondo.fuente, endpoint: datosFondo.urlConsulta,
+                        area: metadataArea(datosFondo),
+                        rango_fechas: datosFondo.params ? { desde: datosFondo.params.inicio, hasta: datosFondo.params.fin } : null,
+                        magnitud_minima: datosFondo.params ? datosFondo.params.minmag : null,
+                        cantidad: datosFondo.eventos.length,
+                        total_disponible: datosFondo.total,
+                        truncado: datosFondo.truncado
+                    } : null,
+                    capa_evento: hayEvento ? {
+                        origen: datosEvento.origen, fuente: datosEvento.fuente,
+                        endpoint: datosEvento.urlConsulta, nombre_archivo: datosEvento.nombreArchivo,
+                        area: metadataArea(datosEvento),
+                        rango_fechas: datosEvento.params ? { desde: datosEvento.params.inicio, hasta: datosEvento.params.fin } : null,
+                        color_inicial: datosEvento.colorInicial, color_final: datosEvento.colorFinal,
+                        cantidad: datosEvento.eventos.length
+                    } : null,
                     generador: 'explorador-area.html'
                 },
-                features: datos.eventos.map(e => ({
-                    type: 'Feature',
-                    geometry: { type: 'Point', coordinates: [e.lon, e.lat, -e.prof] },
-                    properties: {
-                        id: e.id, mag: e.mag, prof_km: e.prof,
-                        time: e.time.toISOString(), auth: e.auth, region: e.region
-                    }
-                }))
+                features
             };
 
             const blob = new Blob([JSON.stringify(fc, null, 2)], { type: 'application/geo+json' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            const coord = (v, pos, neg) => `${Math.abs(v).toFixed(1)}${v >= 0 ? pos : neg}`;
-            a.download = `sismos_${coord(b.s, 'N', 'S')}-${coord(b.n, 'N', 'S')}_` +
-                         `${coord(b.o, 'E', 'O')}-${coord(b.e, 'E', 'O')}.geojson`;
+            a.download = `sismos_${que}_${Date.now()}.geojson`;
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
@@ -2002,9 +2598,9 @@
                 r.addEventListener('change', actualizarLimiteUI);
             });
 
-            $('showEvents').addEventListener('change', (e) => {
-                if (malla) malla.visible = e.target.checked;
-            });
+            $('showEvents').addEventListener('change', aplicarVisibilidad3D);
+            $('showFondo').addEventListener('change', () => { aplicarVisibilidad3D(); aplicarVisibilidad2D(); });
+            $('showEventoCapa').addEventListener('change', () => { aplicarVisibilidad3D(); aplicarVisibilidad2D(); });
 
             $('showCaja').addEventListener('change', (e) => {
                 if (refs) refs.visible = e.target.checked;
@@ -2031,8 +2627,161 @@
             });
 
             $('timelineSlider').addEventListener('input', (e) => {
+                // El usuario tomó control manual del timeline: si estaba
+                // reproduciendo, se pausa (no pelea con el usuario).
+                if (reproduciendo) { reproduciendo = false; $('btnPlay').textContent = '▶ Reproducir'; }
                 actualizarTimeline(parseFloat(e.target.value) / 100);
             });
+
+            $('btnPlay').addEventListener('click', togglePlay);
+            document.querySelectorAll('.vel-btn').forEach(b => {
+                b.addEventListener('click', () => {
+                    velocidad = parseFloat(b.dataset.vel);
+                    document.querySelectorAll('.vel-btn').forEach(x => x.classList.toggle('activo', x === b));
+                    // Re-ancla el reloj al punto actual para que el cambio de
+                    // velocidad, hecho mientras reproduce, no salte ni se acelere
+                    // de golpe sobre el tramo ya recorrido.
+                    if (reproduciendo) {
+                        fraccionInicio = parseFloat($('timelineSlider').value) / 100;
+                        tiempoInicio = performance.now();
+                    }
+                });
+            });
+
+            // --- Pestañas del panel ---
+            document.querySelectorAll('.tab-btn').forEach(b => {
+                b.addEventListener('click', () => setTab(b.dataset.tab));
+            });
+
+            // --- Pestaña "Evento especial" ---
+            $('btnOrigenCatalogo').addEventListener('click', () => setOrigenEvento('catalogo'));
+            $('btnOrigenArchivo').addEventListener('click', () => setOrigenEvento('archivo'));
+            $('btnModoRectEv').addEventListener('click', () => setModoAreaEvento('rect'));
+            $('btnModoCirculoEv').addEventListener('click', () => setModoAreaEvento('circulo'));
+            $('btnCopiarAreaFondo').addEventListener('click', () => {
+                setModoAreaEvento(modoArea);
+                if (modoArea === 'circulo') escribirCirculoEv(leerCirculo());
+                else escribirBboxEv(leerBbox());
+            });
+            document.querySelectorAll('input[name="fuenteEvento"]').forEach(r => {
+                r.addEventListener('change', actualizarLimiteUIEvento);
+            });
+            $('btnConsultarEvento').addEventListener('click', consultarEvento);
+            $('btnQuitarEvento').addEventListener('click', quitarCapaEvento);
+
+            $('archivoGeoJSON').addEventListener('change', (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = () => {
+                    let fc;
+                    try { fc = JSON.parse(reader.result); }
+                    catch (err) { mensajeEvento('El archivo no es JSON válido.', 'error'); return; }
+                    if (!fc || fc.type !== 'FeatureCollection' || !Array.isArray(fc.features)) {
+                        mensajeEvento(
+                            `El archivo no parece un GeoJSON de puntos válido — se esperaba ` +
+                            `<code>type: "FeatureCollection"</code> con un array <code>features</code>; ` +
+                            `se encontró <code>type: "${fc && fc.type}"</code>.`,
+                            'error'
+                        );
+                        return;
+                    }
+                    const norm = normalizarGeoJSONPropio(fc);
+                    if (!norm.eventos.length) {
+                        mensajeEvento(
+                            `No se pudo extraer ningún evento válido del archivo ` +
+                            `(${norm.descartados} de ${fc.features.length} features descartados por falta de ` +
+                            `lat/lon/profundidad/magnitud/fecha reconocibles).`,
+                            'error'
+                        );
+                        return;
+                    }
+                    aplicarResultadoEvento(norm, null, `Archivo propio (${file.name})`, null, [], {
+                        fuenteId: null, urlConsulta: null, truncado: false,
+                        origen: 'archivo', nombreArchivo: file.name
+                    });
+                };
+                reader.onerror = () => mensajeEvento('No se pudo leer el archivo.', 'error');
+                reader.readAsText(file);
+            });
+
+            $('colorInicialEvento').addEventListener('input', actualizarColoresEvento);
+            $('colorFinalEvento').addEventListener('input', actualizarColoresEvento);
+        }
+
+        // Recolorea la capa de evento especial ya cargada en vivo (mesh 3D +
+        // marcadores 2D + leyenda), sin volver a consultar nada.
+        function actualizarColoresEvento() {
+            if (!datosEvento) return;
+            datosEvento.colorInicial = $('colorInicialEvento').value;
+            datosEvento.colorFinal = $('colorFinalEvento').value;
+
+            if (renderEvento.malla) {
+                const color = new THREE.Color();
+                renderEvento.indices.forEach((ev, i) => {
+                    color.set(colorParaCapa('evento', ev));
+                    renderEvento.malla.setColorAt(i, color);
+                });
+                if (renderEvento.malla.instanceColor) renderEvento.malla.instanceColor.needsUpdate = true;
+            }
+            renderEvento.marcadores.forEach((m, i) => {
+                const ev = datosEvento.eventos[i];
+                if (ev) m.setStyle({ fillColor: colorParaCapa('evento', ev) });
+            });
+            actualizarPanel();
+        }
+
+        // ============================================================
+        // 11b. Pestañas del panel y origen de la capa de evento especial
+        // ============================================================
+
+        const TAB_IDS = { area: 'tabArea', evento: 'tabEvento', vista: 'tabVista' };
+
+        function setTab(tabId) {
+            Object.keys(TAB_IDS).forEach(t => { $(TAB_IDS[t]).hidden = t !== tabId; });
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('activo', b.dataset.tab === tabId));
+        }
+
+        let origenEvento = 'catalogo';
+        function setOrigenEvento(origen) {
+            origenEvento = origen;
+            $('btnOrigenCatalogo').classList.toggle('activo', origen === 'catalogo');
+            $('btnOrigenArchivo').classList.toggle('activo', origen === 'archivo');
+            $('origenCatalogo').hidden = origen !== 'catalogo';
+            $('origenArchivo').hidden = origen !== 'archivo';
+        }
+
+        // ============================================================
+        // 12. Reproducción automática del timeline (Requisito 6)
+        // ============================================================
+
+        let reproduciendo = false, tiempoInicio = 0, fraccionInicio = 0;
+        let velocidad = 1;
+        const DURACION_BASE_MS = 30000; // a 1x, recorrido completo 0%->100%
+
+        function togglePlay() {
+            reproduciendo = !reproduciendo;
+            $('btnPlay').textContent = reproduciendo ? '⏸ Pausar' : '▶ Reproducir';
+            if (reproduciendo) {
+                const actual = parseFloat($('timelineSlider').value) / 100;
+                fraccionInicio = actual >= 1 ? 0 : actual;   // en 100%: reinicia desde 0
+                tiempoInicio = performance.now();
+                requestAnimationFrame(pasoReproduccion);
+            }
+        }
+
+        function pasoReproduccion(ahora) {
+            if (!reproduciendo) return;
+            const transcurrido = ahora - tiempoInicio;
+            const fraccion = Math.min(1, fraccionInicio + (transcurrido / (DURACION_BASE_MS / velocidad)));
+            $('timelineSlider').value = fraccion * 100;
+            actualizarTimeline(fraccion);
+            if (fraccion >= 1) {
+                reproduciendo = false;
+                $('btnPlay').textContent = '▶ Reproducir';
+                return;
+            }
+            requestAnimationFrame(pasoReproduccion);
         }
 
         document.addEventListener('DOMContentLoaded', () => {
@@ -2041,6 +2790,12 @@
             init3D();
             conectarControles();
             setModoArea(modoArea);
+            setModoAreaEvento('rect');
+            setOrigenEvento('catalogo');
+            setTab('area');
+            actualizarLimiteUIEvento();
+            actualizarBotonExportar();
+            aplicarVisibilidad2D();
             actualizarPanel();
             setTimeout(() => {
                 map.invalidateSize();
@@ -2062,10 +2817,16 @@
 
         // Expuesto para las pruebas automatizadas del navegador.
         window.__explorador = {
-            estado: () => datos,
-            visibles: () => visibles,
+            estadoFondo: () => datosFondo,
+            estadoEvento: () => datosEvento,
+            visiblesFondo: () => renderFondo.visibles,
+            visiblesEvento: () => renderEvento.visibles,
             consultar,
-            setBbox: (b) => { escribirBbox(b); pintarRectangulo(bboxALatLngBounds(b)); }
+            consultarEvento,
+            quitarCapaEvento,
+            setBbox: (b) => { escribirBbox(b); pintarRectangulo(bboxALatLngBounds(b)); },
+            togglePlay,
+            setVelocidad: (v) => { velocidad = v; }
         };
     })();
     </script>
