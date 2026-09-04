@@ -471,6 +471,19 @@
                         <input type="checkbox" id="showCaja" checked>
                         <label for="showCaja">Caja y referencias</label>
                     </div>
+                    <div class="campo" style="margin-top:8px">
+                        <label for="mapaSuperiorSelector">Mapa en la cara superior</label>
+                        <select id="mapaSuperiorSelector">
+                            <option value="osm" selected>OpenStreetMap</option>
+                            <option value="hot">OSM Humanitario</option>
+                            <option value="topo">OpenTopoMap</option>
+                            <option value="claro">CARTO Claro</option>
+                            <option value="oscuro">CARTO Oscuro</option>
+                            <option value="geologico">Mapa Geológico (SGC)</option>
+                            <option value="ninguno">Ninguno (plano liso)</option>
+                        </select>
+                        <div class="nota">Se recorta con el área consultada y se actualiza sola cuando cambia. El mapa geológico solo tiene datos en Colombia/Centroamérica.</div>
+                    </div>
                     <div class="checkbox-item">
                         <input type="checkbox" id="showFondo" checked>
                         <label for="showFondo">Capa de fondo</label>
@@ -508,9 +521,9 @@
                     <div class="slider-group">
                         <div class="slider-label">
                             <span>Velocidad</span>
-                            <span class="slider-value" id="speedValue">40%</span>
+                            <span class="slider-value" id="speedValue">0%</span>
                         </div>
-                        <input type="range" id="speedSlider" min="0" max="200" value="40">
+                        <input type="range" id="speedSlider" min="0" max="200" value="0">
                     </div>
                 </div>
 
@@ -958,6 +971,112 @@
         // haya datos consultados para poder previsualizar la geología.
         function bboxParaGeologia() {
             return modoArea === 'circulo' ? bboxCircunscrito(leerCirculo()) : leerBbox();
+        }
+
+        // ============================================================
+        // Mapa real en la cara superior de la caja 3D (mismo patrón que
+        // cubo-v2.html: la cara de arriba proyecta un mapa real, no un
+        // plano de color liso). A diferencia de cubo-v2, acá el área es
+        // arbitraria (la que el usuario recortó), así que las teselas se
+        // buscan dinámicamente en vez de usar una ventana fija.
+        // ============================================================
+        const TILE_BASES_3D = {
+            osm:    (x, y, z) => `https://tile.openstreetmap.org/${z}/${x}/${y}.png`,
+            hot:    (x, y, z) => `https://a.tile.openstreetmap.fr/hot/${z}/${x}/${y}.png`,
+            topo:   (x, y, z) => `https://tile.opentopomap.org/${z}/${x}/${y}.png`,
+            claro:  (x, y, z) => `https://basemaps.cartocdn.com/light_all/${z}/${x}/${y}.png`,
+            oscuro: (x, y, z) => `https://basemaps.cartocdn.com/dark_all/${z}/${x}/${y}.png`
+        };
+
+        function lon2xTile(lon, z) { return (lon + 180) / 360 * Math.pow(2, z); }
+        function lat2yTile(lat, z) {
+            const r = lat * Math.PI / 180;
+            return (1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2 * Math.pow(2, z);
+        }
+        function cargarImagenCORS(url) {
+            return new Promise((res, rej) => {
+                const im = new Image();
+                im.crossOrigin = 'anonymous';
+                im.onload = () => res(im);
+                im.onerror = () => rej(new Error(url));
+                im.src = url;
+            });
+        }
+
+        async function bakearMapaSuperior(b) {
+            if (!mallaSuperior || !b || [b.n, b.s, b.e, b.o].some(v => !isFinite(v))) return;
+            const miToken = ++bakeMapaToken; // si el área vuelve a cambiar antes de terminar, este resultado se descarta
+            const tipo = $('mapaSuperiorSelector') ? $('mapaSuperiorSelector').value : 'osm';
+
+            if (tipo === 'ninguno') {
+                if (mallaSuperior.material.map) mallaSuperior.material.map.dispose();
+                mallaSuperior.material.map = null;
+                mallaSuperior.material.color.set(0x14274a);
+                mallaSuperior.material.opacity = 0.55;
+                mallaSuperior.material.needsUpdate = true;
+                return;
+            }
+
+            try {
+                let canvas;
+                if (tipo === 'geologico') {
+                    const { w, h } = tamanioParaBbox(b);
+                    const url = 'https://srvags.sgc.gov.co/arcgis/rest/services/Mapa_Geologico_Colombia/' +
+                        'Mapa_Geologico_Colombia_V2023/MapServer/export' +
+                        `?bbox=${b.o},${b.s},${b.e},${b.n}&bboxSR=4326&imageSR=4326&size=${w},${h}` +
+                        `&format=png32&transparent=false&f=image`;
+                    const img = await cargarImagenCORS(url);
+                    if (miToken !== bakeMapaToken) return; // ya hay un área más nueva
+                    canvas = document.createElement('canvas');
+                    canvas.width = img.width; canvas.height = img.height;
+                    canvas.getContext('2d').drawImage(img, 0, 0);
+                } else {
+                    const fabricaUrl = TILE_BASES_3D[tipo];
+                    if (!fabricaUrl) return;
+
+                    // Zoom que traiga ~5 teselas del lado mayor, con tope de 64 teselas totales.
+                    const lonSpan = Math.max(b.e - b.o, 0.001);
+                    let z = Math.max(1, Math.min(12, Math.round(Math.log2(360 / lonSpan * 5))));
+                    let x0, x1, y0, y1;
+                    do {
+                        x0 = Math.floor(lon2xTile(b.o, z)); x1 = Math.floor(lon2xTile(b.e, z));
+                        y0 = Math.floor(lat2yTile(b.n, z)); y1 = Math.floor(lat2yTile(b.s, z));
+                        if ((x1 - x0 + 1) * (y1 - y0 + 1) <= 64 || z <= 1) break;
+                        z--;
+                    } while (true);
+
+                    const nx = Math.max(1, x1 - x0 + 1), ny = Math.max(1, y1 - y0 + 1), TS = 256;
+                    const modo = Math.pow(2, z);
+                    canvas = document.createElement('canvas');
+                    canvas.width = nx * TS; canvas.height = ny * TS;
+                    const ctx = canvas.getContext('2d');
+                    ctx.fillStyle = '#1a1a19';
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+                    const jobs = [];
+                    for (let ty = 0; ty < ny; ty++) {
+                        for (let tx = 0; tx < nx; tx++) {
+                            const wrapX = ((x0 + tx) % modo + modo) % modo; // longitud da la vuelta al mundo
+                            jobs.push(
+                                cargarImagenCORS(fabricaUrl(wrapX, y0 + ty, z))
+                                    .then(im => ctx.drawImage(im, tx * TS, ty * TS, TS, TS))
+                                    .catch(() => {}) // una tesela caída no tumba el mosaico completo
+                            );
+                        }
+                    }
+                    await Promise.all(jobs);
+                    if (miToken !== bakeMapaToken) return;
+                }
+
+                const tex = new THREE.CanvasTexture(canvas);
+                if (mallaSuperior.material.map) mallaSuperior.material.map.dispose();
+                mallaSuperior.material.map = tex;
+                mallaSuperior.material.color.set(0xffffff);
+                mallaSuperior.material.opacity = 1;
+                mallaSuperior.material.needsUpdate = true;
+            } catch (err) {
+                console.warn('No se pudo construir el mapa de la cara superior:', err);
+            }
         }
 
         // Mismo criterio que sismos-cube.html línea ~543: lado mayor a 1024px,
@@ -1798,6 +1917,8 @@
         // ============================================================
 
         let scene, camera, renderer, grupo, refs, animando = false;
+        let mallaSuperior = null;   // plano de la cara de arriba de la caja — puede llevar un mapa real texturado
+        let bakeMapaToken = 0;      // descarta bakes de mapa superior que quedaron obsoletos por un cambio de área más nuevo
         let rot = { x: -0.5, y: 0.4 };
         let arrastre = null;
         let distancia = 60;
@@ -1863,6 +1984,10 @@
                 }
             }
             refs = null;
+            if (mallaSuperior && mallaSuperior.material && mallaSuperior.material.map) {
+                mallaSuperior.material.map.dispose();
+            }
+            mallaSuperior = null;
             renderFondo.malla = null; renderFondo.indices = [];
             renderEvento.malla = null; renderEvento.indices = [];
         }
@@ -1949,6 +2074,8 @@
             );
             sup.position.set((x0 + x1) / 2, (y0 + y1) / 2, 0);
             refs.add(sup);
+            mallaSuperior = sup;
+            bakearMapaSuperior(datosFondo.bbox);
 
             refs.add(etiqueta(`${datosFondo.profTope.toFixed(0)} km`, x0 - 2.5, y1, 0));
             refs.add(etiqueta(`${datosFondo.profPiso.toFixed(0)} km`, x0 - 2.5, y1, -PROF_MUNDO));
@@ -2424,6 +2551,10 @@
 
             $('showCaja').addEventListener('change', (e) => {
                 if (refs) refs.visible = e.target.checked;
+            });
+
+            $('mapaSuperiorSelector').addEventListener('change', () => {
+                if (mallaSuperior && datosFondo.bbox) bakearMapaSuperior(datosFondo.bbox);
             });
 
             $('showMap').addEventListener('change', (e) => {
