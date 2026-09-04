@@ -338,6 +338,32 @@
         .leaflet-container { background: #1a1f3a; }
         .leaflet-popup-content-wrapper, .leaflet-popup-tip { background: #1a1f3a; color: #e0e0e0; }
         .leaflet-popup-content { font-size: 11px; }
+
+        /* --- Selector rectángulo/círculo --- */
+        .modo-area-selector { display: flex; gap: 6px; margin-bottom: 10px; }
+        .modo-area-selector .btn { margin-top: 0; }
+
+        /* --- Marcadores de esquina arrastrables (rectángulo) --- */
+        .esquina-marker {
+            width: 12px; height: 12px; border-radius: 50%;
+            background: #64b5f6; border: 2px solid #0a0e27;
+            box-shadow: 0 0 4px rgba(0,0,0,.6);
+            cursor: grab;
+        }
+        .esquina-marker:active { cursor: grabbing; }
+
+        /* --- Selector de capas base de Leaflet, adaptado al tema oscuro --- */
+        .leaflet-control-layers {
+            background: #1a1f3a !important;
+            color: #e0e0e0 !important;
+            border: 1px solid #293548 !important;
+            border-radius: 6px !important;
+        }
+        .leaflet-control-layers-toggle { filter: invert(0.85) hue-rotate(180deg); }
+        .leaflet-control-layers-expanded { padding: 8px 10px !important; }
+        .leaflet-control-layers label { color: #e0e0e0 !important; font-size: 11px; margin-bottom: 3px; }
+        .leaflet-control-layers-separator { border-top: 1px solid #293548 !important; }
+        .leaflet-control-layers-selector { accent-color: #64b5f6; }
     </style>
 </head>
 <body>
@@ -363,27 +389,52 @@
             <div class="panel-title">⚙️ Consulta y Controles</div>
 
             <div class="control-group">
-                <div class="group-title">Área geográfica (bbox)</div>
-                <div class="bbox-grid">
-                    <div class="campo">
-                        <label for="bboxN">Norte</label>
-                        <input type="number" id="bboxN" step="0.1" min="-90" max="90">
-                    </div>
-                    <div class="campo">
-                        <label for="bboxS">Sur</label>
-                        <input type="number" id="bboxS" step="0.1" min="-90" max="90">
-                    </div>
-                    <div class="campo">
-                        <label for="bboxO">Oeste</label>
-                        <input type="number" id="bboxO" step="0.1" min="-180" max="180">
-                    </div>
-                    <div class="campo">
-                        <label for="bboxE">Este</label>
-                        <input type="number" id="bboxE" step="0.1" min="-180" max="180">
+                <div class="group-title">Área geográfica</div>
+                <div class="modo-area-selector">
+                    <button class="btn secundario activo" id="btnModoRect" type="button">▭ Rectángulo</button>
+                    <button class="btn secundario" id="btnModoCirculo" type="button">◯ Círculo</button>
+                </div>
+
+                <div id="camposRect">
+                    <div class="bbox-grid">
+                        <div class="campo">
+                            <label for="bboxN">Norte</label>
+                            <input type="number" id="bboxN" step="0.1" min="-90" max="90" placeholder="ej. 10">
+                        </div>
+                        <div class="campo">
+                            <label for="bboxS">Sur</label>
+                            <input type="number" id="bboxS" step="0.1" min="-90" max="90" placeholder="ej. 0">
+                        </div>
+                        <div class="campo">
+                            <label for="bboxO">Oeste</label>
+                            <input type="number" id="bboxO" step="0.1" min="-180" max="180" placeholder="ej. -80">
+                        </div>
+                        <div class="campo">
+                            <label for="bboxE">Este</label>
+                            <input type="number" id="bboxE" step="0.1" min="-180" max="180" placeholder="ej. -70">
+                        </div>
                     </div>
                 </div>
+
+                <div id="camposCirculo" hidden>
+                    <div class="bbox-grid">
+                        <div class="campo">
+                            <label for="circLat">Centro lat</label>
+                            <input type="number" id="circLat" step="0.1" min="-90" max="90" placeholder="ej. 4.5">
+                        </div>
+                        <div class="campo">
+                            <label for="circLon">Centro lon</label>
+                            <input type="number" id="circLon" step="0.1" min="-180" max="180" placeholder="ej. -76">
+                        </div>
+                    </div>
+                    <div class="campo" style="margin-top:6px">
+                        <label for="circRadio">Radio (km)</label>
+                        <input type="number" id="circRadio" min="1" step="10" value="500">
+                    </div>
+                </div>
+
                 <button class="btn secundario" id="btnDibujar">✏️ Dibujar en el mapa</button>
-                <div class="nota" id="notaArea">Arrastrá sobre el mapa para definir el rectángulo, o escribí las coordenadas.</div>
+                <div class="nota" id="notaArea">Arrastrá sobre el mapa para definir el área, o escribí las coordenadas.</div>
             </div>
 
             <div class="control-group">
@@ -632,43 +683,120 @@
         // ============================================================
 
         let map, rectangulo, capaMarcadores, marcadores = [], modoDibujo = false, dibujando = null;
+        let modoArea = 'rect';   // 'rect' | 'circulo'
+        let circuloDibujo = null, dibujandoCirculo = null;
+        let marcadorNO = null, marcadorSE = null;
+
+        // Capas base — las 5 de teselas ya verificadas en vivo + la geológica
+        // del SGC, que es un caso especial (imageOverlay dinámico, no teselas).
+        let capaOSM, capaHOT, capaTopo, capaCartoClaro, capaCartoOscuro, capaGeologica;
+        let capaBaseActual = null, capaBaseAnterior = null, capaGeologicaActiva = false;
+        let imagenGeologica = null, geoAbortController = null;
 
         function initMap() {
-            map = L.map('map', { zoomControl: true }).setView([4.5, -76.5], 6);
-            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                attribution: '© OpenStreetMap',
-                maxZoom: 19
-            }).addTo(map);
+            map = L.map('map', { zoomControl: true });
+            map.fitWorld();
+
+            capaOSM = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '© OpenStreetMap', maxZoom: 19
+            });
+            capaHOT = L.tileLayer('https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png', {
+                attribution: '© OpenStreetMap France (estilo Humanitario)', maxZoom: 19
+            });
+            capaTopo = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
+                attribution: '© OpenTopoMap (datos OSM / SRTM)', maxZoom: 17
+            });
+            capaCartoClaro = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png', {
+                attribution: '© CARTO / OpenStreetMap', maxZoom: 19
+            });
+            capaCartoOscuro = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png', {
+                attribution: '© CARTO / OpenStreetMap', maxZoom: 19
+            });
+            // Placeholder: el imageOverlay real se agrega/quita dinámicamente
+            // adentro de este layerGroup (ver Requisito 4 / actualizarCapaGeologica).
+            capaGeologica = L.layerGroup();
+
+            capaOSM.addTo(map);
+            capaBaseActual = capaOSM;
+            capaBaseAnterior = capaOSM;
+
+            const capasBase = {
+                'OpenStreetMap': capaOSM,
+                'OSM Humanitario (HOT)': capaHOT,
+                'OpenTopoMap': capaTopo,
+                'CARTO Claro (Positron)': capaCartoClaro,
+                'CARTO Oscuro (Dark Matter)': capaCartoOscuro,
+                'Mapa Geológico de Colombia (SGC)': capaGeologica
+            };
+            L.control.layers(capasBase, null, { position: 'topright' }).addTo(map);
+
+            map.on('baselayerchange', (e) => {
+                capaBaseAnterior = capaBaseActual;
+                capaBaseActual = e.layer;
+                capaGeologicaActiva = (e.layer === capaGeologica);
+                if (capaGeologicaActiva) actualizarCapaGeologica();
+            });
 
             capaMarcadores = L.layerGroup().addTo(map);
 
             map.on('mousedown', (e) => {
                 if (!modoDibujo) return;
-                dibujando = e.latlng;
-                if (rectangulo) { map.removeLayer(rectangulo); rectangulo = null; }
+                if (modoArea === 'circulo') {
+                    dibujandoCirculo = e.latlng;
+                    if (circuloDibujo) { map.removeLayer(circuloDibujo); circuloDibujo = null; }
+                } else {
+                    dibujando = e.latlng;
+                    if (rectangulo) { map.removeLayer(rectangulo); rectangulo = null; }
+                }
             });
 
             map.on('mousemove', (e) => {
-                if (!modoDibujo || !dibujando) return;
-                pintarRectangulo(L.latLngBounds(dibujando, e.latlng));
+                if (!modoDibujo) return;
+                if (modoArea === 'circulo') {
+                    if (!dibujandoCirculo) return;
+                    pintarCirculo(dibujandoCirculo, map.distance(dibujandoCirculo, e.latlng));
+                } else {
+                    if (!dibujando) return;
+                    pintarRectangulo(L.latLngBounds(dibujando, e.latlng));
+                }
             });
 
             map.on('mouseup', (e) => {
-                if (!modoDibujo || !dibujando) return;
-                const b = L.latLngBounds(dibujando, e.latlng);
-                dibujando = null;
-                // Un clic sin arrastrar no define un área: se ignora.
-                if (b.getNorth() - b.getSouth() < 0.01 || b.getEast() - b.getWest() < 0.01) {
-                    pintarRectangulo(bboxALatLngBounds(leerBbox()));
-                    return;
+                if (!modoDibujo) return;
+                if (modoArea === 'circulo') {
+                    if (!dibujandoCirculo) return;
+                    const centro = dibujandoCirculo;
+                    const radioM = map.distance(centro, e.latlng);
+                    dibujandoCirculo = null;
+                    // Un clic sin arrastrar no define un área: se ignora.
+                    if (radioM < 1000) {
+                        const c = leerCirculo();
+                        if ([c.lat, c.lon, c.radioKm].every(isFinite)) pintarCirculo(L.latLng(c.lat, c.lon), c.radioKm * 1000);
+                        return;
+                    }
+                    escribirCirculo({ lat: centro.lat, lon: centro.lng, radioKm: radioM / 1000 });
+                    pintarCirculo(centro, radioM);
+                    modoDibujo3(false);
+                    validarArea(true);
+                    refrescarCapaGeologicaSiActiva();
+                } else {
+                    if (!dibujando) return;
+                    const b = L.latLngBounds(dibujando, e.latlng);
+                    dibujando = null;
+                    // Un clic sin arrastrar no define un área: se ignora.
+                    if (b.getNorth() - b.getSouth() < 0.01 || b.getEast() - b.getWest() < 0.01) {
+                        pintarRectangulo(bboxALatLngBounds(leerBbox()));
+                        return;
+                    }
+                    escribirBbox({
+                        n: b.getNorth(), s: b.getSouth(),
+                        e: b.getEast(), o: b.getWest()
+                    });
+                    pintarRectangulo(b);
+                    modoDibujo3(false);
+                    validarBbox(true);
+                    refrescarCapaGeologicaSiActiva();
                 }
-                escribirBbox({
-                    n: b.getNorth(), s: b.getSouth(),
-                    e: b.getEast(), o: b.getWest()
-                });
-                pintarRectangulo(b);
-                modoDibujo3(false);
-                validarBbox(true);
             });
         }
 
@@ -679,11 +807,176 @@
                 color: '#64b5f6', weight: 1, dashArray: '4 3',
                 fillColor: '#64b5f6', fillOpacity: 0.07, interactive: false
             }).addTo(map);
+            // Mientras se está dibujando un rectángulo nuevo a mano (arrastre en
+            // curso), los campos numéricos todavía no reflejan el bbox en vivo —
+            // recién se actualizan en el mouseup. Sincronizar los marcadores de
+            // esquina acá los dejaría un instante en la posición vieja: se evita
+            // y se sincronizan al terminar el arrastre (mouseup ya llama de nuevo
+            // a pintarRectangulo con los campos ya actualizados).
+            if (!dibujando) actualizarMarcadoresEsquina();
+        }
+
+        function pintarCirculo(centro, radioM) {
+            if (!centro || !isFinite(radioM) || radioM <= 0) return;
+            if (circuloDibujo) map.removeLayer(circuloDibujo);
+            circuloDibujo = L.circle(centro, {
+                radius: radioM, color: '#64b5f6', weight: 1, dashArray: '4 3',
+                fillColor: '#64b5f6', fillOpacity: 0.07, interactive: false
+            }).addTo(map);
         }
 
         function bboxALatLngBounds(b) {
             if (!b || [b.n, b.s, b.e, b.o].some(v => !isFinite(v))) return null;
             return L.latLngBounds([b.s, b.o], [b.n, b.e]);
+        }
+
+        // --- Marcadores de esquina arrastrables (2 puntos: NO y SE) ---
+        // Un rectángulo queda completamente definido con 2 esquinas opuestas,
+        // así que basta con 2 controles de arrastre, no 4.
+        function actualizarMarcadoresEsquina() {
+            if (modoArea !== 'rect') { quitarMarcadoresEsquina(); return; }
+            const b = leerBbox();
+            if ([b.n, b.s, b.e, b.o].some(v => !isFinite(v))) { quitarMarcadoresEsquina(); return; }
+
+            const icono = L.divIcon({ className: 'esquina-marker', iconSize: [12, 12], iconAnchor: [6, 6] });
+            if (!marcadorNO) {
+                marcadorNO = L.marker([b.n, b.o], { draggable: true, icon: icono, zIndexOffset: 1000 }).addTo(map);
+                marcadorNO.on('drag', (e) => moverEsquina('NO', e.target.getLatLng()));
+                marcadorNO.on('dragend', refrescarCapaGeologicaSiActiva);
+            } else {
+                marcadorNO.setLatLng([b.n, b.o]);
+            }
+            if (!marcadorSE) {
+                marcadorSE = L.marker([b.s, b.e], { draggable: true, icon: icono, zIndexOffset: 1000 }).addTo(map);
+                marcadorSE.on('drag', (e) => moverEsquina('SE', e.target.getLatLng()));
+                marcadorSE.on('dragend', refrescarCapaGeologicaSiActiva);
+            } else {
+                marcadorSE.setLatLng([b.s, b.e]);
+            }
+        }
+
+        function quitarMarcadoresEsquina() {
+            if (marcadorNO) { map.removeLayer(marcadorNO); marcadorNO = null; }
+            if (marcadorSE) { map.removeLayer(marcadorSE); marcadorSE = null; }
+        }
+
+        // El marcador NO controla bboxN/bboxO; el SE controla bboxS/bboxE.
+        function moverEsquina(cual, latlng) {
+            const b = leerBbox();
+            if (cual === 'NO') { b.n = latlng.lat; b.o = latlng.lng; }
+            else { b.s = latlng.lat; b.e = latlng.lng; }
+            escribirBbox(b);
+            if (rectangulo) map.removeLayer(rectangulo);
+            rectangulo = L.rectangle(bboxALatLngBounds(b) || L.latLngBounds([b.s, b.o], [b.n, b.e]), {
+                color: '#64b5f6', weight: 1, dashArray: '4 3',
+                fillColor: '#64b5f6', fillOpacity: 0.07, interactive: false
+            }).addTo(map);
+            validarBbox(true);
+        }
+
+        // --- Selector rectángulo / círculo ---
+        function setModoArea(modo) {
+            modoArea = modo;
+            $('btnModoRect').classList.toggle('activo', modo === 'rect');
+            $('btnModoCirculo').classList.toggle('activo', modo === 'circulo');
+            $('camposRect').hidden = modo !== 'rect';
+            $('camposCirculo').hidden = modo !== 'circulo';
+            if (modo === 'rect') {
+                if (circuloDibujo) { map.removeLayer(circuloDibujo); circuloDibujo = null; }
+                pintarRectangulo(bboxALatLngBounds(leerBbox()));
+            } else {
+                quitarMarcadoresEsquina();
+                if (rectangulo) { map.removeLayer(rectangulo); rectangulo = null; }
+                const c = leerCirculo();
+                if ([c.lat, c.lon, c.radioKm].every(isFinite) && c.radioKm > 0) {
+                    pintarCirculo(L.latLng(c.lat, c.lon), c.radioKm * 1000);
+                }
+            }
+            limpiarMensaje();
+        }
+
+        // ============================================================
+        // 3b. Mapa geológico del SGC (capa base especial — imageOverlay)
+        // ============================================================
+        //
+        // A diferencia de las otras 5 capas base (teselas continuas), esta es
+        // un servicio que genera UNA imagen para un bbox específico. Se probó
+        // en vivo (bbox de Colombia completo, área más chica, 1024×1024 y
+        // 2048×2048): responde entre 1 y 13s según si ese bbox+tamaño exacto
+        // ya está en caché del lado del servidor. El comentario de cubo-v2.html
+        // (~línea 1124) que dice que este servicio "se cae por timeout a los
+        // 60s" no se reprodujo en pruebas nuevas — de todas formas se muestra
+        // un estado de carga porque la primera petición a un área nueva puede
+        // tardar bastante más que las siguientes.
+
+        // Reutiliza el bbox actualmente seleccionado en el panel (bbox real o
+        // circunscrito si el modo es círculo) — no hace falta esperar a que
+        // haya datos consultados para poder previsualizar la geología.
+        function bboxParaGeologia() {
+            return modoArea === 'circulo' ? bboxCircunscrito(leerCirculo()) : leerBbox();
+        }
+
+        // Mismo criterio que sismos-cube.html línea ~543: lado mayor a 1024px,
+        // el otro proporcional al aspecto real del bbox.
+        function tamanioParaBbox(b) {
+            const lonSpan = Math.max(b.e - b.o, 0.01);
+            const latSpan = Math.max(b.n - b.s, 0.01);
+            let w, h;
+            if (lonSpan >= latSpan) { w = 1024; h = Math.max(256, Math.round(1024 * latSpan / lonSpan)); }
+            else { h = 1024; w = Math.max(256, Math.round(1024 * lonSpan / latSpan)); }
+            return { w, h };
+        }
+
+        // silencioso=true cuando se dispara como efecto secundario de una
+        // consulta de datos (aplicarResultado ya va a mostrar su propio mensaje
+        // de resultado — no queremos que "Cargando mapa geológico…" se lo pise).
+        // Los errores igual se muestran siempre: son información importante.
+        function refrescarCapaGeologicaSiActiva(silencioso) {
+            if (capaGeologicaActiva) actualizarCapaGeologica(silencioso);
+        }
+
+        async function actualizarCapaGeologica(silencioso) {
+            const b = bboxParaGeologia();
+            if ([b.n, b.s, b.e, b.o].some(v => !isFinite(v))) return; // todavía no hay área definida
+
+            if (geoAbortController) geoAbortController.abort();
+            const controller = new AbortController();
+            geoAbortController = controller;
+
+            const { w, h } = tamanioParaBbox(b);
+            const url = 'https://srvags.sgc.gov.co/arcgis/rest/services/Mapa_Geologico_Colombia/' +
+                'Mapa_Geologico_Colombia_V2023/MapServer/export' +
+                `?bbox=${b.o},${b.s},${b.e},${b.n}&bboxSR=4326&imageSR=4326&size=${w},${h}` +
+                `&format=png32&transparent=true&f=image`;
+
+            if (!silencioso) mensaje('Cargando mapa geológico del SGC… (puede tardar varios segundos la primera vez)', 'cargando');
+            try {
+                const res = await fetch(url, { signal: controller.signal });
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                const blob = await res.blob();
+                if (controller.signal.aborted) return; // una consulta más nueva ya la reemplazó
+                const objUrl = URL.createObjectURL(blob);
+
+                if (imagenGeologica) {
+                    map.removeLayer(imagenGeologica);
+                    if (imagenGeologica._urlObjeto) URL.revokeObjectURL(imagenGeologica._urlObjeto);
+                }
+                imagenGeologica = L.imageOverlay(objUrl, [[b.s, b.o], [b.n, b.e]], { opacity: 1, interactive: false });
+                imagenGeologica._urlObjeto = objUrl;
+                imagenGeologica.addTo(capaGeologica);
+                if (!silencioso) limpiarMensaje();
+            } catch (err) {
+                if (err.name === 'AbortError') return; // reemplazada, no es un error real
+                capaGeologicaActiva = false;
+                if (imagenGeologica) { capaGeologica.removeLayer(imagenGeologica); imagenGeologica = null; }
+                map.removeLayer(capaGeologica);
+                capaBaseAnterior.addTo(map); // dispara baselayerchange y sincroniza el control de capas
+                mensaje(
+                    'No se pudo cargar el mapa geológico del SGC en este momento (servicio caído o lento). ' +
+                    'Se volvió al mapa base anterior — probá de nuevo más tarde.',
+                    'aviso'
+                );
+            }
         }
 
         // Activa/desactiva el modo dibujo (nombre corto para no chocar con la variable)
@@ -778,6 +1071,65 @@
             return problema.tipo !== 'error';
         }
 
+        // --- Modo círculo: centro (lat, lon) + radio en km ---
+
+        function leerCirculo() {
+            return {
+                lat: parseFloat($('circLat').value),
+                lon: parseFloat($('circLon').value),
+                radioKm: parseFloat($('circRadio').value)
+            };
+        }
+
+        function escribirCirculo(c) {
+            $('circLat').value = c.lat.toFixed(2);
+            $('circLon').value = c.lon.toFixed(2);
+            $('circRadio').value = Math.round(c.radioKm);
+        }
+
+        function revisarCirculo(c) {
+            if (![c.lat, c.lon, c.radioKm].every(isFinite)) {
+                return { texto: 'Faltan datos: completá el centro (lat, lon) y el radio en km.', tipo: 'error' };
+            }
+            if (c.lat < -90 || c.lat > 90) return { texto: 'La latitud debe estar entre -90 y 90.', tipo: 'error' };
+            if (c.lon < -180 || c.lon > 180) return { texto: 'La longitud debe estar entre -180 y 180.', tipo: 'error' };
+            if (c.radioKm <= 0) return { texto: 'El radio debe ser mayor que 0 km.', tipo: 'error' };
+            if (c.radioKm > 2000) {
+                return {
+                    texto: `Radio muy grande (${c.radioKm.toFixed(0)} km). La consulta puede devolver miles de eventos ` +
+                           `(recordá el tope de 20.000 de USGS) y tardar.`,
+                    tipo: 'aviso'
+                };
+            }
+            return null;
+        }
+
+        // Bbox cuadrado que circunscribe el círculo — solo para las dimensiones
+        // de la caja 3D y para pedirle imagen al servicio geológico (que solo
+        // acepta bbox rectangular). Los eventos reales ya vienen filtrados al
+        // círculo real por la API, así que las esquinas quedan sin esferas.
+        function bboxCircunscrito(c) {
+            const kmLat = 111.32, kmLon = 111.32 * Math.cos(c.lat * Math.PI / 180);
+            const dLat = c.radioKm / kmLat;
+            const dLon = c.radioKm / Math.max(Math.abs(kmLon), 1);
+            return {
+                n: Math.min(90, c.lat + dLat), s: Math.max(-90, c.lat - dLat),
+                e: Math.min(180, c.lon + dLon), o: Math.max(-180, c.lon - dLon)
+            };
+        }
+
+        // Dispatch genérico según el modo de área activo (rectángulo o círculo).
+        function revisarArea() {
+            return modoArea === 'circulo' ? revisarCirculo(leerCirculo()) : revisarBbox(leerBbox());
+        }
+
+        function validarArea(silencioso) {
+            const problema = revisarArea();
+            if (!problema) { if (!silencioso) limpiarMensaje(); return true; }
+            mensaje(problema.texto, problema.tipo);
+            return problema.tipo !== 'error';
+        }
+
         function fuenteSeleccionada() {
             const el = document.querySelector('input[name="fuente"]:checked');
             return el ? el.value : 'usgs';
@@ -788,14 +1140,25 @@
             const F = FUENTES[fuenteId];
             let limite = Math.max(1, parseInt($('limite').value, 10) || F.defaultLimite || 500);
             if (F.maxLimite != null) limite = Math.min(limite, F.maxLimite);
-            return {
-                bbox: leerBbox(),
+
+            const base = {
+                modo: modoArea,
                 inicio: $('fechaIni').value,
                 fin: $('fechaFin').value,
                 minmag: parseInt($('magSlider').value, 10) / 10,
                 limite,
                 minsig: Math.max(0, parseInt($('sigThreshold').value, 10) || 600)
             };
+            if (modoArea === 'circulo') {
+                base.circulo = leerCirculo();
+                // El bbox circunscrito alimenta la proyección 3D y el mapa geológico
+                // (ninguno de los dos entiende círculos) aunque la consulta real a
+                // la API vaya con centro+radio.
+                base.bbox = bboxCircunscrito(base.circulo);
+            } else {
+                base.bbox = leerBbox();
+            }
+            return base;
         }
 
         // Actualiza el tope del campo "Límite de resultados" y su nota según la
@@ -829,10 +1192,25 @@
         // 5. Consulta a los catálogos y normalización
         // ============================================================
 
+        // 1° de arco ≈ 111.32 km — conversión angular uniforme (no depende de
+        // la latitud, a diferencia de convertir grados de longitud a km).
+        const KM_POR_GRADO = 111.32;
+
+        // Construye la porción geográfica de la URL según el modo (bbox o
+        // círculo), con la unidad de radio nativa de cada fuente:
+        //  - USGS acepta maxradiuskm directamente (extensión propia de USGS).
+        //  - EMSC/ISC solo aceptan maxradius en GRADOS (maxradiuskm da 400).
+        //  - SGC (caparrRadial) acepta el radio en km, igual que USGS.
         function urlUSGS(p, metodo, minsig) {
-            const b = p.bbox;
-            return `${USGS}${metodo}?format=geojson` +
-                `&minlatitude=${b.s}&maxlatitude=${b.n}&minlongitude=${b.o}&maxlongitude=${b.e}` +
+            let geo;
+            if (p.modo === 'circulo') {
+                const c = p.circulo;
+                geo = `&latitude=${c.lat}&longitude=${c.lon}&maxradiuskm=${c.radioKm}`;
+            } else {
+                const b = p.bbox;
+                geo = `&minlatitude=${b.s}&maxlatitude=${b.n}&minlongitude=${b.o}&maxlongitude=${b.e}`;
+            }
+            return `${USGS}${metodo}?format=geojson${geo}` +
                 `&starttime=${p.inicio}&endtime=${p.fin}&minmagnitude=${p.minmag}` +
                 (metodo === 'query' ? `&limit=${p.limite}` : '') +
                 (minsig != null ? `&minsig=${minsig}` : '');
@@ -841,20 +1219,32 @@
         // ISC no tiene CORS: se pasa por el proxy serverless /api/proxy-isc,
         // que arma la URL real de isc.ac.uk server-side y reenvía la respuesta.
         function urlISC(p, metodo) {
-            const b = p.bbox;
-            return `${PROXY_ISC}?endpoint=${metodo}` +
-                `&minlatitude=${b.s}&maxlatitude=${b.n}&minlongitude=${b.o}&maxlongitude=${b.e}` +
+            let geo;
+            if (p.modo === 'circulo') {
+                const c = p.circulo;
+                const radioGrados = c.radioKm / KM_POR_GRADO;
+                geo = `&latitude=${c.lat}&longitude=${c.lon}&maxradius=${radioGrados}`;
+            } else {
+                const b = p.bbox;
+                geo = `&minlatitude=${b.s}&maxlatitude=${b.n}&minlongitude=${b.o}&maxlongitude=${b.e}`;
+            }
+            return `${PROXY_ISC}?endpoint=${metodo}${geo}` +
                 `&starttime=${p.inicio}&endtime=${p.fin}&minmagnitude=${p.minmag}` +
                 (metodo === 'query' ? `&limit=${p.limite}` : '');
         }
 
         // SGC: ruta posicional (no query params), orden fijo ya verificado con curl.
-        // latMin/latMax/lonMin/lonMax/profMin/profMax/magMin/magMax/fechaIniMs/fechaFinMs
+        // Bbox: latMin/latMax/lonMin/lonMax/profMin/profMax/magMin/magMax/fechaIniMs/fechaFinMs
+        // Radial: latCentro/lonCentro/radioKm/profMin/profMax/magMin/magMax/fechaIniMs/fechaFinMs
         function urlSGC(p) {
-            const b = p.bbox;
             const fechaIniMs = new Date(p.inicio + 'T00:00:00Z').getTime();
             const fechaFinMs = new Date(p.fin + 'T23:59:59Z').getTime();
             const profMin = 0, profMax = 40000, magMax = 1000;
+            if (p.modo === 'circulo') {
+                const c = p.circulo;
+                return `${SGC_CAPARR}Radial/${c.lat}/${c.lon}/${c.radioKm}/${profMin}/${profMax}/${p.minmag}/${magMax}/${fechaIniMs}/${fechaFinMs}`;
+            }
+            const b = p.bbox;
             return `${SGC_CAPARR}/${b.s}/${b.n}/${b.o}/${b.e}/${profMin}/${profMax}/${p.minmag}/${magMax}/${fechaIniMs}/${fechaFinMs}`;
         }
 
@@ -1004,7 +1394,7 @@
         async function consultar() {
             if (consultando) return;
 
-            const problema = revisarBbox(leerBbox());
+            const problema = revisarArea();
             if (problema && problema.tipo === 'error') {
                 mensaje(problema.texto, 'error');   // no se llama a la API
                 return;
@@ -1050,11 +1440,27 @@
         // 6. Aplicar el resultado: reconstruye TODO lo dependiente de los datos
         // ============================================================
 
+        // Encuadra el mapa y dibuja el área consultada, respetando el modo
+        // (rectángulo o círculo) — en modo círculo NO se dibuja un rectángulo,
+        // se conserva el círculo real (fitBounds acepta directo circulo.getBounds()).
+        function encuadrarYPintarArea(p) {
+            if (p.modo === 'circulo') {
+                const c = p.circulo;
+                pintarCirculo(L.latLng(c.lat, c.lon), c.radioKm * 1000);
+                if (circuloDibujo) map.fitBounds(circuloDibujo.getBounds(), { padding: [12, 12] });
+            } else {
+                map.fitBounds(bboxALatLngBounds(p.bbox), { padding: [12, 12] });
+                pintarRectangulo(bboxALatLngBounds(p.bbox));
+            }
+        }
+
         function aplicarResultado(norm, p, fuente, total, notas, opciones) {
             opciones = opciones || {};
             // Estado nuevo, sin arrastrar nada de la consulta anterior.
             datos = {
-                eventos: norm.eventos, bbox: p.bbox, fuente,
+                eventos: norm.eventos, bbox: p.bbox,
+                modo: p.modo, circulo: p.circulo || null,
+                fuente,
                 fuenteId: opciones.fuenteId || null,
                 urlConsulta: opciones.urlConsulta || null,
                 total,
@@ -1066,9 +1472,8 @@
             limpiarMarcadores();
             limpiarEscena();
 
-            const b = p.bbox;
-            map.fitBounds(bboxALatLngBounds(b), { padding: [12, 12] });
-            pintarRectangulo(bboxALatLngBounds(b));
+            encuadrarYPintarArea(p);
+            refrescarCapaGeologicaSiActiva(true);
 
             if (!norm.eventos.length) {
                 visibles = 0;
@@ -1450,6 +1855,12 @@
                     generado: new Date().toISOString(),
                     fuente: datos.fuente,
                     endpoint: datos.urlConsulta,
+                    // area: refleja el modo real usado (círculo o rectángulo). bbox
+                    // se mantiene siempre por compatibilidad — es el circunscrito
+                    // cuando el modo fue círculo, no un recorte real de los eventos.
+                    area: datos.modo === 'circulo'
+                        ? { tipo: 'circulo', centro: { lat: datos.circulo.lat, lon: datos.circulo.lon }, radio_km: datos.circulo.radioKm }
+                        : { tipo: 'rectangulo', bbox: { norte: b.n, sur: b.s, este: b.e, oeste: b.o } },
                     bbox: { norte: b.n, sur: b.s, este: b.e, oeste: b.o },
                     rango_fechas: { desde: datos.params.inicio, hasta: datos.params.fin },
                     magnitud_minima: datos.params.minmag,
@@ -1489,13 +1900,19 @@
         function guardarPreferencias(p, fuenteId) {
             try {
                 localStorage.setItem(CLAVE_LS, JSON.stringify({
-                    bbox: p.bbox, inicio: p.inicio, fin: p.fin,
+                    modo: p.modo,
+                    bbox: p.modo === 'circulo' ? null : p.bbox,
+                    circulo: p.modo === 'circulo' ? p.circulo : null,
+                    inicio: p.inicio, fin: p.fin,
                     minmag: p.minmag, limite: p.limite,
                     fuenteId, minsig: p.minsig
                 }));
             } catch (e) { /* modo privado o storage lleno: no es crítico */ }
         }
 
+        // Devuelve true si había una consulta guardada de una sesión anterior
+        // (área real, no el placeholder vacío) — se usa para decidir si el
+        // mapa arranca centrado en esa área o mundial (map.fitWorld()).
         function cargarPreferencias() {
             const hoy = new Date();
             const haceUnAnio = new Date(hoy.getTime());
@@ -1507,8 +1924,15 @@
                 if (raw) guardado = JSON.parse(raw);
             } catch (e) { guardado = null; }
 
-            const bbox = (guardado && guardado.bbox) || { n: 6, s: 3, e: -75.5, o: -78 };
-            escribirBbox(bbox);
+            const huboGuardado = !!(guardado && (guardado.bbox || guardado.circulo));
+
+            modoArea = (guardado && guardado.modo) || 'rect';
+            // Primera visita (nada guardado): los campos de área quedan vacíos
+            // (solo placeholder) — el mapa arranca mundial, no en Colombia. Si
+            // había una consulta guardada, se restaura igual que antes.
+            if (guardado && guardado.bbox) escribirBbox(guardado.bbox);
+            if (guardado && guardado.circulo) escribirCirculo(guardado.circulo);
+
             $('fechaIni').value = (guardado && guardado.inicio) || isoDia(haceUnAnio);
             $('fechaFin').value = (guardado && guardado.fin) || isoDia(hoy);
             $('magSlider').value = Math.round(((guardado && guardado.minmag) || 2.5) * 10);
@@ -1520,6 +1944,8 @@
             $('sigThreshold').value = (guardado && guardado.minsig) || 600;
             actualizarLimiteUI();
             if (guardado && guardado.limite) $('limite').value = guardado.limite;
+
+            return huboGuardado;
         }
 
         // ============================================================
@@ -1544,6 +1970,27 @@
                     if ([b.n, b.s, b.e, b.o].every(isFinite) && b.n > b.s && b.e > b.o) {
                         map.fitBounds(bboxALatLngBounds(b), { padding: [12, 12] });
                     }
+                    refrescarCapaGeologicaSiActiva();
+                });
+            });
+
+            $('btnModoRect').addEventListener('click', () => setModoArea('rect'));
+            $('btnModoCirculo').addEventListener('click', () => setModoArea('circulo'));
+
+            ['circLat', 'circLon', 'circRadio'].forEach(id => {
+                $(id).addEventListener('input', () => {
+                    const c = leerCirculo();
+                    if ([c.lat, c.lon, c.radioKm].every(isFinite) && c.radioKm > 0) {
+                        pintarCirculo(L.latLng(c.lat, c.lon), c.radioKm * 1000);
+                    }
+                });
+                $(id).addEventListener('change', () => {
+                    validarArea(false);
+                    const c = leerCirculo();
+                    if ([c.lat, c.lon, c.radioKm].every(isFinite) && c.radioKm > 0 && circuloDibujo) {
+                        map.fitBounds(circuloDibujo.getBounds(), { padding: [12, 12] });
+                    }
+                    refrescarCapaGeologicaSiActiva();
                 });
             });
 
@@ -1589,16 +2036,26 @@
         }
 
         document.addEventListener('DOMContentLoaded', () => {
-            cargarPreferencias();
+            const huboGuardado = cargarPreferencias();
             initMap();
             init3D();
             conectarControles();
-            pintarRectangulo(bboxALatLngBounds(leerBbox()));
+            setModoArea(modoArea);
             actualizarPanel();
             setTimeout(() => {
                 map.invalidateSize();
-                const b = bboxALatLngBounds(leerBbox());
-                if (b) map.fitBounds(b, { padding: [12, 12] });
+                if (huboGuardado) {
+                    // Sesión anterior: se restaura el área que el usuario ya tenía.
+                    if (modoArea === 'circulo' && circuloDibujo) {
+                        map.fitBounds(circuloDibujo.getBounds(), { padding: [12, 12] });
+                    } else {
+                        const b = bboxALatLngBounds(leerBbox());
+                        if (b) map.fitBounds(b, { padding: [12, 12] });
+                    }
+                } else {
+                    // Primera visita: punto de entrada mundial, sin área preseleccionada.
+                    map.fitWorld();
+                }
                 redimensionar3D();
             }, 200);
         });

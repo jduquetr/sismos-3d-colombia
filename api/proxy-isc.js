@@ -7,9 +7,11 @@
 // porque es servidor a servidor) y devuelve la respuesta tal cual al cliente,
 // agregando las cabeceras CORS que sí necesita el propio front del sitio.
 //
-// Parámetros esperados (los mismos que ya arma el cliente para USGS/EMSC):
+// Parámetros esperados (los mismos que ya arma el cliente para USGS):
 //   endpoint       'query' o 'count' (default 'query')
-//   minlatitude, maxlatitude, minlongitude, maxlongitude
+//   Modo bbox:    minlatitude, maxlatitude, minlongitude, maxlongitude
+//   Modo círculo: latitude, longitude, maxradius (en GRADOS — ISC no admite
+//                 maxradiuskm, probado: error 400 "not a valid FDSN option")
 //   starttime, endtime
 //   minmagnitude
 //   limit          (solo aplica a 'query')
@@ -46,6 +48,7 @@ module.exports = async (req, res) => {
     // format=text: ISC no soporta geojson en este método (verificado en vivo).
     params.set('format', 'text');
     for (const clave of ['minlatitude', 'maxlatitude', 'minlongitude', 'maxlongitude',
+                          'latitude', 'longitude', 'maxradius',
                           'starttime', 'endtime', 'minmagnitude']) {
         if (query[clave] != null && query[clave] !== '') params.set(clave, String(query[clave]));
     }
