@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="es">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Explorador Sísmico por Área — Consulta en Vivo</title>
+    <title>Seismic Area Explorer — Live Query</title>
     <link rel="icon" type="image/png" href="favicon.png">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -180,11 +180,11 @@
 <body>
     <div id="app">
         <header id="topbar">
-            <h1>Explorador Sísmico</h1>
-            <span class="sub">Consulta en vivo · USGS · ISC · SGC</span>
+            <h1>Seismic Explorer</h1>
+            <span class="sub">Live query · USGS · ISC · SGC</span>
             <div class="spacer"></div>
-            <div class="seg" id="segPantalla" role="group" aria-label="Vista">
-                <button type="button" id="btnVistaArea" aria-pressed="true">🗺️ Mapa</button>
+            <div class="seg" id="segPantalla" role="group" aria-label="View">
+                <button type="button" id="btnVistaArea" aria-pressed="true">🗺️ Map</button>
                 <button type="button" id="btnVistaVisor" aria-pressed="false">🌐 3D</button>
             </div>
         </header>
@@ -195,16 +195,16 @@
             </div>
             <div id="pantallaVisor" hidden>
                 <div id="canvas3d">
-                    <div class="canvas-hint">Arrastrar para rotar · rueda para acercar</div>
-                    <div class="canvas-vacio" id="canvasVacio">Definí un área y consultá el catálogo para ver los sismos en 3D</div>
+                    <div class="canvas-hint">Drag to rotate · scroll to zoom</div>
+                    <div class="canvas-vacio" id="canvasVacio">Define an area and query the catalog to see the earthquakes in 3D</div>
                 </div>
             </div>
         </div>
 
         <div id="timeWrap">
-            <div class="timeline-header">⏱️ Línea de Tiempo</div>
+            <div class="timeline-header">⏱️ Timeline</div>
             <div class="timeline-controls">
-                <button class="btn secundario" id="btnPlay" type="button">▶ Reproducir</button>
+                <button class="btn secundario" id="btnPlay" type="button">▶ Play</button>
                 <div class="velocidad-selector" id="velocidadSelector">
                     <button class="btn secundario vel-btn" data-vel="0.25" type="button">0.25×</button>
                     <button class="btn secundario vel-btn" data-vel="0.5" type="button">0.5×</button>
@@ -221,40 +221,40 @@
         </div>
 
         <aside id="panel">
-            <div class="panel-title">⚙️ Consulta y Controles</div>
+            <div class="panel-title">⚙️ Query & Controls</div>
 
             <div class="tabs">
-                <button class="tab-btn activo" data-tab="area" type="button">Área</button>
-                <button class="tab-btn" data-tab="evento" type="button">Evento especial</button>
-                <button class="tab-btn" data-tab="vista" type="button">Vista</button>
+                <button class="tab-btn activo" data-tab="area" type="button">Area</button>
+                <button class="tab-btn" data-tab="evento" type="button">Special Event</button>
+                <button class="tab-btn" data-tab="vista" type="button">View</button>
             </div>
 
-            <!-- ============ PESTAÑA 1: ÁREA (capa de fondo) ============ -->
+            <!-- ============ TAB 1: AREA (background layer) ============ -->
             <div class="tab-panel" id="tabArea">
                 <div class="control-group">
-                    <div class="group-title">Área geográfica</div>
+                    <div class="group-title">Geographic area</div>
                     <div class="modo-area-selector">
-                        <button class="btn secundario activo" id="btnModoRect" type="button">▭ Rectángulo</button>
-                        <button class="btn secundario" id="btnModoCirculo" type="button">◯ Círculo</button>
+                        <button class="btn secundario activo" id="btnModoRect" type="button">▭ Rectangle</button>
+                        <button class="btn secundario" id="btnModoCirculo" type="button">◯ Circle</button>
                     </div>
 
                     <div id="camposRect">
                         <div class="bbox-grid">
                             <div class="campo">
-                                <label for="bboxN">Norte</label>
-                                <input type="number" id="bboxN" step="0.1" min="-90" max="90" placeholder="ej. 10">
+                                <label for="bboxN">North</label>
+                                <input type="number" id="bboxN" step="0.1" min="-90" max="90" placeholder="e.g. 10">
                             </div>
                             <div class="campo">
-                                <label for="bboxS">Sur</label>
-                                <input type="number" id="bboxS" step="0.1" min="-90" max="90" placeholder="ej. 0">
+                                <label for="bboxS">South</label>
+                                <input type="number" id="bboxS" step="0.1" min="-90" max="90" placeholder="e.g. 0">
                             </div>
                             <div class="campo">
-                                <label for="bboxO">Oeste</label>
-                                <input type="number" id="bboxO" step="0.1" min="-180" max="180" placeholder="ej. -80">
+                                <label for="bboxO">West</label>
+                                <input type="number" id="bboxO" step="0.1" min="-180" max="180" placeholder="e.g. -80">
                             </div>
                             <div class="campo">
-                                <label for="bboxE">Este</label>
-                                <input type="number" id="bboxE" step="0.1" min="-180" max="180" placeholder="ej. -70">
+                                <label for="bboxE">East</label>
+                                <input type="number" id="bboxE" step="0.1" min="-180" max="180" placeholder="e.g. -70">
                             </div>
                         </div>
                     </div>
@@ -262,129 +262,129 @@
                     <div id="camposCirculo" hidden>
                         <div class="bbox-grid">
                             <div class="campo">
-                                <label for="circLat">Centro lat</label>
-                                <input type="number" id="circLat" step="0.1" min="-90" max="90" placeholder="ej. 4.5">
+                                <label for="circLat">Center lat</label>
+                                <input type="number" id="circLat" step="0.1" min="-90" max="90" placeholder="e.g. 4.5">
                             </div>
                             <div class="campo">
-                                <label for="circLon">Centro lon</label>
-                                <input type="number" id="circLon" step="0.1" min="-180" max="180" placeholder="ej. -76">
+                                <label for="circLon">Center lon</label>
+                                <input type="number" id="circLon" step="0.1" min="-180" max="180" placeholder="e.g. -76">
                             </div>
                         </div>
                         <div class="campo" style="margin-top:6px">
-                            <label for="circRadio">Radio (km)</label>
+                            <label for="circRadio">Radius (km)</label>
                             <input type="number" id="circRadio" min="1" step="10" value="500">
                         </div>
                     </div>
 
-                    <button class="btn secundario" id="btnDibujar">✏️ Dibujar en el mapa</button>
-                    <div class="nota" id="notaArea">Arrastrá sobre el mapa para definir el área, o escribí las coordenadas.</div>
+                    <button class="btn secundario" id="btnDibujar">✏️ Draw on map</button>
+                    <div class="nota" id="notaArea">Drag on the map to define the area, or enter the coordinates.</div>
                 </div>
 
                 <div class="control-group">
-                    <div class="group-title">Fuente del catálogo</div>
+                    <div class="group-title">Catalog source</div>
                     <div class="fuente-selector" id="fuenteSelector">
                         <label class="fuente-opcion">
                             <input type="radio" name="fuente" value="usgs" checked>
                             <span class="fuente-nombre">USGS</span>
-                            <div class="nota">Cobertura mundial, cualquier fecha de ocurrencia. La opción más general y confiable.</div>
+                            <div class="nota">Worldwide coverage, any occurrence date. The most general and reliable option.</div>
                         </label>
                         <label class="fuente-opcion">
                             <input type="radio" name="fuente" value="usgs_sig">
-                            <span class="fuente-nombre">USGS Significativos</span>
-                            <div class="nota">Solo eventos de alto impacto (humano o material) en cualquier parte del mundo y cualquier fecha — usa el mismo criterio que la página oficial de sismos significativos de USGS.</div>
+                            <span class="fuente-nombre">USGS Significant</span>
+                            <div class="nota">Only high-impact events (human or material) anywhere in the world and any date — uses the same criteria as USGS's official significant earthquakes page.</div>
                             <div class="campo fuente-extra" id="sigExtra" hidden style="margin-top:6px">
-                                <label for="sigThreshold">Umbral de significancia (sig ≥)</label>
+                                <label for="sigThreshold">Significance threshold (sig ≥)</label>
                                 <input type="number" id="sigThreshold" min="0" max="2000" step="10" value="600">
                             </div>
                         </label>
                         <label class="fuente-opcion">
                             <input type="radio" name="fuente" value="isc">
                             <span class="fuente-nombre">ISC Bulletin</span>
-                            <div class="nota">El catálogo de investigación más completo del mundo (agrega cientos de redes sismológicas locales). Los eventos muy recientes pueden tardar en consolidarse. Puede ser más lento que las otras fuentes. Es el boletín general — no el catálogo curado ISC-GEM, que no está disponible por esta API.</div>
+                            <div class="nota">The most complete research catalog in the world (aggregates hundreds of local seismological networks). Very recent events can take time to consolidate. It can be slower than the other sources. It's the general bulletin — not the curated ISC-GEM catalog, which isn't available through this API.</div>
                         </label>
                         <label class="fuente-opcion">
                             <input type="radio" name="fuente" value="sgc">
-                            <span class="fuente-nombre">SGC Histórico (Colombia/Centroamérica)</span>
-                            <div class="nota">Catálogo histórico integrado de Colombia y el borde con Centroamérica (SGC + ISC + NEIC + otras redes), desde 1610 <strong>hasta finales de 2020</strong>. La mejor fuente para investigación histórica en esta región, pero no incluye sismicidad reciente ni actual.</div>
+                            <span class="fuente-nombre">SGC Historical (Colombia/Central America)</span>
+                            <div class="nota">Integrated historical catalog of Colombia and the border with Central America (SGC + ISC + NEIC + other networks), from 1610 <strong>through late 2020</strong>. The best source for historical research in this region, but it doesn't include recent or current seismicity.</div>
                         </label>
                     </div>
                 </div>
 
                 <div class="control-group">
-                    <div class="group-title">Parámetros de consulta</div>
+                    <div class="group-title">Query parameters</div>
                     <div class="bbox-grid">
                         <div class="campo">
-                            <label for="fechaIni">Desde</label>
+                            <label for="fechaIni">From</label>
                             <input type="date" id="fechaIni">
                         </div>
                         <div class="campo">
-                            <label for="fechaFin">Hasta</label>
+                            <label for="fechaFin">To</label>
                             <input type="date" id="fechaFin">
                         </div>
                     </div>
                     <div class="slider-group" style="margin-top:8px">
                         <div class="slider-label">
-                            <span>Magnitud mínima</span>
+                            <span>Minimum magnitude</span>
                             <span class="slider-value" id="magValue">M2.5</span>
                         </div>
                         <input type="range" id="magSlider" min="0" max="70" value="25">
                     </div>
                     <div class="campo" style="margin-top:8px">
-                        <label for="limite">Límite de resultados</label>
+                        <label for="limite">Result limit</label>
                         <input type="number" id="limite" min="1" max="20000" step="100" value="500">
                     </div>
                     <div class="nota" id="notaLimite"></div>
                 </div>
 
                 <div class="control-group">
-                    <button class="btn" id="btnConsultar">🔍 Consultar catálogo (capa de fondo)</button>
+                    <button class="btn" id="btnConsultar">🔍 Query catalog (background layer)</button>
                     <div class="msg" id="mensaje"></div>
                 </div>
             </div>
 
-            <!-- ============ PESTAÑA 2: EVENTO ESPECIAL ============ -->
+            <!-- ============ TAB 2: SPECIAL EVENT ============ -->
             <div class="tab-panel" id="tabEvento" hidden>
                 <div class="control-group">
-                    <div class="group-title">Evento especial (capa superpuesta)</div>
-                    <div class="nota">Segunda capa de datos opcional, independiente de la capa de fondo — se dibuja al mismo tiempo, con su propio degradado de color.</div>
+                    <div class="group-title">Special event (overlay layer)</div>
+                    <div class="nota">Optional second data layer, independent from the background layer — it's drawn at the same time, with its own color gradient.</div>
                 </div>
 
                 <div class="control-group">
-                    <div class="group-title">Origen de los datos</div>
+                    <div class="group-title">Data source</div>
                     <div class="modo-area-selector">
-                        <button class="btn secundario activo" id="btnOrigenCatalogo" type="button">Catálogo</button>
-                        <button class="btn secundario" id="btnOrigenArchivo" type="button">Archivo GeoJSON</button>
+                        <button class="btn secundario activo" id="btnOrigenCatalogo" type="button">Catalog</button>
+                        <button class="btn secundario" id="btnOrigenArchivo" type="button">GeoJSON file</button>
                     </div>
                 </div>
 
                 <div id="origenCatalogo">
                     <div class="control-group">
-                        <div class="group-title">Área de esta capa</div>
+                        <div class="group-title">Area for this layer</div>
                         <div class="modo-area-selector">
-                            <button class="btn secundario activo" id="btnModoRectEv" type="button">▭ Rectángulo</button>
-                            <button class="btn secundario" id="btnModoCirculoEv" type="button">◯ Círculo</button>
+                            <button class="btn secundario activo" id="btnModoRectEv" type="button">▭ Rectangle</button>
+                            <button class="btn secundario" id="btnModoCirculoEv" type="button">◯ Circle</button>
                         </div>
                         <div id="camposRectEv">
                             <div class="bbox-grid">
-                                <div class="campo"><label for="bboxNEv">Norte</label><input type="number" id="bboxNEv" step="0.1" min="-90" max="90"></div>
-                                <div class="campo"><label for="bboxSEv">Sur</label><input type="number" id="bboxSEv" step="0.1" min="-90" max="90"></div>
-                                <div class="campo"><label for="bboxOEv">Oeste</label><input type="number" id="bboxOEv" step="0.1" min="-180" max="180"></div>
-                                <div class="campo"><label for="bboxEEv">Este</label><input type="number" id="bboxEEv" step="0.1" min="-180" max="180"></div>
+                                <div class="campo"><label for="bboxNEv">North</label><input type="number" id="bboxNEv" step="0.1" min="-90" max="90"></div>
+                                <div class="campo"><label for="bboxSEv">South</label><input type="number" id="bboxSEv" step="0.1" min="-90" max="90"></div>
+                                <div class="campo"><label for="bboxOEv">West</label><input type="number" id="bboxOEv" step="0.1" min="-180" max="180"></div>
+                                <div class="campo"><label for="bboxEEv">East</label><input type="number" id="bboxEEv" step="0.1" min="-180" max="180"></div>
                             </div>
                         </div>
                         <div id="camposCirculoEv" hidden>
                             <div class="bbox-grid">
-                                <div class="campo"><label for="circLatEv">Centro lat</label><input type="number" id="circLatEv" step="0.1" min="-90" max="90"></div>
-                                <div class="campo"><label for="circLonEv">Centro lon</label><input type="number" id="circLonEv" step="0.1" min="-180" max="180"></div>
+                                <div class="campo"><label for="circLatEv">Center lat</label><input type="number" id="circLatEv" step="0.1" min="-90" max="90"></div>
+                                <div class="campo"><label for="circLonEv">Center lon</label><input type="number" id="circLonEv" step="0.1" min="-180" max="180"></div>
                             </div>
-                            <div class="campo" style="margin-top:6px"><label for="circRadioEv">Radio (km)</label><input type="number" id="circRadioEv" min="1" step="10" value="200"></div>
+                            <div class="campo" style="margin-top:6px"><label for="circRadioEv">Radius (km)</label><input type="number" id="circRadioEv" min="1" step="10" value="200"></div>
                         </div>
-                        <button class="btn secundario" id="btnCopiarAreaFondo" type="button">⧉ Usar la misma área que la capa de Fondo</button>
-                        <div class="nota">Esta capa no se dibuja arrastrando en el mapa — escribí las coordenadas o copiá el área de la capa de fondo.</div>
+                        <button class="btn secundario" id="btnCopiarAreaFondo" type="button">⧉ Use the same area as the Background layer</button>
+                        <div class="nota">This layer isn't drawn by dragging on the map — enter the coordinates or copy the background layer's area.</div>
                     </div>
 
                     <div class="control-group">
-                        <div class="group-title">Fuente del catálogo</div>
+                        <div class="group-title">Catalog source</div>
                         <div class="fuente-selector" id="fuenteSelectorEvento">
                             <label class="fuente-opcion">
                                 <input type="radio" name="fuenteEvento" value="usgs" checked>
@@ -394,7 +394,7 @@
                                 <input type="radio" name="fuenteEvento" value="usgs_sig">
                                 <span class="fuente-nombre">USGS Significativos</span>
                                 <div class="campo fuente-extra" id="sigExtraEv" hidden style="margin-top:6px">
-                                    <label for="sigThresholdEv">Umbral de significancia (sig ≥)</label>
+                                    <label for="sigThresholdEv">Significance threshold (sig ≥)</label>
                                     <input type="number" id="sigThresholdEv" min="0" max="2000" step="10" value="600">
                                 </div>
                             </label>
@@ -404,108 +404,108 @@
                             </label>
                             <label class="fuente-opcion">
                                 <input type="radio" name="fuenteEvento" value="sgc">
-                                <span class="fuente-nombre">SGC Histórico</span>
-                                <div class="nota">No sirve para eventos recientes (sin datos después de 2020).</div>
+                                <span class="fuente-nombre">SGC Historical</span>
+                                <div class="nota">Not useful for recent events (no data after 2020).</div>
                             </label>
                         </div>
                     </div>
 
                     <div class="control-group">
-                        <div class="group-title">Parámetros de consulta</div>
+                        <div class="group-title">Query parameters</div>
                         <div class="bbox-grid">
                             <div class="campo"><label for="fechaIniEv">Desde</label><input type="date" id="fechaIniEv"></div>
                             <div class="campo"><label for="fechaFinEv">Hasta</label><input type="date" id="fechaFinEv"></div>
                         </div>
                         <div class="slider-group" style="margin-top:8px">
-                            <div class="slider-label"><span>Magnitud mínima</span><span class="slider-value" id="magValueEv">M2.5</span></div>
+                            <div class="slider-label"><span>Minimum magnitude</span><span class="slider-value" id="magValueEv">M2.5</span></div>
                             <input type="range" id="magSliderEv" min="0" max="70" value="25">
                         </div>
                         <div class="campo" style="margin-top:8px">
-                            <label for="limiteEv">Límite de resultados</label>
+                            <label for="limiteEv">Result limit</label>
                             <input type="number" id="limiteEv" min="1" max="20000" step="100" value="500">
                         </div>
                         <div class="nota" id="notaLimiteEv"></div>
                     </div>
 
                     <div class="control-group">
-                        <button class="btn" id="btnConsultarEvento">🔍 Cargar evento especial (catálogo)</button>
+                        <button class="btn" id="btnConsultarEvento">🔍 Load special event (catalog)</button>
                     </div>
                 </div>
 
                 <div id="origenArchivo" hidden>
                     <div class="control-group">
-                        <div class="group-title">Archivo GeoJSON propio</div>
+                        <div class="group-title">Your own GeoJSON file</div>
                         <input type="file" id="archivoGeoJSON" accept=".geojson,.json">
-                        <div class="nota">Se acepta cualquier FeatureCollection de puntos — se prueban varios nombres de campo comunes para profundidad, magnitud y fecha (ver normalizarGeoJSONPropio).</div>
+                        <div class="nota">Any point FeatureCollection is accepted — several common field names are tried for depth, magnitude and date (see normalizarGeoJSONPropio).</div>
                     </div>
                 </div>
 
                 <div class="control-group">
-                    <div class="group-title">Color según profundidad (esta capa)</div>
+                    <div class="group-title">Color by depth (this layer)</div>
                     <div class="bbox-grid">
-                        <div class="campo"><label for="colorInicialEvento">Superficial</label><input type="color" id="colorInicialEvento" value="#ffeb3b"></div>
-                        <div class="campo"><label for="colorFinalEvento">Profundo</label><input type="color" id="colorFinalEvento" value="#b71c1c"></div>
+                        <div class="campo"><label for="colorInicialEvento">Shallow</label><input type="color" id="colorInicialEvento" value="#ffeb3b"></div>
+                        <div class="campo"><label for="colorFinalEvento">Deep</label><input type="color" id="colorFinalEvento" value="#b71c1c"></div>
                     </div>
-                    <div class="nota">Degradado propio de esta capa — no comparte escala con la capa de fondo.</div>
+                    <div class="nota">This layer's own gradient — it doesn't share a scale with the background layer.</div>
                 </div>
 
                 <div class="control-group">
-                    <button class="btn secundario" id="btnQuitarEvento" disabled>🗑️ Quitar capa de evento especial</button>
+                    <button class="btn secundario" id="btnQuitarEvento" disabled>🗑️ Remove special event layer</button>
                     <div class="msg" id="mensajeEvento"></div>
                 </div>
             </div>
 
-            <!-- ============ PESTAÑA 3: VISTA ============ -->
+            <!-- ============ TAB 3: VIEW ============ -->
             <div class="tab-panel" id="tabVista" hidden>
                 <div class="control-group">
-                    <div class="group-title">Capas Visibles</div>
+                    <div class="group-title">Visible layers</div>
                     <div class="checkbox-item">
                         <input type="checkbox" id="showEvents" checked>
-                        <label for="showEvents">Eventos 3D</label>
+                        <label for="showEvents">3D events</label>
                     </div>
                     <div class="checkbox-item">
                         <input type="checkbox" id="showMap" checked>
-                        <label for="showMap">Mapa 2D</label>
+                        <label for="showMap">2D map</label>
                     </div>
                     <div class="checkbox-item">
                         <input type="checkbox" id="showCaja" checked>
-                        <label for="showCaja">Caja y referencias</label>
+                        <label for="showCaja">Box & reference lines</label>
                     </div>
                     <div class="campo" style="margin-top:8px">
-                        <label for="mapaSuperiorSelector">Mapa en la cara superior</label>
+                        <label for="mapaSuperiorSelector">Top-face map</label>
                         <select id="mapaSuperiorSelector">
                             <option value="osm" selected>OpenStreetMap</option>
-                            <option value="hot">OSM Humanitario</option>
+                            <option value="hot">OSM Humanitarian</option>
                             <option value="topo">OpenTopoMap</option>
-                            <option value="claro">CARTO Claro</option>
-                            <option value="oscuro">CARTO Oscuro</option>
-                            <option value="geologico">Mapa Geológico (SGC)</option>
-                            <option value="ninguno">Ninguno (plano liso)</option>
+                            <option value="claro">CARTO Light</option>
+                            <option value="oscuro">CARTO Dark</option>
+                            <option value="geologico">Geological Map (SGC)</option>
+                            <option value="ninguno">None (flat plane)</option>
                         </select>
-                        <div class="nota">Se recorta con el área consultada y se actualiza sola cuando cambia. El mapa geológico solo tiene datos en Colombia/Centroamérica.</div>
+                        <div class="nota">It's cropped to the queried area and updates automatically when it changes. The geological map only has data for Colombia/Central America.</div>
                     </div>
                     <div class="slider-group">
                         <div class="slider-label">
-                            <span>Opacidad del mapa superior</span>
+                            <span>Top-map opacity</span>
                             <span class="slider-value" id="opacidadMapaSuperiorValue">100%</span>
                         </div>
                         <input type="range" id="opacidadMapaSuperiorSlider" min="0" max="100" value="100">
                     </div>
                     <div class="checkbox-item">
                         <input type="checkbox" id="showFondo" checked>
-                        <label for="showFondo">Capa de fondo</label>
+                        <label for="showFondo">Background layer</label>
                     </div>
                     <div class="checkbox-item">
                         <input type="checkbox" id="showEventoCapa" checked>
-                        <label for="showEventoCapa">Capa de evento especial</label>
+                        <label for="showEventoCapa">Special event layer</label>
                     </div>
                 </div>
 
                 <div class="control-group">
-                    <div class="group-title">Opacidad - Eventos 3D</div>
+                    <div class="group-title">Opacity - 3D events</div>
                     <div class="slider-group">
                         <div class="slider-label">
-                            <span>Opacidad</span>
+                            <span>Opacity</span>
                             <span class="slider-value" id="opacityValue">100%</span>
                         </div>
                         <input type="range" id="opacitySlider" min="0" max="100" value="100">
@@ -513,10 +513,10 @@
                 </div>
 
                 <div class="control-group">
-                    <div class="group-title">Tamaño - Esferas</div>
+                    <div class="group-title">Size - Spheres</div>
                     <div class="slider-group">
                         <div class="slider-label">
-                            <span>Escala</span>
+                            <span>Scale</span>
                             <span class="slider-value" id="sizeValue">100%</span>
                         </div>
                         <input type="range" id="sizeSlider" min="50" max="200" value="100">
@@ -524,10 +524,10 @@
                 </div>
 
                 <div class="control-group">
-                    <div class="group-title">Velocidad Rotación</div>
+                    <div class="group-title">Rotation speed</div>
                     <div class="slider-group">
                         <div class="slider-label">
-                            <span>Velocidad</span>
+                            <span>Speed</span>
                             <span class="slider-value" id="speedValue">0%</span>
                         </div>
                         <input type="range" id="speedSlider" min="0" max="200" value="0">
@@ -536,43 +536,43 @@
 
                 <div class="control-group">
                     <div class="info-box">
-                        <strong>Capa de fondo</strong><br>
-                        Fuente: <span id="infoFuente">—</span><br>
-                        Eventos: <span id="totalEvents">0</span> · Mostrando: <span id="visibleEventsFondo">0</span><br>
-                        Período: <span id="infoPeriodo">—</span><br>
+                        <strong>Background layer</strong><br>
+                        Source: <span id="infoFuente">—</span><br>
+                        Events: <span id="totalEvents">0</span> · Showing: <span id="visibleEventsFondo">0</span><br>
+                        Period: <span id="infoPeriodo">—</span><br>
                         Magnitudes: <span id="infoMag">—</span><br>
-                        Profundidades: <span id="infoProf">—</span>
+                        Depths: <span id="infoProf">—</span>
                     </div>
                     <div class="legend">
-                        <div class="legend-title">Escala de Profundidad — Fondo</div>
+                        <div class="legend-title">Depth scale — Background</div>
                         <div id="leyenda"></div>
                     </div>
 
                     <div class="info-box" id="infoBoxEvento" hidden style="margin-top:10px">
-                        <strong>Evento especial</strong><br>
-                        Fuente: <span id="infoFuenteEvento">—</span><br>
-                        Eventos: <span id="totalEventsEvento">0</span> · Mostrando: <span id="visibleEventsEvento">0</span><br>
-                        Período: <span id="infoPeriodoEvento">—</span><br>
+                        <strong>Special event</strong><br>
+                        Source: <span id="infoFuenteEvento">—</span><br>
+                        Events: <span id="totalEventsEvento">0</span> · Showing: <span id="visibleEventsEvento">0</span><br>
+                        Period: <span id="infoPeriodoEvento">—</span><br>
                         Magnitudes: <span id="infoMagEvento">—</span><br>
-                        Profundidades: <span id="infoProfEvento">—</span>
+                        Depths: <span id="infoProfEvento">—</span>
                     </div>
                     <div class="legend" id="legendEvento" hidden>
-                        <div class="legend-title">Escala de Profundidad — Evento especial</div>
+                        <div class="legend-title">Depth scale — Special event</div>
                         <div id="leyendaEvento"></div>
                     </div>
                 </div>
 
                 <div class="control-group">
-                    <div class="group-title">Exportar</div>
+                    <div class="group-title">Export</div>
                     <div class="campo">
-                        <label for="exportarQue">Qué exportar</label>
+                        <label for="exportarQue">What to export</label>
                         <select id="exportarQue">
-                            <option value="fondo">Capa de fondo</option>
-                            <option value="evento">Evento especial</option>
-                            <option value="ambas">Ambas (marcadas por capa)</option>
+                            <option value="fondo">Background layer</option>
+                            <option value="evento">Special event</option>
+                            <option value="ambas">Both (tagged by layer)</option>
                         </select>
                     </div>
-                    <button class="btn secundario" id="btnExportar" disabled style="margin-top:8px">⬇️ Exportar GeoJSON</button>
+                    <button class="btn secundario" id="btnExportar" disabled style="margin-top:8px">⬇️ Export GeoJSON</button>
                 </div>
             </div>
         </aside>
@@ -607,7 +607,7 @@
                 maxLimite: 20000, limiteConfigurable: true, defaultLimite: 500
             },
             usgs_sig: {
-                id: 'usgs_sig', label: 'USGS Significativos',
+                id: 'usgs_sig', label: 'USGS Significant',
                 maxLimite: 20000, limiteConfigurable: true, defaultLimite: 500
             },
             isc: {
@@ -616,7 +616,7 @@
                 maxLimite: 10000, limiteConfigurable: true, defaultLimite: 500
             },
             sgc: {
-                id: 'sgc', label: 'SGC Histórico',
+                id: 'sgc', label: 'SGC Historical',
                 // Esta API no tiene parámetro de límite/paginación.
                 maxLimite: null, limiteConfigurable: false, defaultLimite: null
             }
@@ -658,7 +658,7 @@
 
         const $ = (id) => document.getElementById(id);
 
-        const MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+        const MESES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
         const pad = (n) => String(n).padStart(2, '0');
 
         function fechaCorta(d) {
@@ -764,10 +764,10 @@
                 attribution: '© OpenStreetMap', maxZoom: 19
             });
             capaHOT = L.tileLayer('https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png', {
-                attribution: '© OpenStreetMap France (estilo Humanitario)', maxZoom: 19
+                attribution: '© OpenStreetMap France (Humanitarian style)', maxZoom: 19
             });
             capaTopo = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
-                attribution: '© OpenTopoMap (datos OSM / SRTM)', maxZoom: 17
+                attribution: '© OpenTopoMap (OSM / SRTM data)', maxZoom: 17
             });
             capaCartoClaro = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png', {
                 attribution: '© CARTO / OpenStreetMap', maxZoom: 19
@@ -785,11 +785,11 @@
 
             const capasBase = {
                 'OpenStreetMap': capaOSM,
-                'OSM Humanitario (HOT)': capaHOT,
+                'OSM Humanitarian (HOT)': capaHOT,
                 'OpenTopoMap': capaTopo,
-                'CARTO Claro (Positron)': capaCartoClaro,
-                'CARTO Oscuro (Dark Matter)': capaCartoOscuro,
-                'Mapa Geológico de Colombia (SGC)': capaGeologica
+                'CARTO Light (Positron)': capaCartoClaro,
+                'CARTO Dark (Dark Matter)': capaCartoOscuro,
+                'Geological Map of Colombia (SGC)': capaGeologica
             };
             L.control.layers(capasBase, null, { position: 'topright' }).addTo(map);
 
@@ -1126,7 +1126,7 @@
                 `?bbox=${b.o},${b.s},${b.e},${b.n}&bboxSR=4326&imageSR=4326&size=${w},${h}` +
                 `&format=png32&transparent=true&f=image`;
 
-            if (!silencioso) mensaje('Cargando mapa geológico del SGC… (puede tardar varios segundos la primera vez)', 'cargando');
+            if (!silencioso) mensaje('Loading the SGC geological map… (can take several seconds the first time)', 'cargando');
             try {
                 const res = await fetch(url, { signal: controller.signal });
                 if (!res.ok) throw new Error('HTTP ' + res.status);
@@ -1149,8 +1149,8 @@
                 map.removeLayer(capaGeologica);
                 capaBaseAnterior.addTo(map); // dispara baselayerchange y sincroniza el control de capas
                 mensaje(
-                    'No se pudo cargar el mapa geológico del SGC en este momento (servicio caído o lento). ' +
-                    'Se volvió al mapa base anterior — probá de nuevo más tarde.',
+                    'Could not load the SGC geological map right now (service down or slow). ' +
+                    'Reverted to the previous base map — try again later.',
                     'aviso'
                 );
             }
@@ -1160,7 +1160,7 @@
         function modoDibujo3(activar) {
             modoDibujo = activar;
             $('btnDibujar').classList.toggle('activo', activar);
-            $('btnDibujar').textContent = activar ? '✏️ Dibujando… (clic y arrastrar)' : '✏️ Dibujar en el mapa';
+            $('btnDibujar').textContent = activar ? '✏️ Drawing… (click and drag)' : '✏️ Draw on map';
             $('map').classList.toggle('dibujando', activar);
             if (activar) { map.dragging.disable(); map.boxZoom.disable(); }
             else { map.dragging.enable(); map.boxZoom.enable(); }
@@ -1187,7 +1187,7 @@
                 m.bindPopup(
                     `<strong>M ${ev.mag.toFixed(1)}</strong> · ${ev.prof.toFixed(1)} km<br>` +
                     `${fechaHora(ev.time)}<br>${ev.region || ''}` +
-                    (capaId === 'evento' ? '<br><em>Evento especial</em>' : '')
+                    (capaId === 'evento' ? '<br><em>Special event</em>' : '')
                 );
                 grupoCapa.addLayer(m);
                 render.marcadores.push(m);
@@ -1224,24 +1224,24 @@
         // Devuelve null si está todo bien, o {texto, tipo} si hay algo que decir.
         function revisarBbox(b) {
             if ([b.n, b.s, b.e, b.o].some(v => !isFinite(v))) {
-                return { texto: 'Faltan coordenadas: completá Norte, Sur, Este y Oeste.', tipo: 'error' };
+                return { texto: 'Missing coordinates: fill in North, South, East, and West.', tipo: 'error' };
             }
             if (b.n < -90 || b.n > 90 || b.s < -90 || b.s > 90) {
-                return { texto: 'Las latitudes deben estar entre -90 y 90.', tipo: 'error' };
+                return { texto: 'Latitudes must be between -90 and 90.', tipo: 'error' };
             }
             if (b.e < -180 || b.e > 180 || b.o < -180 || b.o > 180) {
-                return { texto: 'Las longitudes deben estar entre -180 y 180.', tipo: 'error' };
+                return { texto: 'Longitudes must be between -180 and 180.', tipo: 'error' };
             }
             if (b.n <= b.s) {
-                return { texto: `Norte (${b.n}) debe ser mayor que Sur (${b.s}).`, tipo: 'error' };
+                return { texto: `North (${b.n}) must be greater than South (${b.s}).`, tipo: 'error' };
             }
             if (b.e <= b.o) {
-                return { texto: `Este (${b.e}) debe ser mayor que Oeste (${b.o}).`, tipo: 'error' };
+                return { texto: `East (${b.e}) must be greater than West (${b.o}).`, tipo: 'error' };
             }
             if ((b.n - b.s) > AREA_GRANDE || (b.e - b.o) > AREA_GRANDE) {
                 return {
-                    texto: `Área muy grande (${(b.n - b.s).toFixed(0)}° × ${(b.e - b.o).toFixed(0)}°). ` +
-                           'La consulta puede devolver miles de eventos y tardar.',
+                    texto: `Area too large (${(b.n - b.s).toFixed(0)}° × ${(b.e - b.o).toFixed(0)}°). ` +
+                           'The query may return thousands of events and take a while.',
                     tipo: 'aviso'
                 };
             }
@@ -1274,15 +1274,15 @@
 
         function revisarCirculo(c) {
             if (![c.lat, c.lon, c.radioKm].every(isFinite)) {
-                return { texto: 'Faltan datos: completá el centro (lat, lon) y el radio en km.', tipo: 'error' };
+                return { texto: 'Missing data: fill in the center (lat, lon) and the radius in km.', tipo: 'error' };
             }
-            if (c.lat < -90 || c.lat > 90) return { texto: 'La latitud debe estar entre -90 y 90.', tipo: 'error' };
-            if (c.lon < -180 || c.lon > 180) return { texto: 'La longitud debe estar entre -180 y 180.', tipo: 'error' };
-            if (c.radioKm <= 0) return { texto: 'El radio debe ser mayor que 0 km.', tipo: 'error' };
+            if (c.lat < -90 || c.lat > 90) return { texto: 'Latitude must be between -90 and 90.', tipo: 'error' };
+            if (c.lon < -180 || c.lon > 180) return { texto: 'Longitude must be between -180 and 180.', tipo: 'error' };
+            if (c.radioKm <= 0) return { texto: 'The radius must be greater than 0 km.', tipo: 'error' };
             if (c.radioKm > 2000) {
                 return {
-                    texto: `Radio muy grande (${c.radioKm.toFixed(0)} km). La consulta puede devolver miles de eventos ` +
-                           `(recordá el tope de 20.000 de USGS) y tardar.`,
+                    texto: `Radius too large (${c.radioKm.toFixed(0)} km). The query may return thousands of events ` +
+                           `(remember USGS's 20,000 cap) and take a while.`,
                     tipo: 'aviso'
                 };
             }
@@ -1376,7 +1376,7 @@
                 if (![lat, lon, prof, mag].every(isFinite) || !t || isNaN(t.getTime())) { descartados++; continue; }
                 out.push({
                     id: f.id ?? p.id ?? out.length, lat, lon, prof, mag, time: t,
-                    auth: p.auth || 'archivo propio', region: p.region || p.place || p.lugar || ''
+                    auth: p.auth || 'own file', region: p.region || p.place || p.lugar || ''
                 });
             }
             return { eventos: out, descartados };
@@ -1425,7 +1425,7 @@
             if (!F.limiteConfigurable) {
                 campoLimite.disabled = true;
                 campoLimite.value = '';
-                nota.textContent = 'SGC Histórico no tiene parámetro de límite: siempre trae todos los eventos que calcen en el área, profundidad, magnitud y fechas pedidas. Controlá el volumen acotando esos filtros.';
+                nota.textContent = 'SGC Historical has no limit parameter: it always returns every event that fits the requested area, depth, magnitude and dates. Control the volume by narrowing those filters.';
                 return;
             }
             campoLimite.disabled = false;
@@ -1434,13 +1434,13 @@
                 campoLimite.value = Math.min(F.defaultLimite, F.maxLimite);
             }
             if (fuenteId === 'isc') {
-                nota.textContent = `ISC no impone un tope fijo, pero se autolimita a ${F.maxLimite.toLocaleString('es')} eventos por consulta desde esta interfaz para evitar respuestas desproporcionadas.`;
+                nota.textContent = `ISC doesn't enforce a fixed cap, but this interface self-limits it to ${F.maxLimite.toLocaleString('en')} events per query to avoid disproportionate responses.`;
             } else {
-                nota.textContent = `Tope duro del servidor: ${F.maxLimite.toLocaleString('es')} eventos por consulta.`;
+                nota.textContent = `Hard server cap: ${F.maxLimite.toLocaleString('en')} events per query.`;
             }
         }
 
-        // --- Mismas funciones, para la consulta de la capa de evento especial ---
+        // --- Same functions, for querying the special event layer ---
 
         function fuenteSeleccionadaEvento() {
             const el = document.querySelector('input[name="fuenteEvento"]:checked');
@@ -1478,7 +1478,7 @@
             if (!F.limiteConfigurable) {
                 campoLimite.disabled = true;
                 campoLimite.value = '';
-                nota.textContent = 'SGC Histórico no tiene parámetro de límite.';
+                nota.textContent = 'SGC Historical has no limit parameter.';
                 return;
             }
             campoLimite.disabled = false;
@@ -1487,8 +1487,8 @@
                 campoLimite.value = Math.min(F.defaultLimite, F.maxLimite);
             }
             nota.textContent = fuenteId === 'isc'
-                ? `Autolimitado a ${F.maxLimite.toLocaleString('es')} eventos por consulta.`
-                : `Tope duro del servidor: ${F.maxLimite.toLocaleString('es')} eventos por consulta.`;
+                ? `Self-limited to ${F.maxLimite.toLocaleString('en')} events per query.`
+                : `Hard server cap: ${F.maxLimite.toLocaleString('en')} events per query.`;
         }
 
         // ============================================================
@@ -1632,7 +1632,7 @@
         // evento especial (Parte 3) sin duplicar la lógica por fuente.
         async function consultarFuenteRaw(p, fuenteId) {
             const F = FUENTES[fuenteId];
-            if (!F) throw new Error('Fuente desconocida: ' + fuenteId);
+            if (!F) throw new Error('Unknown source: ' + fuenteId);
 
             let crudos, notas = [];
 
@@ -1642,7 +1642,7 @@
                 if (!res.ok) {
                     let detalle = '';
                     try { const j = await res.json(); detalle = j.message || ''; } catch (e) { /* sin cuerpo JSON */ }
-                    throw new Error(`USGS respondió HTTP ${res.status}. ${detalle}`);
+                    throw new Error(`USGS responded with HTTP ${res.status}. ${detalle}`);
                 }
                 const j = await res.json();
                 crudos = { tipo: 'usgs', features: (j && j.features) || [] };
@@ -1651,23 +1651,23 @@
                 if (!res.ok) {
                     let detalle = '';
                     try { detalle = (await res.text()).slice(0, 200); } catch (e) { /* nada que leer */ }
-                    throw new Error(`ISC respondió HTTP ${res.status} (vía proxy). ${detalle}`);
+                    throw new Error(`ISC responded with HTTP ${res.status} (via proxy). ${detalle}`);
                 }
                 const texto = await res.text();
                 crudos = { tipo: 'isc', texto };
             } else if (fuenteId === 'sgc') {
                 const res = await fetch(urlSGC(p));
-                if (!res.ok) throw new Error('SGC respondió HTTP ' + res.status);
+                if (!res.ok) throw new Error('SGC responded with HTTP ' + res.status);
                 const texto = await res.text();
                 let j;
                 try { j = JSON.parse(texto); }
-                catch (e) { throw new Error('SGC devolvió una respuesta que no es JSON válido.'); }
+                catch (e) { throw new Error('SGC returned a response that is not valid JSON.'); }
                 crudos = { tipo: 'sgc', features: (j && j.features) || [], bytes: texto.length };
                 if (crudos.bytes > 3_000_000) {
-                    notas.push(`La respuesta cruda de SGC pesó ~${(crudos.bytes / 1e6).toFixed(1)} MB. Podés acotar fechas/magnitud para aligerarla.`);
+                    notas.push(`The raw SGC response was ~${(crudos.bytes / 1e6).toFixed(1)} MB. You can narrow the dates/magnitude to lighten it.`);
                 }
                 if (p.fin > FECHA_CORTE_SGC) {
-                    notas.push(`SGC Histórico no tiene datos posteriores a finales de 2020 (último evento confirmado: ${FECHA_CORTE_SGC}). El rango pedido incluye fechas fuera de su cobertura.`);
+                    notas.push(`SGC Historical has no data after late 2020 (last confirmed event: ${FECHA_CORTE_SGC}). The requested range includes dates outside its coverage.`);
                 }
             }
 
@@ -1704,15 +1704,15 @@
             }
 
             const p = leerParams();
-            if (!p.inicio || !p.fin) { mensaje('Definí el rango de fechas.', 'error'); return; }
-            if (p.inicio > p.fin) { mensaje('La fecha "desde" es posterior a la fecha "hasta".', 'error'); return; }
+            if (!p.inicio || !p.fin) { mensaje('Set the date range.', 'error'); return; }
+            if (p.inicio > p.fin) { mensaje('The "from" date is after the "to" date.', 'error'); return; }
 
             const fuenteId = fuenteSeleccionada();
             const F = FUENTES[fuenteId];
 
             consultando = true;
             $('btnConsultar').disabled = true;
-            mensaje(`Consultando ${F.label}…`, 'cargando');
+            mensaje(`Querying ${F.label}…`, 'cargando');
 
             let resultado;
             try {
@@ -1721,8 +1721,8 @@
                 consultando = false;
                 $('btnConsultar').disabled = false;
                 mensaje(
-                    `<strong>No se pudo consultar ${F.label}.</strong><br>${err.message}` +
-                    '<br>Revisá la conexión y volvé a intentar con el botón «Consultar catálogo».',
+                    `<strong>Could not query ${F.label}.</strong><br>${err.message}` +
+                    '<br>Check your connection and try again with the "Query catalog" button.',
                     'error'
                 );
                 return;
@@ -1783,10 +1783,10 @@
                 const sinCobertura = opciones.fuenteId === 'sgc' && p.fin > FECHA_CORTE_SGC;
                 mensaje(
                     (sinCobertura
-                        ? `<strong>SGC Histórico no tiene datos en el rango pedido.</strong><br>Esta fuente está congelada hasta finales de 2020 (último evento confirmado: ${FECHA_CORTE_SGC}) y no es un catálogo en vivo — no significa que no hubo sismos, sino que esta fuente no los cubre. Elegí USGS, USGS Significativos o ISC Bulletin para sismicidad reciente.`
-                        : '<strong>No se encontraron sismos en esta área y rango de fechas.</strong>') + '<br>' +
+                        ? `<strong>SGC Historical has no data in the requested range.</strong><br>This source is frozen through late 2020 (last confirmed event: ${FECHA_CORTE_SGC}) and is not a live catalog — it doesn't mean there were no earthquakes, just that this source doesn't cover them. Choose USGS, USGS Significant, or ISC Bulletin for recent seismicity.`
+                        : '<strong>No earthquakes were found in this area and date range.</strong>') + '<br>' +
                     (notas.length ? notas.join('<br>') + '<br>' : '') +
-                    `Consultado en ${fuente} con M≥${p.minmag}. Probá bajando la magnitud mínima o ampliando el rango.`,
+                    `Queried in ${fuente} with M≥${p.minmag}. Try lowering the minimum magnitude or widening the range.`,
                     'aviso'
                 );
                 refrescarTrasCambioDeCapas();
@@ -1805,17 +1805,17 @@
             $('timelineSlider').value = 100;
             refrescarTrasCambioDeCapas();
 
-            const partes = [`<strong>${datosFondo.eventos.length} eventos</strong> desde ${fuente}.`];
+            const partes = [`<strong>${datosFondo.eventos.length} events</strong> from ${fuente}.`];
             if (total !== null && total > datosFondo.eventos.length) {
-                partes.push(`Mostrando ${datosFondo.eventos.length} de ${total} disponibles (tope de ${p.limite}). Subí el límite para ver más.`);
+                partes.push(`Showing ${datosFondo.eventos.length} of ${total} available (cap of ${p.limite}). Raise the limit to see more.`);
             } else if (datosFondo.truncado) {
-                partes.push('Es posible que haya más eventos de los mostrados — acotá el área, el rango de fechas o subí la magnitud mínima para ver el conjunto completo.');
+                partes.push('There may be more events than shown — narrow the area, the date range, or raise the minimum magnitude to see the full set.');
             }
             if (datosFondo.eventos.length > MAX_ESFERAS) {
-                partes.push(`En 3D se dibujan los ${MAX_ESFERAS} de mayor magnitud por rendimiento; el mapa y las estadísticas usan todos.`);
+                partes.push(`For performance, only the ${MAX_ESFERAS} largest-magnitude events are drawn in 3D; the map and statistics use all of them.`);
             }
             if (norm.descartados) {
-                partes.push(`${norm.descartados} eventos se descartaron por venir sin magnitud o profundidad.`);
+                partes.push(`${norm.descartados} events were discarded for missing magnitude or depth.`);
             }
             if (notas.length) partes.push(notas.join(' '));
             mensaje(partes.join('<br>'), 'ok');
@@ -1830,20 +1830,20 @@
             if (problemaArea && problemaArea.tipo === 'error') { mensajeEvento(problemaArea.texto, 'error'); return; }
 
             const p = leerParamsEvento();
-            if (!p.inicio || !p.fin) { mensajeEvento('Definí el rango de fechas.', 'error'); return; }
-            if (p.inicio > p.fin) { mensajeEvento('La fecha "desde" es posterior a la fecha "hasta".', 'error'); return; }
+            if (!p.inicio || !p.fin) { mensajeEvento('Set the date range.', 'error'); return; }
+            if (p.inicio > p.fin) { mensajeEvento('The "from" date is after the "to" date.', 'error'); return; }
 
             const fuenteId = fuenteSeleccionadaEvento();
             const F = FUENTES[fuenteId];
             $('btnConsultarEvento').disabled = true;
-            mensajeEvento(`Consultando ${F.label}…`, 'cargando');
+            mensajeEvento(`Querying ${F.label}…`, 'cargando');
 
             let resultado;
             try {
                 resultado = await consultarFuenteRaw(p, fuenteId);
             } catch (err) {
                 $('btnConsultarEvento').disabled = false;
-                mensajeEvento(`<strong>No se pudo consultar ${F.label}.</strong><br>${err.message}`, 'error');
+                mensajeEvento(`<strong>Could not query ${F.label}.</strong><br>${err.message}`, 'error');
                 return;
             }
 
@@ -1877,14 +1877,14 @@
 
             if (!norm.eventos.length) {
                 mensajeEvento(
-                    `El resultado no tiene eventos con datos completos (lat/lon/profundidad/magnitud/fecha)` +
-                    (norm.descartados ? ` — ${norm.descartados} descartados.` : '.'),
+                    `The result has no events with complete data (lat/lon/depth/magnitude/date)` +
+                    (norm.descartados ? ` — ${norm.descartados} discarded.` : '.'),
                     'aviso'
                 );
             } else {
-                const partes = [`<strong>${norm.eventos.length} eventos</strong> cargados como evento especial (${fuente}).`];
-                if (norm.descartados) partes.push(`${norm.descartados} descartados por datos incompletos.`);
-                if (opciones.truncado) partes.push('Es posible que haya más eventos de los mostrados.');
+                const partes = [`<strong>${norm.eventos.length} events</strong> loaded as special event (${fuente}).`];
+                if (norm.descartados) partes.push(`${norm.descartados} discarded for incomplete data.`);
+                if (opciones.truncado) partes.push('There may be more events than shown.');
                 if (notas.length) partes.push(notas.join(' '));
                 mensajeEvento(partes.join('<br>'), 'ok');
             }
@@ -1916,8 +1916,8 @@
             } else {
                 $('canvasVacio').style.display = 'flex';
                 $('canvasVacio').textContent = (hayFondo || hayEvento) && !datosFondo.bbox
-                    ? 'Consultá primero la capa de fondo (pestaña Área) para ver la escena 3D — el evento especial ya está visible en el mapa 2D.'
-                    : 'Definí un área y consultá el catálogo para ver los sismos en 3D';
+                    ? 'Query the background layer first (Area tab) to see the 3D scene — the special event is already visible on the 2D map.'
+                    : 'Define an area and query the catalog to see the earthquakes in 3D';
             }
 
             actualizarPanel();
@@ -2235,7 +2235,7 @@
 
             $('timeStart').textContent = fechaHora(min);
             $('timeEnd').textContent = fechaHora(max);
-            $('timeValue').textContent = fraccion >= 1 ? 'Todos' : fechaHora(corte);
+            $('timeValue').textContent = fraccion >= 1 ? 'All' : fechaHora(corte);
             actualizarVisibles();
         }
 
@@ -2266,7 +2266,7 @@
             return `
                 <div class="legend-item">
                     <div class="legend-color" style="background-color:${AZUL_CORTEZA}"></div>
-                    <span>0–35 km · corteza</span>
+                    <span>0–35 km · crust</span>
                 </div>
                 <div class="legend-item">
                     <div class="legend-color" style="background:linear-gradient(135deg,#000,#fff); border-radius:2px; width:24px;"></div>
@@ -2288,11 +2288,11 @@
             $('visibleEventsFondo').textContent = renderFondo.visibles;
 
             if (!datosFondo.eventos.length) {
-                $('infoFuente').innerHTML = datosFondo.fuente ? `<span class="fuente-tag">${datosFondo.fuente}</span> sin resultados` : '—';
+                $('infoFuente').innerHTML = datosFondo.fuente ? `<span class="fuente-tag">${datosFondo.fuente}</span> no results` : '—';
                 $('infoPeriodo').textContent = '—';
                 $('infoMag').textContent = '—';
                 $('infoProf').textContent = '—';
-                $('leyenda').innerHTML = '<div class="nota">Sin datos para clasificar.</div>';
+                $('leyenda').innerHTML = '<div class="nota">No data to classify.</div>';
             } else {
                 const mag = extremos(datosFondo.eventos, e => e.mag);
                 const prof = extremos(datosFondo.eventos, e => e.prof);
@@ -2314,7 +2314,7 @@
                     $('infoPeriodoEvento').textContent = '—';
                     $('infoMagEvento').textContent = '—';
                     $('infoProfEvento').textContent = '—';
-                    $('leyendaEvento').innerHTML = '<div class="nota">Sin datos.</div>';
+                    $('leyendaEvento').innerHTML = '<div class="nota">No data.</div>';
                 } else {
                     const mag = extremos(datosEvento.eventos, e => e.mag);
                     $('infoFuenteEvento').innerHTML = `<span class="fuente-tag">${datosEvento.fuente}</span>`;
@@ -2601,7 +2601,7 @@
             $('timelineSlider').addEventListener('input', (e) => {
                 // El usuario tomó control manual del timeline: si estaba
                 // reproduciendo, se pausa (no pelea con el usuario).
-                if (reproduciendo) { reproduciendo = false; $('btnPlay').textContent = '▶ Reproducir'; }
+                if (reproduciendo) { reproduciendo = false; $('btnPlay').textContent = '▶ Play'; }
                 actualizarTimeline(parseFloat(e.target.value) / 100);
             });
 
@@ -2648,12 +2648,12 @@
                 reader.onload = () => {
                     let fc;
                     try { fc = JSON.parse(reader.result); }
-                    catch (err) { mensajeEvento('El archivo no es JSON válido.', 'error'); return; }
+                    catch (err) { mensajeEvento('The file is not valid JSON.', 'error'); return; }
                     if (!fc || fc.type !== 'FeatureCollection' || !Array.isArray(fc.features)) {
                         mensajeEvento(
-                            `El archivo no parece un GeoJSON de puntos válido — se esperaba ` +
-                            `<code>type: "FeatureCollection"</code> con un array <code>features</code>; ` +
-                            `se encontró <code>type: "${fc && fc.type}"</code>.`,
+                            `The file doesn't look like a valid point GeoJSON — expected ` +
+                            `<code>type: "FeatureCollection"</code> with a <code>features</code> array; ` +
+                            `found <code>type: "${fc && fc.type}"</code>.`,
                             'error'
                         );
                         return;
@@ -2661,19 +2661,19 @@
                     const norm = normalizarGeoJSONPropio(fc);
                     if (!norm.eventos.length) {
                         mensajeEvento(
-                            `No se pudo extraer ningún evento válido del archivo ` +
-                            `(${norm.descartados} de ${fc.features.length} features descartados por falta de ` +
-                            `lat/lon/profundidad/magnitud/fecha reconocibles).`,
+                            `Could not extract any valid event from the file ` +
+                            `(${norm.descartados} of ${fc.features.length} features discarded for missing ` +
+                            `recognizable lat/lon/depth/magnitude/date).`,
                             'error'
                         );
                         return;
                     }
-                    aplicarResultadoEvento(norm, null, `Archivo propio (${file.name})`, null, [], {
+                    aplicarResultadoEvento(norm, null, `Own file (${file.name})`, null, [], {
                         fuenteId: null, urlConsulta: null, truncado: false,
                         origen: 'archivo', nombreArchivo: file.name
                     });
                 };
-                reader.onerror = () => mensajeEvento('No se pudo leer el archivo.', 'error');
+                reader.onerror = () => mensajeEvento('Could not read the file.', 'error');
                 reader.readAsText(file);
             });
 
@@ -2733,7 +2733,7 @@
 
         function togglePlay() {
             reproduciendo = !reproduciendo;
-            $('btnPlay').textContent = reproduciendo ? '⏸ Pausar' : '▶ Reproducir';
+            $('btnPlay').textContent = reproduciendo ? '⏸ Pause' : '▶ Play';
             if (reproduciendo) {
                 const actual = parseFloat($('timelineSlider').value) / 100;
                 fraccionInicio = actual >= 1 ? 0 : actual;   // en 100%: reinicia desde 0
@@ -2750,7 +2750,7 @@
             actualizarTimeline(fraccion);
             if (fraccion >= 1) {
                 reproduciendo = false;
-                $('btnPlay').textContent = '▶ Reproducir';
+                $('btnPlay').textContent = '▶ Play';
                 return;
             }
             requestAnimationFrame(pasoReproduccion);
