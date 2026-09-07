@@ -499,6 +499,11 @@
                         <input type="checkbox" id="showEventoCapa" checked>
                         <label for="showEventoCapa">Special event layer</label>
                     </div>
+                    <div class="checkbox-item">
+                        <input type="checkbox" id="showBeachball">
+                        <label for="showBeachball">Moment tensor (M7.4 Chocó, us6000tjl2)</label>
+                    </div>
+                    <div class="nota">Real focal sphere computed from USGS's published moment tensor — red = compression, blue = dilatation. Shown at the CMT centroid depth (120.5 km), only visible once an area/query is loaded.</div>
                 </div>
 
                 <div class="control-group">
@@ -1974,6 +1979,7 @@
 
         let scene, camera, renderer, grupo, refs, animando = false;
         let mallaSuperior = null;   // plano de la cara de arriba de la caja — puede llevar un mapa real texturado
+        let mallaBeachball = null;  // esfera focal del momento tensor (M7.4 Chocó, hardcodeado)
         let bakeMapaToken = 0;      // descarta bakes de mapa superior que quedaron obsoletos por un cambio de área más nuevo
         let rot = { x: -0.5, y: 0.4 };
         let arrastre = null;
@@ -2044,6 +2050,7 @@
                 mallaSuperior.material.map.dispose();
             }
             mallaSuperior = null;
+            mallaBeachball = null;
             renderFondo.malla = null; renderFondo.indices = [];
             renderEvento.malla = null; renderEvento.indices = [];
         }
@@ -2055,6 +2062,69 @@
         // sí; si sus eventos caen fuera del bbox de fondo, simplemente aparecen
         // fuera de la caja de referencia — igual que ya pasa en modo círculo con
         // las esquinas del bbox circunscrito.
+        // ============================================================
+        // Momento tensor — esfera focal ("beachball") 3D real, no la
+        // proyección 2D habitual. Datos tomados en vivo de la solución
+        // moment-tensor publicada por USGS para us6000tjl2 (M7.4, San José
+        // del Palmar, Chocó, 2026-08-10): properties.tensor-* del producto
+        // "moment-tensor", convención (r,θ,φ) = (arriba, sur, este), la
+        // misma que usa el Global CMT / Harvard.
+        // https://earthquake.usgs.gov/earthquakes/eventpage/us6000tjl2/moment-tensor
+        // Hardcodeado a propósito (alcance acordado): solo este evento.
+        // ============================================================
+        const MOMENT_TENSOR_CHOCO = {
+            lat: 4.5854, lon: -76.1613, depth: 120.5, // derived-latitude/longitude/depth (centroide CMT, no el hipocentro inicial)
+            mag: 7.4,
+            scalarMoment: 1.66e20,
+            mrr: 4.887e19, mtt: -1.5429e20, mpp: 1.0541e20,
+            mrt: -1.918e19, mrp: -9.009e19, mtp: -2.243e19
+        };
+
+        // Patrón de radiación de onda P: R(γ) = Σ Mij·γi·γj, con γ el vector
+        // unitario (r,t,p) hacia un punto de la esfera focal. R>0 = primer
+        // movimiento compresivo (rojo, convención sismológica estándar);
+        // R<0 = dilatación (blanco/azul). Normalizado por el momento escalar
+        // para que R quede en un rango manejable (~[-1,1]) sin importar la
+        // magnitud absoluta del tensor.
+        function radiacionP(T, gr, gt, gp) {
+            return (T.mrr * gr * gr + T.mtt * gt * gt + T.mpp * gp * gp +
+                    2 * T.mrt * gr * gt + 2 * T.mrp * gr * gp + 2 * T.mtp * gt * gp) / T.scalarMoment;
+        }
+
+        function construirBeachball(P) {
+            const T = MOMENT_TENSOR_CHOCO;
+            const escalaUsuario = parseFloat($('sizeSlider').value) / 100;
+            // Bastante más grande que una esfera normal de la misma magnitud —
+            // es una pieza destacada, no un evento más del catálogo.
+            const radio = escalaUsuario * (0.9 + T.mag * 0.35);
+
+            const geo = new THREE.SphereGeometry(radio, 48, 36);
+            const pos = geo.attributes.position;
+            const colores = new Float32Array(pos.count * 3);
+            const rojo = new THREE.Color(0xd03b3b), blanco = new THREE.Color(0xf2ede0);
+
+            for (let i = 0; i < pos.count; i++) {
+                // Vértice de una esfera unitaria en el espacio local de la
+                // geometría == vector dirección (r,t,p) sin rotación alguna,
+                // porque los ejes de la escena ya son x=este(p), y=norte
+                // (=> t=sur=-y), z=arriba(r) — los mismos que usa proyector().
+                const x = pos.getX(i) / radio, y = pos.getY(i) / radio, z = pos.getZ(i) / radio;
+                const gp = x, gt = -y, gr = z;
+                const R = radiacionP(T, gr, gt, gp);
+                // Degradado suave hacia blanco cerca de los planos nodales
+                // (R≈0) en vez de un corte binario duro.
+                const c = rojo.clone().lerp(blanco, 1 - Math.min(1, Math.abs(R) * 3));
+                const color = R >= 0 ? c : blanco.clone().lerp(new THREE.Color(0x3987e5), Math.min(1, Math.abs(R) * 3));
+                colores[i * 3] = color.r; colores[i * 3 + 1] = color.g; colores[i * 3 + 2] = color.b;
+            }
+            geo.setAttribute('color', new THREE.BufferAttribute(colores, 3));
+
+            const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.5, metalness: 0.05 });
+            const esfera = new THREE.Mesh(geo, mat);
+            esfera.position.set(P.x(T.lon), P.y(T.lat), P.z(T.depth));
+            return esfera;
+        }
+
         function proyector() {
             const b = datosFondo.bbox;
             const centroLat = (b.n + b.s) / 2, centroLon = (b.e + b.o) / 2;
@@ -2138,6 +2208,11 @@
             refs.add(etiqueta('N', (x0 + x1) / 2, y1 + 2.2, 0));
             grupo.add(refs);
             refs.visible = $('showCaja').checked;
+
+            if ($('showBeachball').checked) {
+                mallaBeachball = construirBeachball(P);
+                grupo.add(mallaBeachball);
+            }
 
             // Encuadre: distancia justa para que quepa la esfera que envuelve la caja.
             const radio = Math.hypot((x1 - x0) / 2, (y1 - y0) / 2, PROF_MUNDO / 2);
@@ -2618,6 +2693,10 @@
 
             $('showCaja').addEventListener('change', (e) => {
                 if (refs) refs.visible = e.target.checked;
+            });
+
+            $('showBeachball').addEventListener('change', () => {
+                if (datosFondo.bbox) construirEscena();
             });
 
             $('mapaSuperiorSelector').addEventListener('change', () => {
