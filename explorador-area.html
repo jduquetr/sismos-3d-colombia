@@ -1,467 +1,587 @@
 <!DOCTYPE html>
-<html lang="es">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Explorador Sísmico por Área — Consulta en Vivo</title>
+    <title>Seismic Area Explorer — Live Query</title>
     <link rel="icon" type="image/png" href="favicon.png">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: 'Arial', sans-serif; background: #0a0e27; color: #e0e0e0; overflow: hidden; }
-
-        .container { display: flex; height: 100vh; gap: 10px; padding: 10px; }
-
-        .main-content { flex: 1; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
-
-        #map {
-            width: 100%;
-            height: 34%;
-            min-height: 190px;
-            border-radius: 8px;
-            border: 1px solid #1e293b;
-            background: #1a1f3a;
+        :root{
+            color-scheme: dark;
+            --plane:#0d0d0d;
+            --surface:#1a1a19;
+            --surface-2:#232322;
+            --line:#2c2c2a;
+            --axis:#383835;
+            --ink:#ffffff;
+            --ink-2:#c3c2b7;
+            --ink-3:#898781;
+            --accent:#3987e5;
+            --accent-2:#d95926;
+            --warning:#fab219;
+            --critical:#d03b3b;
+            --font:system-ui,-apple-system,"Segoe UI",sans-serif;
         }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html, body { height: 100%; }
+        body { font-family: var(--font); background: var(--plane); color: var(--ink-2); font-size: 13px; overflow: hidden; -webkit-font-smoothing: antialiased; }
+        button, input, select { font: inherit; color: inherit; }
+        button { cursor: pointer; background: none; border: none; }
+        [hidden] { display: none !important; }
+        :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+
+        /* ===== estructura de pantalla completa: mapa y 3D alternan en #sceneWrap ===== */
+        #app {
+            display: grid;
+            height: 100dvh;
+            grid-template-columns: minmax(0,1fr) 340px;
+            grid-template-rows: auto minmax(0,1fr) auto;
+            grid-template-areas: "top top" "scene panel" "time panel";
+            gap: 1px;
+            background: var(--line);
+        }
+        #topbar { grid-area: top; background: var(--surface); display: flex; align-items: center; gap: 14px; padding: 9px 14px; flex-wrap: wrap; }
+        #topbar h1 { font-size: 14px; font-weight: 650; color: var(--ink); letter-spacing: -.01em; white-space: nowrap; }
+        #topbar .sub { font-size: 11px; color: var(--ink-3); white-space: nowrap; }
+        .spacer { flex: 1; }
+
+        .seg { display: flex; background: var(--surface-2); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+        .seg button { padding: 6px 14px; font-size: 12px; color: var(--ink-3); border-right: 1px solid var(--line); }
+        .seg button:last-child { border-right: none; }
+        .seg button[aria-pressed="true"] { background: var(--accent); color: #fff; font-weight: 600; }
+        .seg button:hover:not([aria-pressed="true"]) { color: var(--ink); background: #2b2b2a; }
+
+        #sceneWrap { grid-area: scene; position: relative; background: var(--plane); overflow: hidden; min-height: 0; }
+        #pantallaArea, #pantallaVisor { position: absolute; inset: 0; }
+        #map { width: 100%; height: 100%; }
         #map.dibujando { cursor: crosshair; }
         #map.dibujando .leaflet-grab { cursor: crosshair; }
+        #canvas3d { width: 100%; height: 100%; position: relative; overflow: hidden; }
 
-        #canvas3d {
-            flex: 1;
-            border-radius: 8px;
-            border: 1px solid #1e293b;
-            background: #0a0e27;
-            min-height: 220px;
-            position: relative;
-            overflow: hidden;
-        }
+        .canvas-hint { position: absolute; bottom: 8px; left: 10px; font-size: 10px; color: var(--ink-3); pointer-events: none; }
+        .canvas-vacio { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; text-align: center; font-size: 12px; color: var(--ink-3); padding: 20px; pointer-events: none; }
 
-        .canvas-hint {
-            position: absolute;
-            bottom: 8px;
-            left: 10px;
-            font-size: 10px;
-            color: #4a5b7a;
-            pointer-events: none;
-        }
-
-        .canvas-vacio {
-            position: absolute;
-            inset: 0;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            text-align: center;
-            font-size: 12px;
-            color: #64748b;
-            padding: 20px;
-            pointer-events: none;
-        }
-
-        .timeline-container {
-            width: 100%;
-            background: #1a1f3a;
-            padding: 12px;
-            border-radius: 8px;
-            border: 1px solid #1e293b;
-        }
-
-        .timeline-header { font-size: 12px; font-weight: bold; color: #64b5f6; margin-bottom: 8px; }
-
+        #timeWrap { grid-area: time; background: var(--surface); padding: 9px 14px 11px; }
+        .timeline-header { font-size: 10px; text-transform: uppercase; letter-spacing: .07em; font-weight: 600; color: var(--ink-3); margin-bottom: 8px; }
+        .timeline-controls { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; flex-wrap: wrap; }
+        #btnPlay { width: auto; padding: 6px 14px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 8px; color: var(--ink-2); }
+        #btnPlay:hover { color: var(--ink); border-color: var(--axis); }
+        .velocidad-selector { display: flex; gap: 4px; }
+        .vel-btn { width: auto; padding: 4px 9px; font-size: 10px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 6px; color: var(--ink-3); }
+        .vel-btn.activo { background: var(--accent); color: #fff; border-color: var(--accent); }
         .timeline-slider { width: 100%; }
+        .timeline-info { display: flex; justify-content: space-between; font-size: 11px; color: var(--ink-3); margin-top: 8px; }
 
-        .timeline-info {
-            display: flex;
-            justify-content: space-between;
-            font-size: 11px;
-            color: #90caf9;
-            margin-top: 8px;
-        }
+        #panel { grid-area: panel; background: var(--surface); display: flex; flex-direction: column; min-height: 0; overflow-y: auto; }
+        .panel-title { font-size: 10px; text-transform: uppercase; letter-spacing: .07em; color: var(--ink-3); font-weight: 600; padding: 14px 14px 0; }
 
-        .control-panel {
-            width: 300px;
-            flex-shrink: 0;
-            background: #1a1f3a;
-            border-radius: 8px;
-            padding: 15px;
-            border: 1px solid #1e293b;
-            overflow-y: auto;
-            max-height: calc(100vh - 20px);
-        }
+        .tabs { display: flex; border-bottom: 1px solid var(--line); flex-shrink: 0; gap: 0; margin: 12px 0 0; }
+        .tab-btn { flex: 1; padding: 11px 4px; font-size: 12px; color: var(--ink-3); background: transparent; border: none; border-bottom: 2px solid transparent; }
+        .tab-btn.activo { color: var(--ink); border-bottom-color: var(--accent); font-weight: 600; }
+        .tab-btn:hover:not(.activo) { color: var(--ink-2); }
+        .tab-panel { padding: 14px; }
 
-        .panel-title {
-            font-size: 14px;
-            font-weight: bold;
-            color: #64b5f6;
-            margin-bottom: 15px;
-            border-bottom: 2px solid #64b5f6;
-            padding-bottom: 8px;
-        }
+        .control-group { margin-bottom: 18px; padding-bottom: 0; border-bottom: none; }
+        .control-group:last-child { margin-bottom: 4px; }
+        .group-title { font-size: 10px; text-transform: uppercase; letter-spacing: .07em; color: var(--ink-3); margin-bottom: 9px; font-weight: 600; }
 
-        .control-group {
-            margin-bottom: 15px;
-            padding-bottom: 12px;
-            border-bottom: 1px solid #293548;
-        }
-
-        .control-group:last-child { border-bottom: none; }
-
-        .group-title {
-            font-size: 11px;
-            font-weight: bold;
-            color: #90caf9;
-            margin-bottom: 8px;
-            text-transform: uppercase;
-        }
-
-        .checkbox-item {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            margin-bottom: 6px;
-            font-size: 12px;
-        }
-
-        .checkbox-item input { cursor: pointer; width: 16px; height: 16px; accent-color: #64b5f6; }
+        .checkbox-item { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; font-size: 12px; color: var(--ink-2); }
+        .checkbox-item input { cursor: pointer; width: 16px; height: 16px; accent-color: var(--accent); }
         .checkbox-item label { cursor: pointer; user-select: none; }
 
         .slider-group { margin-bottom: 8px; }
+        .slider-label { font-size: 11px; display: flex; justify-content: space-between; margin-bottom: 6px; color: var(--ink-2); }
+        .slider-value { font-size: 11px; color: var(--ink); font-variant-numeric: tabular-nums; background: var(--surface-2); border-radius: 5px; padding: 2px 7px; min-width: 44px; text-align: center; }
 
-        .slider-label {
-            font-size: 11px;
-            display: flex;
-            justify-content: space-between;
-            margin-bottom: 6px;
-            color: #90caf9;
-        }
+        input[type="range"] { -webkit-appearance: none; appearance: none; width: 100%; height: 20px; background: transparent; cursor: pointer; }
+        input[type="range"]::-webkit-slider-runnable-track { height: 3px; border-radius: 2px; background: var(--axis); }
+        input[type="range"]::-moz-range-track { height: 3px; border-radius: 2px; background: var(--axis); }
+        input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%; background: var(--ink); margin-top: -5.5px; border: 2px solid var(--surface); box-shadow: 0 0 0 1px var(--axis); }
+        input[type="range"]::-moz-range-thumb { width: 14px; height: 14px; border-radius: 50%; background: var(--ink); border: 2px solid var(--surface); box-shadow: 0 0 0 1px var(--axis); }
 
-        .slider-value {
-            background: #64b5f6;
-            color: #0a0e27;
-            padding: 2px 6px;
-            border-radius: 3px;
-            font-weight: bold;
-            font-size: 10px;
-        }
-
-        input[type="range"] {
-            width: 100%;
-            height: 4px;
-            border-radius: 2px;
-            background: #293548;
-            outline: none;
-            cursor: pointer;
-            -webkit-appearance: none;
-        }
-
-        input[type="range"]::-webkit-slider-thumb {
-            -webkit-appearance: none;
-            width: 12px;
-            height: 12px;
-            border-radius: 50%;
-            background: #64b5f6;
-            cursor: pointer;
-        }
-
-        input[type="range"]::-moz-range-thumb {
-            width: 12px;
-            height: 12px;
-            border-radius: 50%;
-            background: #64b5f6;
-            cursor: pointer;
-            border: none;
-        }
-
-        /* --- Área geográfica --- */
-        .bbox-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 6px;
-            margin-bottom: 8px;
-        }
-
+        .bbox-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 8px; }
         .campo { display: flex; flex-direction: column; gap: 3px; }
-        .campo label { font-size: 10px; color: #90caf9; text-transform: uppercase; }
+        .campo label { font-size: 10px; color: var(--ink-3); text-transform: uppercase; letter-spacing: .04em; }
 
-        input[type="number"], input[type="date"] {
-            background: #0f1628;
-            border: 1px solid #293548;
-            border-radius: 4px;
-            color: #e0e0e0;
-            padding: 5px 6px;
-            font-size: 11px;
-            font-family: inherit;
-            width: 100%;
+        input[type="number"], input[type="date"], select {
+            background: var(--surface-2); border: 1px solid var(--line); border-radius: 6px; color: var(--ink);
+            padding: 6px 7px; font-size: 11px; font-family: inherit; width: 100%;
         }
-
-        input[type="number"]:focus, input[type="date"]:focus {
-            outline: none;
-            border-color: #64b5f6;
-        }
-
+        input[type="number"]:focus, input[type="date"]:focus, select:focus { outline: none; border-color: var(--accent); }
         input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(0.7); cursor: pointer; }
+        input[type="color"] { width: 100%; height: 30px; padding: 2px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-2); cursor: pointer; }
 
-        .btn {
-            width: 100%;
-            padding: 8px;
-            border-radius: 5px;
-            border: 1px solid #64b5f6;
-            background: #64b5f6;
-            color: #0a0e27;
-            font-size: 12px;
-            font-weight: bold;
-            font-family: inherit;
-            cursor: pointer;
-            transition: filter .15s;
-        }
-
-        .btn:hover:not(:disabled) { filter: brightness(1.15); }
+        .btn { display: block; width: 100%; text-align: center; background: var(--surface-2); border: 1px solid var(--line); border-radius: 8px; padding: 9px; font-size: 12px; color: var(--ink-2); font-family: inherit; cursor: pointer; transition: filter .15s, border-color .15s; }
+        .btn:hover:not(:disabled) { color: var(--ink); border-color: var(--axis); }
         .btn:disabled { opacity: .5; cursor: not-allowed; }
-
-        .btn.secundario {
-            background: transparent;
-            color: #64b5f6;
-        }
-
-        .btn.secundario.activo {
-            background: #1e3a5f;
-            color: #bbdefb;
-        }
-
+        #btnConsultar, #btnConsultarEvento { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+        #btnConsultar:hover, #btnConsultarEvento:hover { background: #4a93e8; }
+        .btn.secundario { background: transparent; }
+        .btn.secundario.activo { background: var(--surface-2); color: var(--ink); border-color: var(--accent); }
         .btn + .btn { margin-top: 6px; }
 
-        .msg {
-            font-size: 11px;
-            line-height: 1.5;
-            padding: 8px;
-            border-radius: 5px;
-            margin-top: 8px;
-            display: none;
-        }
-
+        .msg { font-size: 11px; line-height: 1.5; padding: 8px; border-radius: 8px; margin-top: 8px; display: none; }
         .msg.visible { display: block; }
-        .msg.error { background: #3b1620; border: 1px solid #b3455f; color: #ffb3c1; }
-        .msg.aviso { background: #3a2f14; border: 1px solid #b38b45; color: #ffe0a3; }
-        .msg.ok { background: #12301f; border: 1px solid #3f9159; color: #a5e6bd; }
-        .msg.cargando { background: #0f2438; border: 1px solid #3f6f9e; color: #a3d1ff; }
+        .msg.error { background: #2a1414; border: 1px solid #40201f; color: #f0a3a0; }
+        .msg.aviso { background: #221c13; border: 1px solid #4c3718; color: var(--warning); }
+        .msg.ok { background: #132218; border: 1px solid #2b4a34; color: #7fcf9a; }
+        .msg.cargando { background: #132434; border: 1px solid #1e3a52; color: #8fc0fa; }
 
-        .spinner {
-            display: inline-block;
-            width: 10px;
-            height: 10px;
-            margin-right: 6px;
-            border: 2px solid #3f6f9e;
-            border-top-color: #a3d1ff;
-            border-radius: 50%;
-            animation: girar .8s linear infinite;
-            vertical-align: -1px;
-        }
-
+        .spinner { display: inline-block; width: 10px; height: 10px; margin-right: 6px; border: 2px solid var(--axis); border-top-color: var(--ink); border-radius: 50%; animation: girar .8s linear infinite; vertical-align: -1px; }
         @keyframes girar { to { transform: rotate(360deg); } }
 
-        .info-box {
-            background: #0f1628;
-            border: 1px solid #293548;
-            border-radius: 6px;
-            padding: 10px;
-            font-size: 11px;
-            line-height: 1.6;
-            color: #90caf9;
-        }
+        .info-box { background: var(--surface-2); border: 1px solid var(--line); border-radius: 8px; padding: 10px; font-size: 11px; line-height: 1.6; color: var(--ink-2); }
+        .info-box strong { color: var(--ink); }
 
-        .info-box strong { color: #64b5f6; }
+        .fuente-tag { display: inline-block; font-size: 9px; font-weight: bold; padding: 1px 5px; border-radius: 3px; background: var(--surface-2); border: 1px solid var(--line); color: var(--ink-2); text-transform: uppercase; }
 
-        .fuente-tag {
-            display: inline-block;
-            font-size: 9px;
-            font-weight: bold;
-            padding: 1px 5px;
-            border-radius: 3px;
-            background: #1e3a5f;
-            color: #bbdefb;
-            text-transform: uppercase;
-        }
-
-        .legend { margin-top: 12px; padding-top: 12px; border-top: 1px solid #293548; }
-
-        .legend-title {
-            font-size: 11px;
-            font-weight: bold;
-            color: #90caf9;
-            margin-bottom: 8px;
-            text-transform: uppercase;
-        }
-
-        .legend-item {
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            font-size: 10px;
-            margin-bottom: 4px;
-        }
-
+        .legend { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+        .legend-title { font-size: 10px; text-transform: uppercase; letter-spacing: .07em; font-weight: 600; color: var(--ink-3); margin-bottom: 8px; }
+        .legend-item { display: flex; align-items: center; gap: 6px; font-size: 10px; margin-bottom: 4px; color: var(--ink-2); }
         .legend-color { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
-        .legend-count { margin-left: auto; color: #64748b; }
+        .legend-count { margin-left: auto; color: var(--ink-3); }
 
-        .nota { font-size: 10px; color: #64748b; line-height: 1.5; margin-top: 6px; }
+        .nota { font-size: 10px; color: var(--ink-3); line-height: 1.5; margin-top: 6px; }
+
+        .fuente-selector { display: flex; flex-direction: column; gap: 8px; }
+        .fuente-opcion { display: block; cursor: pointer; padding: 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface-2); }
+        .fuente-opcion:has(input:checked) { border-color: var(--accent); background: #16233a; }
+        .fuente-opcion input[type="radio"] { cursor: pointer; accent-color: var(--accent); margin-right: 6px; vertical-align: middle; }
+        .fuente-nombre { font-size: 12px; font-weight: 600; color: var(--ink); vertical-align: middle; }
+        .fuente-opcion .nota { margin-top: 4px; margin-left: 20px; }
+        .fuente-extra { margin-left: 20px; }
+        .fuente-extra input { width: auto; max-width: 100px; }
 
         ::-webkit-scrollbar { width: 6px; }
-        ::-webkit-scrollbar-track { background: #0f1628; }
-        ::-webkit-scrollbar-thumb { background: #64b5f6; border-radius: 3px; }
+        ::-webkit-scrollbar-track { background: var(--plane); }
+        ::-webkit-scrollbar-thumb { background: var(--axis); border-radius: 3px; }
 
-        .leaflet-container { background: #1a1f3a; }
-        .leaflet-popup-content-wrapper, .leaflet-popup-tip { background: #1a1f3a; color: #e0e0e0; }
+        .leaflet-container { background: var(--plane); }
+        .leaflet-popup-content-wrapper, .leaflet-popup-tip { background: var(--surface); color: var(--ink-2); }
         .leaflet-popup-content { font-size: 11px; }
+
+        .modo-area-selector { display: flex; gap: 6px; margin-bottom: 10px; }
+        .modo-area-selector .btn { margin-top: 0; }
+
+        .esquina-marker { width: 12px; height: 12px; border-radius: 50%; background: var(--accent); border: 2px solid var(--plane); box-shadow: 0 0 4px rgba(0,0,0,.6); cursor: grab; }
+        .esquina-marker:active { cursor: grabbing; }
+
+        .leaflet-control-layers { background: var(--surface) !important; color: var(--ink-2) !important; border: 1px solid var(--line) !important; border-radius: 8px !important; }
+        .leaflet-control-layers-toggle { filter: invert(0.9); }
+        .leaflet-control-layers-expanded { padding: 8px 10px !important; }
+        .leaflet-control-layers label { color: var(--ink-2) !important; font-size: 11px; margin-bottom: 3px; }
+        .leaflet-control-layers-separator { border-top: 1px solid var(--line) !important; }
+        .leaflet-control-layers-selector { accent-color: var(--accent); }
     </style>
 </head>
 <body>
-    <div class="container">
-        <div class="main-content">
-            <div id="map"></div>
-            <div id="canvas3d">
-                <div class="canvas-hint">Arrastrar para rotar · rueda para acercar</div>
-                <div class="canvas-vacio" id="canvasVacio">Definí un área y consultá el catálogo para ver los sismos en 3D</div>
+    <div id="app">
+        <header id="topbar">
+            <h1>Seismic Explorer</h1>
+            <span class="sub">Live query · USGS · ISC · SGC</span>
+            <div class="spacer"></div>
+            <div class="seg" id="segPantalla" role="group" aria-label="View">
+                <button type="button" id="btnVistaArea" aria-pressed="true">🗺️ Map</button>
+                <button type="button" id="btnVistaVisor" aria-pressed="false">🌐 3D</button>
             </div>
-            <div class="timeline-container">
-                <div class="timeline-header">⏱️ Línea de Tiempo</div>
-                <input type="range" class="timeline-slider" id="timelineSlider" min="0" max="100" value="100">
-                <div class="timeline-info">
-                    <span id="timeStart">—</span>
-                    <span id="timeValue">—</span>
-                    <span id="timeEnd">—</span>
+        </header>
+
+        <div id="sceneWrap">
+            <div id="pantallaArea">
+                <div id="map"></div>
+            </div>
+            <div id="pantallaVisor" hidden>
+                <div id="canvas3d">
+                    <div class="canvas-hint">Drag to rotate · scroll to zoom</div>
+                    <div class="canvas-vacio" id="canvasVacio">Define an area and query the catalog to see the earthquakes in 3D</div>
                 </div>
+            </div>
+        </div>
+
+        <div id="timeWrap">
+            <div class="timeline-header">⏱️ Timeline</div>
+            <div class="timeline-controls">
+                <button class="btn secundario" id="btnPlay" type="button">▶ Play</button>
+                <div class="velocidad-selector" id="velocidadSelector">
+                    <button class="btn secundario vel-btn" data-vel="0.25" type="button">0.25×</button>
+                    <button class="btn secundario vel-btn" data-vel="0.5" type="button">0.5×</button>
+                    <button class="btn secundario vel-btn activo" data-vel="1" type="button">1×</button>
+                    <button class="btn secundario vel-btn" data-vel="2" type="button">2×</button>
+                </div>
+            </div>
+            <input type="range" class="timeline-slider" id="timelineSlider" min="0" max="100" value="100">
+            <div class="timeline-info">
+                <span id="timeStart">—</span>
+                <span id="timeValue">—</span>
+                <span id="timeEnd">—</span>
             </div>
         </div>
 
-        <div class="control-panel">
-            <div class="panel-title">⚙️ Consulta y Controles</div>
+        <aside id="panel">
+            <div class="panel-title">⚙️ Query & Controls</div>
 
-            <div class="control-group">
-                <div class="group-title">Área geográfica (bbox)</div>
-                <div class="bbox-grid">
+            <div class="tabs">
+                <button class="tab-btn activo" data-tab="area" type="button">Area</button>
+                <button class="tab-btn" data-tab="evento" type="button">Special Event</button>
+                <button class="tab-btn" data-tab="vista" type="button">View</button>
+            </div>
+
+            <!-- ============ TAB 1: AREA (background layer) ============ -->
+            <div class="tab-panel" id="tabArea">
+                <div class="control-group">
+                    <div class="group-title">Geographic area</div>
+                    <div class="modo-area-selector">
+                        <button class="btn secundario activo" id="btnModoRect" type="button">▭ Rectangle</button>
+                        <button class="btn secundario" id="btnModoCirculo" type="button">◯ Circle</button>
+                    </div>
+
+                    <div id="camposRect">
+                        <div class="bbox-grid">
+                            <div class="campo">
+                                <label for="bboxN">North</label>
+                                <input type="number" id="bboxN" step="0.1" min="-90" max="90" placeholder="e.g. 10">
+                            </div>
+                            <div class="campo">
+                                <label for="bboxS">South</label>
+                                <input type="number" id="bboxS" step="0.1" min="-90" max="90" placeholder="e.g. 0">
+                            </div>
+                            <div class="campo">
+                                <label for="bboxO">West</label>
+                                <input type="number" id="bboxO" step="0.1" min="-180" max="180" placeholder="e.g. -80">
+                            </div>
+                            <div class="campo">
+                                <label for="bboxE">East</label>
+                                <input type="number" id="bboxE" step="0.1" min="-180" max="180" placeholder="e.g. -70">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="camposCirculo" hidden>
+                        <div class="bbox-grid">
+                            <div class="campo">
+                                <label for="circLat">Center lat</label>
+                                <input type="number" id="circLat" step="0.1" min="-90" max="90" placeholder="e.g. 4.5">
+                            </div>
+                            <div class="campo">
+                                <label for="circLon">Center lon</label>
+                                <input type="number" id="circLon" step="0.1" min="-180" max="180" placeholder="e.g. -76">
+                            </div>
+                        </div>
+                        <div class="campo" style="margin-top:6px">
+                            <label for="circRadio">Radius (km)</label>
+                            <input type="number" id="circRadio" min="1" step="10" value="500">
+                        </div>
+                    </div>
+
+                    <button class="btn secundario" id="btnDibujar">✏️ Draw on map</button>
+                    <div class="nota" id="notaArea">Drag on the map to define the area, or enter the coordinates.</div>
+                </div>
+
+                <div class="control-group">
+                    <div class="group-title">Catalog source</div>
+                    <div class="fuente-selector" id="fuenteSelector">
+                        <label class="fuente-opcion">
+                            <input type="radio" name="fuente" value="usgs" checked>
+                            <span class="fuente-nombre">USGS</span>
+                            <div class="nota">Worldwide coverage, any occurrence date. The most general and reliable option.</div>
+                        </label>
+                        <label class="fuente-opcion">
+                            <input type="radio" name="fuente" value="usgs_sig">
+                            <span class="fuente-nombre">USGS Significant</span>
+                            <div class="nota">Only high-impact events (human or material) anywhere in the world and any date — uses the same criteria as USGS's official significant earthquakes page.</div>
+                            <div class="campo fuente-extra" id="sigExtra" hidden style="margin-top:6px">
+                                <label for="sigThreshold">Significance threshold (sig ≥)</label>
+                                <input type="number" id="sigThreshold" min="0" max="2000" step="10" value="600">
+                            </div>
+                        </label>
+                        <label class="fuente-opcion">
+                            <input type="radio" name="fuente" value="isc">
+                            <span class="fuente-nombre">ISC Bulletin</span>
+                            <div class="nota">The most complete research catalog in the world (aggregates hundreds of local seismological networks). Very recent events can take time to consolidate. It can be slower than the other sources. It's the general bulletin — not the curated ISC-GEM catalog, which isn't available through this API.</div>
+                        </label>
+                        <label class="fuente-opcion">
+                            <input type="radio" name="fuente" value="sgc">
+                            <span class="fuente-nombre">SGC Historical (Colombia/Central America)</span>
+                            <div class="nota">Integrated historical catalog of Colombia and the border with Central America (SGC + ISC + NEIC + other networks), from 1610 <strong>through late 2020</strong>. The best source for historical research in this region, but it doesn't include recent or current seismicity.</div>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <div class="group-title">Query parameters</div>
+                    <div class="bbox-grid">
+                        <div class="campo">
+                            <label for="fechaIni">From</label>
+                            <input type="date" id="fechaIni">
+                        </div>
+                        <div class="campo">
+                            <label for="fechaFin">To</label>
+                            <input type="date" id="fechaFin">
+                        </div>
+                    </div>
+                    <div class="slider-group" style="margin-top:8px">
+                        <div class="slider-label">
+                            <span>Minimum magnitude</span>
+                            <span class="slider-value" id="magValue">M2.5</span>
+                        </div>
+                        <input type="range" id="magSlider" min="0" max="90" value="25">
+                    </div>
+                    <div class="campo" style="margin-top:8px">
+                        <label for="limite">Result limit</label>
+                        <input type="number" id="limite" min="1" max="20000" step="100" value="500">
+                    </div>
+                    <div class="nota" id="notaLimite"></div>
+                </div>
+
+                <div class="control-group">
+                    <button class="btn" id="btnConsultar">🔍 Query catalog (background layer)</button>
+                    <div class="msg" id="mensaje"></div>
+                </div>
+            </div>
+
+            <!-- ============ TAB 2: SPECIAL EVENT ============ -->
+            <div class="tab-panel" id="tabEvento" hidden>
+                <div class="control-group">
+                    <div class="group-title">Special event (overlay layer)</div>
+                    <div class="nota">Optional second data layer, independent from the background layer — it's drawn at the same time, with its own color gradient.</div>
+                </div>
+
+                <div class="control-group">
+                    <div class="group-title">Data source</div>
+                    <div class="modo-area-selector">
+                        <button class="btn secundario activo" id="btnOrigenCatalogo" type="button">Catalog</button>
+                        <button class="btn secundario" id="btnOrigenArchivo" type="button">GeoJSON file</button>
+                    </div>
+                </div>
+
+                <div id="origenCatalogo">
+                    <div class="control-group">
+                        <div class="group-title">Area for this layer</div>
+                        <div class="modo-area-selector">
+                            <button class="btn secundario activo" id="btnModoRectEv" type="button">▭ Rectangle</button>
+                            <button class="btn secundario" id="btnModoCirculoEv" type="button">◯ Circle</button>
+                        </div>
+                        <div id="camposRectEv">
+                            <div class="bbox-grid">
+                                <div class="campo"><label for="bboxNEv">North</label><input type="number" id="bboxNEv" step="0.1" min="-90" max="90"></div>
+                                <div class="campo"><label for="bboxSEv">South</label><input type="number" id="bboxSEv" step="0.1" min="-90" max="90"></div>
+                                <div class="campo"><label for="bboxOEv">West</label><input type="number" id="bboxOEv" step="0.1" min="-180" max="180"></div>
+                                <div class="campo"><label for="bboxEEv">East</label><input type="number" id="bboxEEv" step="0.1" min="-180" max="180"></div>
+                            </div>
+                        </div>
+                        <div id="camposCirculoEv" hidden>
+                            <div class="bbox-grid">
+                                <div class="campo"><label for="circLatEv">Center lat</label><input type="number" id="circLatEv" step="0.1" min="-90" max="90"></div>
+                                <div class="campo"><label for="circLonEv">Center lon</label><input type="number" id="circLonEv" step="0.1" min="-180" max="180"></div>
+                            </div>
+                            <div class="campo" style="margin-top:6px"><label for="circRadioEv">Radius (km)</label><input type="number" id="circRadioEv" min="1" step="10" value="200"></div>
+                        </div>
+                        <button class="btn secundario" id="btnCopiarAreaFondo" type="button">⧉ Use the same area as the Background layer</button>
+                        <div class="nota">This layer isn't drawn by dragging on the map — enter the coordinates or copy the background layer's area.</div>
+                    </div>
+
+                    <div class="control-group">
+                        <div class="group-title">Catalog source</div>
+                        <div class="fuente-selector" id="fuenteSelectorEvento">
+                            <label class="fuente-opcion">
+                                <input type="radio" name="fuenteEvento" value="usgs" checked>
+                                <span class="fuente-nombre">USGS</span>
+                            </label>
+                            <label class="fuente-opcion">
+                                <input type="radio" name="fuenteEvento" value="usgs_sig">
+                                <span class="fuente-nombre">USGS Significativos</span>
+                                <div class="campo fuente-extra" id="sigExtraEv" hidden style="margin-top:6px">
+                                    <label for="sigThresholdEv">Significance threshold (sig ≥)</label>
+                                    <input type="number" id="sigThresholdEv" min="0" max="2000" step="10" value="600">
+                                </div>
+                            </label>
+                            <label class="fuente-opcion">
+                                <input type="radio" name="fuenteEvento" value="isc">
+                                <span class="fuente-nombre">ISC Bulletin</span>
+                            </label>
+                            <label class="fuente-opcion">
+                                <input type="radio" name="fuenteEvento" value="sgc">
+                                <span class="fuente-nombre">SGC Historical</span>
+                                <div class="nota">Not useful for recent events (no data after 2020).</div>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="control-group">
+                        <div class="group-title">Query parameters</div>
+                        <div class="bbox-grid">
+                            <div class="campo"><label for="fechaIniEv">Desde</label><input type="date" id="fechaIniEv"></div>
+                            <div class="campo"><label for="fechaFinEv">Hasta</label><input type="date" id="fechaFinEv"></div>
+                        </div>
+                        <div class="slider-group" style="margin-top:8px">
+                            <div class="slider-label"><span>Minimum magnitude</span><span class="slider-value" id="magValueEv">M2.5</span></div>
+                            <input type="range" id="magSliderEv" min="0" max="90" value="25">
+                        </div>
+                        <div class="campo" style="margin-top:8px">
+                            <label for="limiteEv">Result limit</label>
+                            <input type="number" id="limiteEv" min="1" max="20000" step="100" value="500">
+                        </div>
+                        <div class="nota" id="notaLimiteEv"></div>
+                    </div>
+
+                    <div class="control-group">
+                        <button class="btn" id="btnConsultarEvento">🔍 Load special event (catalog)</button>
+                    </div>
+                </div>
+
+                <div id="origenArchivo" hidden>
+                    <div class="control-group">
+                        <div class="group-title">Your own GeoJSON file</div>
+                        <input type="file" id="archivoGeoJSON" accept=".geojson,.json">
+                        <div class="nota">Any point FeatureCollection is accepted — several common field names are tried for depth, magnitude and date (see normalizarGeoJSONPropio).</div>
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <div class="group-title">Color by depth (this layer)</div>
+                    <div class="bbox-grid">
+                        <div class="campo"><label for="colorInicialEvento">Shallow</label><input type="color" id="colorInicialEvento" value="#ffeb3b"></div>
+                        <div class="campo"><label for="colorFinalEvento">Deep</label><input type="color" id="colorFinalEvento" value="#b71c1c"></div>
+                    </div>
+                    <div class="nota">This layer's own gradient — it doesn't share a scale with the background layer.</div>
+                </div>
+
+                <div class="control-group">
+                    <button class="btn secundario" id="btnQuitarEvento" disabled>🗑️ Remove special event layer</button>
+                    <div class="msg" id="mensajeEvento"></div>
+                </div>
+            </div>
+
+            <!-- ============ TAB 3: VIEW ============ -->
+            <div class="tab-panel" id="tabVista" hidden>
+                <div class="control-group">
+                    <div class="group-title">Visible layers</div>
+                    <div class="checkbox-item">
+                        <input type="checkbox" id="showEvents" checked>
+                        <label for="showEvents">3D events</label>
+                    </div>
+                    <div class="checkbox-item">
+                        <input type="checkbox" id="showMap" checked>
+                        <label for="showMap">2D map</label>
+                    </div>
+                    <div class="checkbox-item">
+                        <input type="checkbox" id="showCaja" checked>
+                        <label for="showCaja">Box & reference lines</label>
+                    </div>
+                    <div class="campo" style="margin-top:8px">
+                        <label for="mapaSuperiorSelector">Top-face map</label>
+                        <select id="mapaSuperiorSelector">
+                            <option value="osm" selected>OpenStreetMap</option>
+                            <option value="hot">OSM Humanitarian</option>
+                            <option value="topo">OpenTopoMap</option>
+                            <option value="claro">CARTO Light</option>
+                            <option value="oscuro">CARTO Dark</option>
+                            <option value="geologico">Geological Map (SGC)</option>
+                            <option value="ninguno">None (flat plane)</option>
+                        </select>
+                        <div class="nota">It's cropped to the queried area and updates automatically when it changes. The geological map only has data for Colombia/Central America.</div>
+                    </div>
+                    <div class="slider-group">
+                        <div class="slider-label">
+                            <span>Top-map opacity</span>
+                            <span class="slider-value" id="opacidadMapaSuperiorValue">100%</span>
+                        </div>
+                        <input type="range" id="opacidadMapaSuperiorSlider" min="0" max="100" value="100">
+                    </div>
+                    <div class="checkbox-item">
+                        <input type="checkbox" id="showFondo" checked>
+                        <label for="showFondo">Background layer</label>
+                    </div>
+                    <div class="checkbox-item">
+                        <input type="checkbox" id="showEventoCapa" checked>
+                        <label for="showEventoCapa">Special event layer</label>
+                    </div>
+                    <div class="checkbox-item">
+                        <input type="checkbox" id="showBeachball">
+                        <label for="showBeachball">Moment tensor (M7.4 Chocó, us6000tjl2)</label>
+                    </div>
+                    <div class="nota">Real focal sphere computed from USGS's published moment tensor — red = compression, blue = dilatation. Shown at the CMT centroid depth (120.5 km), only visible once an area/query is loaded.</div>
+                </div>
+
+                <div class="control-group">
+                    <div class="group-title">Opacity - 3D events</div>
+                    <div class="slider-group">
+                        <div class="slider-label">
+                            <span>Opacity</span>
+                            <span class="slider-value" id="opacityValue">100%</span>
+                        </div>
+                        <input type="range" id="opacitySlider" min="0" max="100" value="100">
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <div class="group-title">Size - Spheres</div>
+                    <div class="slider-group">
+                        <div class="slider-label">
+                            <span>Scale</span>
+                            <span class="slider-value" id="sizeValue">15%</span>
+                        </div>
+                        <input type="range" id="sizeSlider" min="0" max="50" value="15">
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <div class="group-title">Rotation speed</div>
+                    <div class="slider-group">
+                        <div class="slider-label">
+                            <span>Speed</span>
+                            <span class="slider-value" id="speedValue">0%</span>
+                        </div>
+                        <input type="range" id="speedSlider" min="0" max="200" value="0">
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <div class="info-box">
+                        <strong>Background layer</strong><br>
+                        Source: <span id="infoFuente">—</span><br>
+                        Events: <span id="totalEvents">0</span> · Showing: <span id="visibleEventsFondo">0</span><br>
+                        Period: <span id="infoPeriodo">—</span><br>
+                        Magnitudes: <span id="infoMag">—</span><br>
+                        Depths: <span id="infoProf">—</span>
+                    </div>
+                    <div class="legend">
+                        <div class="legend-title">Depth scale — Background</div>
+                        <div id="leyenda"></div>
+                    </div>
+
+                    <div class="info-box" id="infoBoxEvento" hidden style="margin-top:10px">
+                        <strong>Special event</strong><br>
+                        Source: <span id="infoFuenteEvento">—</span><br>
+                        Events: <span id="totalEventsEvento">0</span> · Showing: <span id="visibleEventsEvento">0</span><br>
+                        Period: <span id="infoPeriodoEvento">—</span><br>
+                        Magnitudes: <span id="infoMagEvento">—</span><br>
+                        Depths: <span id="infoProfEvento">—</span>
+                    </div>
+                    <div class="legend" id="legendEvento" hidden>
+                        <div class="legend-title">Depth scale — Special event</div>
+                        <div id="leyendaEvento"></div>
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <div class="group-title">Export</div>
                     <div class="campo">
-                        <label for="bboxN">Norte</label>
-                        <input type="number" id="bboxN" step="0.1" min="-90" max="90">
+                        <label for="exportarQue">What to export</label>
+                        <select id="exportarQue">
+                            <option value="fondo">Background layer</option>
+                            <option value="evento">Special event</option>
+                            <option value="ambas">Both (tagged by layer)</option>
+                        </select>
                     </div>
-                    <div class="campo">
-                        <label for="bboxS">Sur</label>
-                        <input type="number" id="bboxS" step="0.1" min="-90" max="90">
-                    </div>
-                    <div class="campo">
-                        <label for="bboxO">Oeste</label>
-                        <input type="number" id="bboxO" step="0.1" min="-180" max="180">
-                    </div>
-                    <div class="campo">
-                        <label for="bboxE">Este</label>
-                        <input type="number" id="bboxE" step="0.1" min="-180" max="180">
-                    </div>
-                </div>
-                <button class="btn secundario" id="btnDibujar">✏️ Dibujar en el mapa</button>
-                <div class="nota" id="notaArea">Arrastrá sobre el mapa para definir el rectángulo, o escribí las coordenadas.</div>
-            </div>
-
-            <div class="control-group">
-                <div class="group-title">Parámetros de consulta</div>
-                <div class="bbox-grid">
-                    <div class="campo">
-                        <label for="fechaIni">Desde</label>
-                        <input type="date" id="fechaIni">
-                    </div>
-                    <div class="campo">
-                        <label for="fechaFin">Hasta</label>
-                        <input type="date" id="fechaFin">
-                    </div>
-                </div>
-                <div class="slider-group" style="margin-top:8px">
-                    <div class="slider-label">
-                        <span>Magnitud mínima</span>
-                        <span class="slider-value" id="magValue">M2.5</span>
-                    </div>
-                    <input type="range" id="magSlider" min="0" max="70" value="25">
-                </div>
-                <div class="campo" style="margin-top:8px">
-                    <label for="limite">Límite de resultados</label>
-                    <input type="number" id="limite" min="1" max="5000" step="100" value="500">
+                    <button class="btn secundario" id="btnExportar" disabled style="margin-top:8px">⬇️ Export GeoJSON</button>
                 </div>
             </div>
-
-            <div class="control-group">
-                <button class="btn" id="btnConsultar">🔍 Consultar catálogo</button>
-                <div class="msg" id="mensaje"></div>
-            </div>
-
-            <div class="control-group">
-                <div class="group-title">Capas Visibles</div>
-                <div class="checkbox-item">
-                    <input type="checkbox" id="showEvents" checked>
-                    <label for="showEvents">Eventos 3D</label>
-                </div>
-                <div class="checkbox-item">
-                    <input type="checkbox" id="showMap" checked>
-                    <label for="showMap">Mapa 2D</label>
-                </div>
-                <div class="checkbox-item">
-                    <input type="checkbox" id="showCaja" checked>
-                    <label for="showCaja">Caja y referencias</label>
-                </div>
-            </div>
-
-            <div class="control-group">
-                <div class="group-title">Opacidad - Eventos 3D</div>
-                <div class="slider-group">
-                    <div class="slider-label">
-                        <span>Opacidad</span>
-                        <span class="slider-value" id="opacityValue">100%</span>
-                    </div>
-                    <input type="range" id="opacitySlider" min="0" max="100" value="100">
-                </div>
-            </div>
-
-            <div class="control-group">
-                <div class="group-title">Tamaño - Esferas</div>
-                <div class="slider-group">
-                    <div class="slider-label">
-                        <span>Escala</span>
-                        <span class="slider-value" id="sizeValue">100%</span>
-                    </div>
-                    <input type="range" id="sizeSlider" min="50" max="200" value="100">
-                </div>
-            </div>
-
-            <div class="control-group">
-                <div class="group-title">Velocidad Rotación</div>
-                <div class="slider-group">
-                    <div class="slider-label">
-                        <span>Velocidad</span>
-                        <span class="slider-value" id="speedValue">40%</span>
-                    </div>
-                    <input type="range" id="speedSlider" min="0" max="200" value="40">
-                </div>
-            </div>
-
-            <div class="control-group">
-                <div class="info-box">
-                    <strong>Fuente:</strong> <span id="infoFuente">—</span><br>
-                    <strong>Total de eventos:</strong> <span id="totalEvents">0</span><br>
-                    <strong>Período:</strong> <span id="infoPeriodo">—</span><br>
-                    <strong>Magnitudes:</strong> <span id="infoMag">—</span><br>
-                    <strong>Profundidades:</strong> <span id="infoProf">—</span><br>
-                    <strong>Mostrando:</strong> <span id="visibleEvents">0</span> eventos
-                </div>
-
-                <div class="legend">
-                    <div class="legend-title">Escala de Profundidad</div>
-                    <div id="leyenda"></div>
-                </div>
-            </div>
-
-            <div class="control-group">
-                <button class="btn secundario" id="btnExportar" disabled>⬇️ Exportar GeoJSON</button>
-            </div>
-        </div>
+        </aside>
     </div>
-
     <script>
     (function () {
         'use strict';
@@ -470,8 +590,10 @@
         // 1. Constantes y estado
         // ============================================================
 
-        const EMSC = 'https://www.seismicportal.eu/fdsnws/event/1/';
         const USGS = 'https://earthquake.usgs.gov/fdsnws/event/1/';
+        const PROXY_ISC = '/api/proxy-isc';
+        const SGC_CAPARR = 'https://catalogosismico.sgc.gov.co/rest_cats/caparr';
+        const FECHA_CORTE_SGC = '2020-12-29'; // fecha real del evento más reciente confirmado en el catálogo
 
         const ANCHO_MUNDO = 34;     // unidades 3D del lado mayor del bbox
         const PROF_MUNDO = 20;      // unidades 3D del alto de la caja
@@ -479,26 +601,76 @@
         const AREA_GRANDE = 40;     // grados; a partir de aquí se advierte
         const CLAVE_LS = 'explorador-area-sismos';
 
-        const COLORES = ['#00ff00', '#ffff00', '#ff8800', '#ff0000'];
+        const AZUL_CORTEZA = '#1a3a6b'; // 0-35km (corteza) en la capa de fondo
 
-        // Todo el estado de la consulta vigente vive acá: al llegar una
-        // consulta nueva se reemplaza entero, así no quedan residuos.
-        let datos = {
-            eventos: [],        // {id, lat, lon, prof, mag, time, auth, region}
-            bbox: null,         // {n, s, e, o}
-            fuente: null,       // 'EMSC' | 'USGS'
-            total: null,        // total disponible en la API (via /count)
-            truncado: false,
-            descartados: 0,
-            params: null,
-            buckets: [],
-            profTope: 0,        // km en el techo de la caja
-            profPiso: 1,        // km en el piso de la caja
-            minTime: null,
-            maxTime: null
+        // Las 4 fuentes ofrecidas — límite real de extracción verificado con
+        // pruebas en vivo contra cada servidor (ver documentación del proyecto).
+        // maxLimite=null significa "esta fuente no admite parámetro de límite".
+        const FUENTES = {
+            usgs: {
+                id: 'usgs', label: 'USGS',
+                maxLimite: 20000, limiteConfigurable: true, defaultLimite: 500,
+                fechaDesdeDefault: '1900-01-01' // catálogo global "moderno"; no hay un límite real conocido
+            },
+            usgs_sig: {
+                id: 'usgs_sig', label: 'USGS Significant',
+                maxLimite: 20000, limiteConfigurable: true, defaultLimite: 500,
+                fechaDesdeDefault: '1900-01-01'
+            },
+            isc: {
+                id: 'isc', label: 'ISC Bulletin',
+                // Sin tope confirmado del lado del servidor: autolimitado desde el cliente.
+                maxLimite: 10000, limiteConfigurable: true, defaultLimite: 500,
+                fechaDesdeDefault: '1900-01-01'
+            },
+            sgc: {
+                id: 'sgc', label: 'SGC Historical',
+                // Esta API no tiene parámetro de límite/paginación.
+                maxLimite: null, limiteConfigurable: false, defaultLimite: null,
+                // Rango real verificado con curl: el evento más antiguo del catálogo
+                // integrado data de 1610-02-03, y no hay datos después de FECHA_CORTE_SGC.
+                fechaDesdeDefault: '1610-01-01'
+            }
         };
 
-        let visibles = 0;       // cuántos eventos muestra el timeline (van ordenados por fecha)
+        // Por defecto se usa TODO el rango real de la fuente elegida (desde su
+        // fecha más antigua conocida hasta la más reciente que cubre), no un
+        // rango corto arbitrario — una ventana de pocos meses/años suele traer
+        // muy pocos o cero resultados en fuentes con cobertura dispersa.
+        function rangoFechasFuente(fuenteId) {
+            const F = FUENTES[fuenteId] || FUENTES.usgs;
+            const hasta = fuenteId === 'sgc' ? FECHA_CORTE_SGC : isoDia(new Date());
+            return { desde: F.fechaDesdeDefault, hasta };
+        }
+
+        // Dos datasets independientes y simultáneos: la capa de fondo (consulta
+        // principal, Pestaña "Área") y la capa opcional de evento especial
+        // (Pestaña "Evento especial") — cada una con su propia escala de color,
+        // su propio origen y su propio ciclo de vida. datosEvento es null hasta
+        // que se carga algo (por catálogo o por archivo).
+        function nuevaCapaFondo() {
+            return {
+                eventos: [],        // {id, lat, lon, prof, mag, time, auth, region}
+                bbox: null, modo: null, circulo: null,
+                fuente: null, fuenteId: null, urlConsulta: null,
+                total: null, truncado: false, descartados: 0, params: null,
+                profTope: 0,        // km en el techo de la caja 3D
+                profPiso: 1,        // km en el piso de la caja 3D
+                maxDepth: 0,        // profundidad máxima real -> escala colorFondo
+                minTime: null, maxTime: null
+            };
+        }
+
+        let datosFondo = nuevaCapaFondo();
+        let datosEvento = null;  // misma forma + colorInicial/colorFinal/minDepth/maxDepth/origen
+
+        // Estado de render específico de cada capa (mesh 3D + marcadores 2D +
+        // cuántos eventos muestra el timeline ahora mismo). Separado de
+        // datosFondo/datosEvento porque esto vive en el mundo de Three.js/Leaflet,
+        // no en el de los datos.
+        const renderFondo = { malla: null, indices: [], marcadores: [], visibles: 0 };
+        const renderEvento = { malla: null, indices: [], marcadores: [], visibles: 0 };
+
         let consultando = false;
 
         // ============================================================
@@ -507,7 +679,7 @@
 
         const $ = (id) => document.getElementById(id);
 
-        const MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+        const MESES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
         const pad = (n) => String(n).padStart(2, '0');
 
         function fechaCorta(d) {
@@ -543,48 +715,176 @@
             $('mensaje').innerHTML = '';
         }
 
+        function mensajeEvento(texto, tipo) {
+            const el = $('mensajeEvento');
+            el.className = 'msg visible ' + tipo;
+            el.innerHTML = (tipo === 'cargando' ? '<span class="spinner"></span>' : '') + texto;
+        }
+
+        function limpiarMensajeEvento() {
+            $('mensajeEvento').className = 'msg';
+            $('mensajeEvento').innerHTML = '';
+        }
+
+        // ============================================================
+        // 2b. Color por profundidad — una escala fija para la capa de fondo
+        // (azul/negro/blanco) y un degradado de 2 colores elegible por el
+        // usuario para la capa de evento especial. Nunca comparten escala:
+        // son conceptualmente distintas (contexto regional vs. evento puntual).
+        // ============================================================
+
+        function colorFondo(depth, maxDepth) {
+            if (depth <= 35) return AZUL_CORTEZA;
+            if (maxDepth <= 35) return '#000000';           // caso borde: todo el dataset es cortical salvo un outlier
+            const t = Math.min(1, (depth - 35) / (maxDepth - 35));
+            const v = Math.round(t * 255);
+            return `rgb(${v},${v},${v})`;
+        }
+
+        function lerpColor(hexA, hexB, t) {
+            const a = parseInt(hexA.slice(1), 16), b = parseInt(hexB.slice(1), 16);
+            const ar = (a >> 16) & 255, ag = (a >> 8) & 255, ab = a & 255;
+            const br = (b >> 16) & 255, bg = (b >> 8) & 255, bb = b & 255;
+            const r = Math.round(ar + (br - ar) * t), g = Math.round(ag + (bg - ag) * t), bl = Math.round(ab + (bb - ab) * t);
+            return `rgb(${r},${g},${bl})`;
+        }
+
+        function colorEvento(depth, minDepth, maxDepth, colorInicial, colorFinal) {
+            const t = maxDepth > minDepth ? (depth - minDepth) / (maxDepth - minDepth) : 0;
+            return lerpColor(colorInicial, colorFinal, t);
+        }
+
+        // Dispatch: qué función de color usar según a cuál de las 2 capas
+        // pertenece el evento que se está pintando.
+        function colorParaCapa(capaId, ev) {
+            if (capaId === 'fondo') return colorFondo(ev.prof, datosFondo.maxDepth);
+            const c = datosEvento;
+            return colorEvento(ev.prof, c.minDepth, c.maxDepth, c.colorInicial, c.colorFinal);
+        }
+
         // ============================================================
         // 3. Mapa Leaflet + dibujo del bbox
         // ============================================================
 
-        let map, rectangulo, capaMarcadores, marcadores = [], modoDibujo = false, dibujando = null;
+        let map, rectangulo, capaMarcadores, capaMarcadoresEvento, modoDibujo = false, dibujando = null;
+        let modoArea = 'rect';   // 'rect' | 'circulo'
+        let circuloDibujo = null, dibujandoCirculo = null;
+        let marcadorNO = null, marcadorSE = null;
+
+        // Capas base — las 5 de teselas ya verificadas en vivo + la geológica
+        // del SGC, que es un caso especial (imageOverlay dinámico, no teselas).
+        let capaOSM, capaHOT, capaTopo, capaCartoClaro, capaCartoOscuro, capaGeologica;
+        let capaBaseActual = null, capaBaseAnterior = null, capaGeologicaActiva = false;
+        let imagenGeologica = null, geoAbortController = null;
 
         function initMap() {
-            map = L.map('map', { zoomControl: true }).setView([4.5, -76.5], 6);
-            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                attribution: '© OpenStreetMap',
-                maxZoom: 19
-            }).addTo(map);
+            map = L.map('map', { zoomControl: true });
+            map.fitWorld();
+
+            capaOSM = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '© OpenStreetMap', maxZoom: 19
+            });
+            capaHOT = L.tileLayer('https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png', {
+                attribution: '© OpenStreetMap France (Humanitarian style)', maxZoom: 19
+            });
+            capaTopo = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
+                attribution: '© OpenTopoMap (OSM / SRTM data)', maxZoom: 17
+            });
+            capaCartoClaro = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png', {
+                attribution: '© CARTO / OpenStreetMap', maxZoom: 19
+            });
+            capaCartoOscuro = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png', {
+                attribution: '© CARTO / OpenStreetMap', maxZoom: 19
+            });
+            // Placeholder: el imageOverlay real se agrega/quita dinámicamente
+            // adentro de este layerGroup (ver Requisito 4 / actualizarCapaGeologica).
+            capaGeologica = L.layerGroup();
+
+            capaOSM.addTo(map);
+            capaBaseActual = capaOSM;
+            capaBaseAnterior = capaOSM;
+
+            const capasBase = {
+                'OpenStreetMap': capaOSM,
+                'OSM Humanitarian (HOT)': capaHOT,
+                'OpenTopoMap': capaTopo,
+                'CARTO Light (Positron)': capaCartoClaro,
+                'CARTO Dark (Dark Matter)': capaCartoOscuro,
+                'Geological Map of Colombia (SGC)': capaGeologica
+            };
+            L.control.layers(capasBase, null, { position: 'topright' }).addTo(map);
+
+            map.on('baselayerchange', (e) => {
+                capaBaseAnterior = capaBaseActual;
+                capaBaseActual = e.layer;
+                capaGeologicaActiva = (e.layer === capaGeologica);
+                if (capaGeologicaActiva) actualizarCapaGeologica();
+            });
 
             capaMarcadores = L.layerGroup().addTo(map);
+            capaMarcadoresEvento = L.layerGroup().addTo(map);
 
             map.on('mousedown', (e) => {
                 if (!modoDibujo) return;
-                dibujando = e.latlng;
-                if (rectangulo) { map.removeLayer(rectangulo); rectangulo = null; }
+                const ll = normalizarLatLng(e.latlng);
+                if (modoArea === 'circulo') {
+                    dibujandoCirculo = ll;
+                    if (circuloDibujo) { map.removeLayer(circuloDibujo); circuloDibujo = null; }
+                } else {
+                    dibujando = ll;
+                    if (rectangulo) { map.removeLayer(rectangulo); rectangulo = null; }
+                }
             });
 
             map.on('mousemove', (e) => {
-                if (!modoDibujo || !dibujando) return;
-                pintarRectangulo(L.latLngBounds(dibujando, e.latlng));
+                if (!modoDibujo) return;
+                const ll = normalizarLatLng(e.latlng);
+                if (modoArea === 'circulo') {
+                    if (!dibujandoCirculo) return;
+                    pintarCirculo(dibujandoCirculo, map.distance(dibujandoCirculo, ll));
+                } else {
+                    if (!dibujando) return;
+                    pintarRectangulo(L.latLngBounds(dibujando, ll));
+                }
             });
 
             map.on('mouseup', (e) => {
-                if (!modoDibujo || !dibujando) return;
-                const b = L.latLngBounds(dibujando, e.latlng);
-                dibujando = null;
-                // Un clic sin arrastrar no define un área: se ignora.
-                if (b.getNorth() - b.getSouth() < 0.01 || b.getEast() - b.getWest() < 0.01) {
-                    pintarRectangulo(bboxALatLngBounds(leerBbox()));
-                    return;
+                if (!modoDibujo) return;
+                const ll = normalizarLatLng(e.latlng);
+                if (modoArea === 'circulo') {
+                    if (!dibujandoCirculo) return;
+                    const centro = dibujandoCirculo;
+                    const radioM = map.distance(centro, ll);
+                    dibujandoCirculo = null;
+                    // Un clic sin arrastrar no define un área: se ignora.
+                    if (radioM < 1000) {
+                        const c = leerCirculo();
+                        if ([c.lat, c.lon, c.radioKm].every(isFinite)) pintarCirculo(L.latLng(c.lat, c.lon), c.radioKm * 1000);
+                        return;
+                    }
+                    escribirCirculo({ lat: centro.lat, lon: centro.lng, radioKm: radioM / 1000 });
+                    pintarCirculo(centro, radioM);
+                    modoDibujo3(false);
+                    validarArea(true);
+                    refrescarCapaGeologicaSiActiva();
+                } else {
+                    if (!dibujando) return;
+                    const b = L.latLngBounds(dibujando, ll);
+                    dibujando = null;
+                    // Un clic sin arrastrar no define un área: se ignora.
+                    if (b.getNorth() - b.getSouth() < 0.01 || b.getEast() - b.getWest() < 0.01) {
+                        pintarRectangulo(bboxALatLngBounds(leerBbox()));
+                        return;
+                    }
+                    escribirBbox({
+                        n: b.getNorth(), s: b.getSouth(),
+                        e: b.getEast(), o: b.getWest()
+                    });
+                    pintarRectangulo(b);
+                    modoDibujo3(false);
+                    validarBbox(true);
+                    refrescarCapaGeologicaSiActiva();
                 }
-                escribirBbox({
-                    n: b.getNorth(), s: b.getSouth(),
-                    e: b.getEast(), o: b.getWest()
-                });
-                pintarRectangulo(b);
-                modoDibujo3(false);
-                validarBbox(true);
             });
         }
 
@@ -595,6 +895,22 @@
                 color: '#64b5f6', weight: 1, dashArray: '4 3',
                 fillColor: '#64b5f6', fillOpacity: 0.07, interactive: false
             }).addTo(map);
+            // Mientras se está dibujando un rectángulo nuevo a mano (arrastre en
+            // curso), los campos numéricos todavía no reflejan el bbox en vivo —
+            // recién se actualizan en el mouseup. Sincronizar los marcadores de
+            // esquina acá los dejaría un instante en la posición vieja: se evita
+            // y se sincronizan al terminar el arrastre (mouseup ya llama de nuevo
+            // a pintarRectangulo con los campos ya actualizados).
+            if (!dibujando) actualizarMarcadoresEsquina();
+        }
+
+        function pintarCirculo(centro, radioM) {
+            if (!centro || !isFinite(radioM) || radioM <= 0) return;
+            if (circuloDibujo) map.removeLayer(circuloDibujo);
+            circuloDibujo = L.circle(centro, {
+                radius: radioM, color: '#64b5f6', weight: 1, dashArray: '4 3',
+                fillColor: '#64b5f6', fillOpacity: 0.07, interactive: false
+            }).addTo(map);
         }
 
         function bboxALatLngBounds(b) {
@@ -602,41 +918,334 @@
             return L.latLngBounds([b.s, b.o], [b.n, b.e]);
         }
 
+        // Leaflet deja arrastrar el mapa "dando la vuelta al mundo" varias
+        // veces (world wrap), así que un clic/arrastre lejos del centro puede
+        // devolver una longitud fuera de -180..180 (ej. 185° en vez de -175°).
+        // Se normaliza siempre al capturar coordenadas del mapa, antes de que
+        // lleguen a los campos del formulario o a la validación.
+        function normalizarLng(lng) {
+            return ((lng + 180) % 360 + 360) % 360 - 180;
+        }
+        function normalizarLatLng(latlng) {
+            return L.latLng(latlng.lat, normalizarLng(latlng.lng));
+        }
+
+        // --- Marcadores de esquina arrastrables (2 puntos: NO y SE) ---
+        // Un rectángulo queda completamente definido con 2 esquinas opuestas,
+        // así que basta con 2 controles de arrastre, no 4.
+        function actualizarMarcadoresEsquina() {
+            if (modoArea !== 'rect') { quitarMarcadoresEsquina(); return; }
+            const b = leerBbox();
+            if ([b.n, b.s, b.e, b.o].some(v => !isFinite(v))) { quitarMarcadoresEsquina(); return; }
+
+            const icono = L.divIcon({ className: 'esquina-marker', iconSize: [12, 12], iconAnchor: [6, 6] });
+            if (!marcadorNO) {
+                marcadorNO = L.marker([b.n, b.o], { draggable: true, icon: icono, zIndexOffset: 1000 }).addTo(map);
+                marcadorNO.on('drag', (e) => moverEsquina('NO', e.target.getLatLng()));
+                marcadorNO.on('dragend', refrescarCapaGeologicaSiActiva);
+            } else {
+                marcadorNO.setLatLng([b.n, b.o]);
+            }
+            if (!marcadorSE) {
+                marcadorSE = L.marker([b.s, b.e], { draggable: true, icon: icono, zIndexOffset: 1000 }).addTo(map);
+                marcadorSE.on('drag', (e) => moverEsquina('SE', e.target.getLatLng()));
+                marcadorSE.on('dragend', refrescarCapaGeologicaSiActiva);
+            } else {
+                marcadorSE.setLatLng([b.s, b.e]);
+            }
+        }
+
+        function quitarMarcadoresEsquina() {
+            if (marcadorNO) { map.removeLayer(marcadorNO); marcadorNO = null; }
+            if (marcadorSE) { map.removeLayer(marcadorSE); marcadorSE = null; }
+        }
+
+        // El marcador NO controla bboxN/bboxO; el SE controla bboxS/bboxE.
+        function moverEsquina(cual, latlng) {
+            const b = leerBbox();
+            const lng = normalizarLng(latlng.lng);
+            if (cual === 'NO') { b.n = latlng.lat; b.o = lng; }
+            else { b.s = latlng.lat; b.e = lng; }
+            escribirBbox(b);
+            if (rectangulo) map.removeLayer(rectangulo);
+            rectangulo = L.rectangle(bboxALatLngBounds(b) || L.latLngBounds([b.s, b.o], [b.n, b.e]), {
+                color: '#64b5f6', weight: 1, dashArray: '4 3',
+                fillColor: '#64b5f6', fillOpacity: 0.07, interactive: false
+            }).addTo(map);
+            validarBbox(true);
+        }
+
+        // --- Selector rectángulo / círculo ---
+        function setModoArea(modo) {
+            modoArea = modo;
+            $('btnModoRect').classList.toggle('activo', modo === 'rect');
+            $('btnModoCirculo').classList.toggle('activo', modo === 'circulo');
+            $('camposRect').hidden = modo !== 'rect';
+            $('camposCirculo').hidden = modo !== 'circulo';
+            if (modo === 'rect') {
+                if (circuloDibujo) { map.removeLayer(circuloDibujo); circuloDibujo = null; }
+                pintarRectangulo(bboxALatLngBounds(leerBbox()));
+            } else {
+                quitarMarcadoresEsquina();
+                if (rectangulo) { map.removeLayer(rectangulo); rectangulo = null; }
+                const c = leerCirculo();
+                if ([c.lat, c.lon, c.radioKm].every(isFinite) && c.radioKm > 0) {
+                    pintarCirculo(L.latLng(c.lat, c.lon), c.radioKm * 1000);
+                }
+            }
+            limpiarMensaje();
+        }
+
+        // ============================================================
+        // 3b. Mapa geológico del SGC (capa base especial — imageOverlay)
+        // ============================================================
+        //
+        // A diferencia de las otras 5 capas base (teselas continuas), esta es
+        // un servicio que genera UNA imagen para un bbox específico. Se probó
+        // en vivo (bbox de Colombia completo, área más chica, 1024×1024 y
+        // 2048×2048): responde entre 1 y 13s según si ese bbox+tamaño exacto
+        // ya está en caché del lado del servidor. El comentario de cubo-v2.html
+        // (~línea 1124) que dice que este servicio "se cae por timeout a los
+        // 60s" no se reprodujo en pruebas nuevas — de todas formas se muestra
+        // un estado de carga porque la primera petición a un área nueva puede
+        // tardar bastante más que las siguientes.
+
+        // Reutiliza el bbox actualmente seleccionado en el panel (bbox real o
+        // circunscrito si el modo es círculo) — no hace falta esperar a que
+        // haya datos consultados para poder previsualizar la geología.
+        function bboxParaGeologia() {
+            const b = modoArea === 'circulo' ? bboxCircunscrito(leerCirculo()) : leerBbox();
+            if ([b.n, b.s, b.e, b.o].every(isFinite)) return b;
+            // Todavía no hay un área definida en el formulario (ej. primera
+            // visita, campos vacíos): usar lo que se ve en el mapa ahora mismo,
+            // así la capa geológica siempre muestra algo en vez de quedar en
+            // blanco sin explicación.
+            const mb = map.getBounds();
+            return {
+                n: mb.getNorth(), s: mb.getSouth(),
+                e: normalizarLng(mb.getEast()), o: normalizarLng(mb.getWest())
+            };
+        }
+
+        // ============================================================
+        // Mapa real en la cara superior de la caja 3D (mismo patrón que
+        // cubo-v2.html: la cara de arriba proyecta un mapa real, no un
+        // plano de color liso). A diferencia de cubo-v2, acá el área es
+        // arbitraria (la que el usuario recortó), así que las teselas se
+        // buscan dinámicamente en vez de usar una ventana fija.
+        // ============================================================
+        const TILE_BASES_3D = {
+            osm:    (x, y, z) => `https://tile.openstreetmap.org/${z}/${x}/${y}.png`,
+            hot:    (x, y, z) => `https://a.tile.openstreetmap.fr/hot/${z}/${x}/${y}.png`,
+            topo:   (x, y, z) => `https://tile.opentopomap.org/${z}/${x}/${y}.png`,
+            claro:  (x, y, z) => `https://basemaps.cartocdn.com/light_all/${z}/${x}/${y}.png`,
+            oscuro: (x, y, z) => `https://basemaps.cartocdn.com/dark_all/${z}/${x}/${y}.png`
+        };
+
+        function lon2xTile(lon, z) { return (lon + 180) / 360 * Math.pow(2, z); }
+        function lat2yTile(lat, z) {
+            const r = lat * Math.PI / 180;
+            return (1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2 * Math.pow(2, z);
+        }
+        function cargarImagenCORS(url) {
+            return new Promise((res, rej) => {
+                const im = new Image();
+                im.crossOrigin = 'anonymous';
+                im.onload = () => res(im);
+                im.onerror = () => rej(new Error(url));
+                im.src = url;
+            });
+        }
+
+        function leerOpacidadMapaSuperior() {
+            const el = $('opacidadMapaSuperiorSlider');
+            return el ? parseFloat(el.value) / 100 : 1;
+        }
+
+        async function bakearMapaSuperior(b) {
+            if (!mallaSuperior || !b || [b.n, b.s, b.e, b.o].some(v => !isFinite(v))) return;
+            const miToken = ++bakeMapaToken; // si el área vuelve a cambiar antes de terminar, este resultado se descarta
+            const tipo = $('mapaSuperiorSelector') ? $('mapaSuperiorSelector').value : 'osm';
+
+            if (tipo === 'ninguno') {
+                if (mallaSuperior.material.map) mallaSuperior.material.map.dispose();
+                mallaSuperior.material.map = null;
+                mallaSuperior.material.color.set(0x14274a);
+                mallaSuperior.material.opacity = 0.55;
+                mallaSuperior.material.needsUpdate = true;
+                return;
+            }
+
+            try {
+                let canvas;
+                if (tipo === 'geologico') {
+                    const { w, h } = tamanioParaBbox(b);
+                    const url = 'https://srvags.sgc.gov.co/arcgis/rest/services/Mapa_Geologico_Colombia/' +
+                        'Mapa_Geologico_Colombia_V2023/MapServer/export' +
+                        `?bbox=${b.o},${b.s},${b.e},${b.n}&bboxSR=4326&imageSR=4326&size=${w},${h}` +
+                        `&format=png32&transparent=false&f=image`;
+                    const img = await cargarImagenCORS(url);
+                    if (miToken !== bakeMapaToken) return; // ya hay un área más nueva
+                    canvas = document.createElement('canvas');
+                    canvas.width = img.width; canvas.height = img.height;
+                    canvas.getContext('2d').drawImage(img, 0, 0);
+                } else {
+                    const fabricaUrl = TILE_BASES_3D[tipo];
+                    if (!fabricaUrl) return;
+
+                    // Zoom que traiga ~9 teselas del lado mayor (más detalle al acercar la
+                    // cámara), con tope de 150 teselas totales para no disparar cientos de
+                    // pedidos en áreas grandes.
+                    const lonSpan = Math.max(b.e - b.o, 0.001);
+                    let z = Math.max(1, Math.min(16, Math.round(Math.log2(360 / lonSpan * 9))));
+                    let x0, x1, y0, y1;
+                    do {
+                        x0 = Math.floor(lon2xTile(b.o, z)); x1 = Math.floor(lon2xTile(b.e, z));
+                        y0 = Math.floor(lat2yTile(b.n, z)); y1 = Math.floor(lat2yTile(b.s, z));
+                        if ((x1 - x0 + 1) * (y1 - y0 + 1) <= 150 || z <= 1) break;
+                        z--;
+                    } while (true);
+
+                    const nx = Math.max(1, x1 - x0 + 1), ny = Math.max(1, y1 - y0 + 1), TS = 256;
+                    const modo = Math.pow(2, z);
+                    canvas = document.createElement('canvas');
+                    canvas.width = nx * TS; canvas.height = ny * TS;
+                    const ctx = canvas.getContext('2d');
+                    ctx.fillStyle = '#1a1a19';
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+                    const jobs = [];
+                    for (let ty = 0; ty < ny; ty++) {
+                        for (let tx = 0; tx < nx; tx++) {
+                            const wrapX = ((x0 + tx) % modo + modo) % modo; // longitud da la vuelta al mundo
+                            jobs.push(
+                                cargarImagenCORS(fabricaUrl(wrapX, y0 + ty, z))
+                                    .then(im => ctx.drawImage(im, tx * TS, ty * TS, TS, TS))
+                                    .catch(() => {}) // una tesela caída no tumba el mosaico completo
+                            );
+                        }
+                    }
+                    await Promise.all(jobs);
+                    if (miToken !== bakeMapaToken) return;
+                }
+
+                const tex = new THREE.CanvasTexture(canvas);
+                if (mallaSuperior.material.map) mallaSuperior.material.map.dispose();
+                mallaSuperior.material.map = tex;
+                mallaSuperior.material.color.set(0xffffff);
+                mallaSuperior.material.opacity = leerOpacidadMapaSuperior();
+                mallaSuperior.material.needsUpdate = true;
+            } catch (err) {
+                console.warn('No se pudo construir el mapa de la cara superior:', err);
+            }
+        }
+
+        // Mismo criterio que sismos-cube.html línea ~543: lado mayor a 1024px,
+        // el otro proporcional al aspecto real del bbox.
+        function tamanioParaBbox(b) {
+            const lonSpan = Math.max(b.e - b.o, 0.01);
+            const latSpan = Math.max(b.n - b.s, 0.01);
+            let w, h;
+            if (lonSpan >= latSpan) { w = 1024; h = Math.max(256, Math.round(1024 * latSpan / lonSpan)); }
+            else { h = 1024; w = Math.max(256, Math.round(1024 * lonSpan / latSpan)); }
+            return { w, h };
+        }
+
+        // silencioso=true cuando se dispara como efecto secundario de una
+        // consulta de datos (aplicarResultado ya va a mostrar su propio mensaje
+        // de resultado — no queremos que "Cargando mapa geológico…" se lo pise).
+        // Los errores igual se muestran siempre: son información importante.
+        function refrescarCapaGeologicaSiActiva(silencioso) {
+            if (capaGeologicaActiva) actualizarCapaGeologica(silencioso);
+        }
+
+        async function actualizarCapaGeologica(silencioso) {
+            const b = bboxParaGeologia();
+            if ([b.n, b.s, b.e, b.o].some(v => !isFinite(v))) return; // todavía no hay área definida
+
+            if (geoAbortController) geoAbortController.abort();
+            const controller = new AbortController();
+            geoAbortController = controller;
+
+            const { w, h } = tamanioParaBbox(b);
+            const url = 'https://srvags.sgc.gov.co/arcgis/rest/services/Mapa_Geologico_Colombia/' +
+                'Mapa_Geologico_Colombia_V2023/MapServer/export' +
+                `?bbox=${b.o},${b.s},${b.e},${b.n}&bboxSR=4326&imageSR=4326&size=${w},${h}` +
+                `&format=png32&transparent=true&f=image`;
+
+            if (!silencioso) mensaje('Loading the SGC geological map… (can take several seconds the first time)', 'cargando');
+            try {
+                const res = await fetch(url, { signal: controller.signal });
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                const blob = await res.blob();
+                if (controller.signal.aborted) return; // una consulta más nueva ya la reemplazó
+                const objUrl = URL.createObjectURL(blob);
+
+                if (imagenGeologica) {
+                    map.removeLayer(imagenGeologica);
+                    if (imagenGeologica._urlObjeto) URL.revokeObjectURL(imagenGeologica._urlObjeto);
+                }
+                imagenGeologica = L.imageOverlay(objUrl, [[b.s, b.o], [b.n, b.e]], { opacity: 1, interactive: false });
+                imagenGeologica._urlObjeto = objUrl;
+                imagenGeologica.addTo(capaGeologica);
+                if (!silencioso) limpiarMensaje();
+            } catch (err) {
+                if (err.name === 'AbortError') return; // reemplazada, no es un error real
+                capaGeologicaActiva = false;
+                if (imagenGeologica) { capaGeologica.removeLayer(imagenGeologica); imagenGeologica = null; }
+                map.removeLayer(capaGeologica);
+                capaBaseAnterior.addTo(map); // dispara baselayerchange y sincroniza el control de capas
+                mensaje(
+                    'Could not load the SGC geological map right now (service down or slow). ' +
+                    'Reverted to the previous base map — try again later.',
+                    'aviso'
+                );
+            }
+        }
+
         // Activa/desactiva el modo dibujo (nombre corto para no chocar con la variable)
         function modoDibujo3(activar) {
             modoDibujo = activar;
             $('btnDibujar').classList.toggle('activo', activar);
-            $('btnDibujar').textContent = activar ? '✏️ Dibujando… (clic y arrastrar)' : '✏️ Dibujar en el mapa';
+            $('btnDibujar').textContent = activar ? '✏️ Drawing… (click and drag)' : '✏️ Draw on map';
             $('map').classList.toggle('dibujando', activar);
             if (activar) { map.dragging.disable(); map.boxZoom.disable(); }
             else { map.dragging.enable(); map.boxZoom.enable(); }
         }
 
-        function actualizarMarcadores() {
-            // Los eventos van ordenados por fecha, así que el timeline solo
-            // agrega o quita del final: no se reconstruye toda la capa.
-            while (marcadores.length > visibles) {
-                capaMarcadores.removeLayer(marcadores.pop());
+        // Los eventos van ordenados por fecha, así que el timeline solo agrega
+        // o quita del final: no se reconstruye toda la capa en cada paso.
+        function actualizarMarcadoresCapa(capaId) {
+            const capa = capaId === 'fondo' ? datosFondo : datosEvento;
+            const render = capaId === 'fondo' ? renderFondo : renderEvento;
+            const grupoCapa = capaId === 'fondo' ? capaMarcadores : capaMarcadoresEvento;
+            if (!capa) { grupoCapa.clearLayers(); render.marcadores = []; return; }
+
+            while (render.marcadores.length > render.visibles) {
+                grupoCapa.removeLayer(render.marcadores.pop());
             }
-            while (marcadores.length < visibles) {
-                const ev = datos.eventos[marcadores.length];
+            while (render.marcadores.length < render.visibles) {
+                const ev = capa.eventos[render.marcadores.length];
                 const m = L.circleMarker([ev.lat, ev.lon], {
                     radius: 3 + Math.max(0, ev.mag - 1) * 1.4,
-                    fillColor: colorProf(ev.prof),
+                    fillColor: colorParaCapa(capaId, ev),
                     color: '#fff', weight: 1, opacity: 0.8, fillOpacity: 0.8
                 });
                 m.bindPopup(
                     `<strong>M ${ev.mag.toFixed(1)}</strong> · ${ev.prof.toFixed(1)} km<br>` +
-                    `${fechaHora(ev.time)}<br>${ev.region || ''}`
+                    `${fechaHora(ev.time)}<br>${ev.region || ''}` +
+                    (capaId === 'evento' ? '<br><em>Special event</em>' : '')
                 );
-                capaMarcadores.addLayer(m);
-                marcadores.push(m);
+                grupoCapa.addLayer(m);
+                render.marcadores.push(m);
             }
         }
 
         function limpiarMarcadores() {
             capaMarcadores.clearLayers();
-            marcadores = [];
+            renderFondo.marcadores = [];
+            capaMarcadoresEvento.clearLayers();
+            renderEvento.marcadores = [];
         }
 
         // ============================================================
@@ -662,24 +1271,24 @@
         // Devuelve null si está todo bien, o {texto, tipo} si hay algo que decir.
         function revisarBbox(b) {
             if ([b.n, b.s, b.e, b.o].some(v => !isFinite(v))) {
-                return { texto: 'Faltan coordenadas: completá Norte, Sur, Este y Oeste.', tipo: 'error' };
+                return { texto: 'Missing coordinates: fill in North, South, East, and West.', tipo: 'error' };
             }
             if (b.n < -90 || b.n > 90 || b.s < -90 || b.s > 90) {
-                return { texto: 'Las latitudes deben estar entre -90 y 90.', tipo: 'error' };
+                return { texto: 'Latitudes must be between -90 and 90.', tipo: 'error' };
             }
             if (b.e < -180 || b.e > 180 || b.o < -180 || b.o > 180) {
-                return { texto: 'Las longitudes deben estar entre -180 y 180.', tipo: 'error' };
+                return { texto: 'Longitudes must be between -180 and 180.', tipo: 'error' };
             }
             if (b.n <= b.s) {
-                return { texto: `Norte (${b.n}) debe ser mayor que Sur (${b.s}).`, tipo: 'error' };
+                return { texto: `North (${b.n}) must be greater than South (${b.s}).`, tipo: 'error' };
             }
             if (b.e <= b.o) {
-                return { texto: `Este (${b.e}) debe ser mayor que Oeste (${b.o}).`, tipo: 'error' };
+                return { texto: `East (${b.e}) must be greater than West (${b.o}).`, tipo: 'error' };
             }
             if ((b.n - b.s) > AREA_GRANDE || (b.e - b.o) > AREA_GRANDE) {
                 return {
-                    texto: `Área muy grande (${(b.n - b.s).toFixed(0)}° × ${(b.e - b.o).toFixed(0)}°). ` +
-                           'La consulta puede devolver miles de eventos y tardar.',
+                    texto: `Area too large (${(b.n - b.s).toFixed(0)}° × ${(b.e - b.o).toFixed(0)}°). ` +
+                           'The query may return thousands of events and take a while.',
                     tipo: 'aviso'
                 };
             }
@@ -694,55 +1303,304 @@
             return problema.tipo !== 'error';
         }
 
-        function leerParams() {
+        // --- Modo círculo: centro (lat, lon) + radio en km ---
+
+        function leerCirculo() {
             return {
-                bbox: leerBbox(),
+                lat: parseFloat($('circLat').value),
+                lon: parseFloat($('circLon').value),
+                radioKm: parseFloat($('circRadio').value)
+            };
+        }
+
+        function escribirCirculo(c) {
+            $('circLat').value = c.lat.toFixed(2);
+            $('circLon').value = c.lon.toFixed(2);
+            $('circRadio').value = Math.round(c.radioKm);
+        }
+
+        function revisarCirculo(c) {
+            if (![c.lat, c.lon, c.radioKm].every(isFinite)) {
+                return { texto: 'Missing data: fill in the center (lat, lon) and the radius in km.', tipo: 'error' };
+            }
+            if (c.lat < -90 || c.lat > 90) return { texto: 'Latitude must be between -90 and 90.', tipo: 'error' };
+            if (c.lon < -180 || c.lon > 180) return { texto: 'Longitude must be between -180 and 180.', tipo: 'error' };
+            if (c.radioKm <= 0) return { texto: 'The radius must be greater than 0 km.', tipo: 'error' };
+            if (c.radioKm > 2000) {
+                return {
+                    texto: `Radius too large (${c.radioKm.toFixed(0)} km). The query may return thousands of events ` +
+                           `(remember USGS's 20,000 cap) and take a while.`,
+                    tipo: 'aviso'
+                };
+            }
+            return null;
+        }
+
+        // Bbox cuadrado que circunscribe el círculo — solo para las dimensiones
+        // de la caja 3D y para pedirle imagen al servicio geológico (que solo
+        // acepta bbox rectangular). Los eventos reales ya vienen filtrados al
+        // círculo real por la API, así que las esquinas quedan sin esferas.
+        function bboxCircunscrito(c) {
+            const kmLat = 111.32, kmLon = 111.32 * Math.cos(c.lat * Math.PI / 180);
+            const dLat = c.radioKm / kmLat;
+            const dLon = c.radioKm / Math.max(Math.abs(kmLon), 1);
+            return {
+                n: Math.min(90, c.lat + dLat), s: Math.max(-90, c.lat - dLat),
+                e: Math.min(180, c.lon + dLon), o: Math.max(-180, c.lon - dLon)
+            };
+        }
+
+        // Dispatch genérico según el modo de área activo (rectángulo o círculo).
+        function revisarArea() {
+            return modoArea === 'circulo' ? revisarCirculo(leerCirculo()) : revisarBbox(leerBbox());
+        }
+
+        function validarArea(silencioso) {
+            const problema = revisarArea();
+            if (!problema) { if (!silencioso) limpiarMensaje(); return true; }
+            mensaje(problema.texto, problema.tipo);
+            return problema.tipo !== 'error';
+        }
+
+        // --- Área de la capa de evento especial (Pestaña 2) ---
+        // A diferencia de la capa de fondo, esta área no se dibuja arrastrando
+        // en el mapa (para no duplicar toda la maquinaria interactiva de la
+        // Parte 2) — se escribe a mano o se copia con el botón "Usar la misma
+        // área que la capa de Fondo". Reutiliza revisarBbox/revisarCirculo
+        // (funciones puras, no dependen de qué campos del DOM se leyeron).
+
+        let modoAreaEvento = 'rect';
+
+        function leerBboxEv() {
+            return {
+                n: parseFloat($('bboxNEv').value), s: parseFloat($('bboxSEv').value),
+                e: parseFloat($('bboxEEv').value), o: parseFloat($('bboxOEv').value)
+            };
+        }
+        function escribirBboxEv(b) {
+            $('bboxNEv').value = b.n.toFixed(2); $('bboxSEv').value = b.s.toFixed(2);
+            $('bboxEEv').value = b.e.toFixed(2); $('bboxOEv').value = b.o.toFixed(2);
+        }
+        function leerCirculoEv() {
+            return {
+                lat: parseFloat($('circLatEv').value), lon: parseFloat($('circLonEv').value),
+                radioKm: parseFloat($('circRadioEv').value)
+            };
+        }
+        function escribirCirculoEv(c) {
+            $('circLatEv').value = c.lat.toFixed(2); $('circLonEv').value = c.lon.toFixed(2);
+            $('circRadioEv').value = Math.round(c.radioKm);
+        }
+
+        function setModoAreaEvento(modo) {
+            modoAreaEvento = modo;
+            $('btnModoRectEv').classList.toggle('activo', modo === 'rect');
+            $('btnModoCirculoEv').classList.toggle('activo', modo === 'circulo');
+            $('camposRectEv').hidden = modo !== 'rect';
+            $('camposCirculoEv').hidden = modo !== 'circulo';
+        }
+
+        function revisarAreaEvento() {
+            return modoAreaEvento === 'circulo' ? revisarCirculo(leerCirculoEv()) : revisarBbox(leerBboxEv());
+        }
+
+        // --- GeoJSON propio (archivo local) ---
+        // Un GeoJSON de un tercero no necesariamente sigue las convenciones de
+        // ninguna de las 4 fuentes ya integradas: se prueban varios nombres de
+        // campo comunes en orden, no se asume uno solo.
+        function normalizarGeoJSONPropio(featureCollection) {
+            const out = [];
+            let descartados = 0;
+            for (const f of featureCollection.features || []) {
+                const p = f.properties || {};
+                const c = (f.geometry && f.geometry.coordinates) || [];
+                const lon = Number(c[0]), lat = Number(c[1]);
+                let prof = isFinite(c[2]) ? Math.abs(c[2]) : NaN;
+                if (!isFinite(prof)) prof = Number(p.depth ?? p.prof ?? p.profundidad ?? p.ESP_PROFUNDIDAD ?? NaN);
+                const mag = Number(p.mag ?? p.magnitude ?? p.magnitud ?? p.ml ?? p.mb ?? NaN);
+                const tRaw = p.time ?? p.date ?? p.fecha ?? p.ESP_FECHA_LONG;
+                const t = tRaw != null ? new Date(typeof tRaw === 'number' && tRaw < 1e12 ? tRaw * 1000 : tRaw) : null;
+                if (![lat, lon, prof, mag].every(isFinite) || !t || isNaN(t.getTime())) { descartados++; continue; }
+                out.push({
+                    id: f.id ?? p.id ?? out.length, lat, lon, prof, mag, time: t,
+                    auth: p.auth || 'own file', region: p.region || p.place || p.lugar || ''
+                });
+            }
+            return { eventos: out, descartados };
+        }
+
+        function fuenteSeleccionada() {
+            const el = document.querySelector('input[name="fuente"]:checked');
+            return el ? el.value : 'usgs';
+        }
+
+        function leerParams() {
+            const fuenteId = fuenteSeleccionada();
+            const F = FUENTES[fuenteId];
+            let limite = Math.max(1, parseInt($('limite').value, 10) || F.defaultLimite || 500);
+            if (F.maxLimite != null) limite = Math.min(limite, F.maxLimite);
+
+            const base = {
+                modo: modoArea,
                 inicio: $('fechaIni').value,
                 fin: $('fechaFin').value,
                 minmag: parseInt($('magSlider').value, 10) / 10,
-                limite: Math.max(1, Math.min(5000, parseInt($('limite').value, 10) || 500))
+                limite,
+                minsig: Math.max(0, parseInt($('sigThreshold').value, 10) || 600)
             };
+            if (modoArea === 'circulo') {
+                base.circulo = leerCirculo();
+                // El bbox circunscrito alimenta la proyección 3D y el mapa geológico
+                // (ninguno de los dos entiende círculos) aunque la consulta real a
+                // la API vaya con centro+radio.
+                base.bbox = bboxCircunscrito(base.circulo);
+            } else {
+                base.bbox = leerBbox();
+            }
+            return base;
+        }
+
+        // Actualiza el tope del campo "Límite de resultados" y su nota según la
+        // fuente elegida — cada una tiene un límite real distinto (ver FUENTES).
+        function actualizarLimiteUI() {
+            const fuenteId = fuenteSeleccionada();
+            const F = FUENTES[fuenteId];
+            const campoLimite = $('limite');
+            const nota = $('notaLimite');
+            $('sigExtra').hidden = fuenteId !== 'usgs_sig';
+
+            if (!F.limiteConfigurable) {
+                campoLimite.disabled = true;
+                campoLimite.value = '';
+                nota.textContent = 'SGC Historical has no limit parameter: it always returns every event that fits the requested area, depth, magnitude and dates. Control the volume by narrowing those filters.';
+                return;
+            }
+            campoLimite.disabled = false;
+            campoLimite.max = F.maxLimite;
+            if (!campoLimite.value || parseInt(campoLimite.value, 10) > F.maxLimite) {
+                campoLimite.value = Math.min(F.defaultLimite, F.maxLimite);
+            }
+            if (fuenteId === 'isc') {
+                nota.textContent = `ISC doesn't enforce a fixed cap, but this interface self-limits it to ${F.maxLimite.toLocaleString('en')} events per query to avoid disproportionate responses.`;
+            } else {
+                nota.textContent = `Hard server cap: ${F.maxLimite.toLocaleString('en')} events per query.`;
+            }
+        }
+
+        // --- Same functions, for querying the special event layer ---
+
+        function fuenteSeleccionadaEvento() {
+            const el = document.querySelector('input[name="fuenteEvento"]:checked');
+            return el ? el.value : 'usgs';
+        }
+
+        function leerParamsEvento() {
+            const fuenteId = fuenteSeleccionadaEvento();
+            const F = FUENTES[fuenteId];
+            let limite = Math.max(1, parseInt($('limiteEv').value, 10) || F.defaultLimite || 500);
+            if (F.maxLimite != null) limite = Math.min(limite, F.maxLimite);
+
+            const base = {
+                modo: modoAreaEvento,
+                inicio: $('fechaIniEv').value, fin: $('fechaFinEv').value,
+                minmag: parseInt($('magSliderEv').value, 10) / 10, limite,
+                minsig: Math.max(0, parseInt($('sigThresholdEv').value, 10) || 600)
+            };
+            if (modoAreaEvento === 'circulo') {
+                base.circulo = leerCirculoEv();
+                base.bbox = bboxCircunscrito(base.circulo);
+            } else {
+                base.bbox = leerBboxEv();
+            }
+            return base;
+        }
+
+        function actualizarLimiteUIEvento() {
+            const fuenteId = fuenteSeleccionadaEvento();
+            const F = FUENTES[fuenteId];
+            const campoLimite = $('limiteEv');
+            const nota = $('notaLimiteEv');
+            $('sigExtraEv').hidden = fuenteId !== 'usgs_sig';
+
+            if (!F.limiteConfigurable) {
+                campoLimite.disabled = true;
+                campoLimite.value = '';
+                nota.textContent = 'SGC Historical has no limit parameter.';
+                return;
+            }
+            campoLimite.disabled = false;
+            campoLimite.max = F.maxLimite;
+            if (!campoLimite.value || parseInt(campoLimite.value, 10) > F.maxLimite) {
+                campoLimite.value = Math.min(F.defaultLimite, F.maxLimite);
+            }
+            nota.textContent = fuenteId === 'isc'
+                ? `Self-limited to ${F.maxLimite.toLocaleString('en')} events per query.`
+                : `Hard server cap: ${F.maxLimite.toLocaleString('en')} events per query.`;
         }
 
         // ============================================================
         // 5. Consulta a los catálogos y normalización
         // ============================================================
 
-        function urlEMSC(p, metodo) {
-            const b = p.bbox;
-            return `${EMSC}${metodo}?format=json` +
-                `&minlat=${b.s}&maxlat=${b.n}&minlon=${b.o}&maxlon=${b.e}` +
-                `&start=${p.inicio}&end=${p.fin}&minmag=${p.minmag}` +
-                (metodo === 'query' ? `&limit=${p.limite}` : '');
+        // 1° de arco ≈ 111.32 km — conversión angular uniforme (no depende de
+        // la latitud, a diferencia de convertir grados de longitud a km).
+        const KM_POR_GRADO = 111.32;
+
+        // Construye la porción geográfica de la URL según el modo (bbox o
+        // círculo), con la unidad de radio nativa de cada fuente:
+        //  - USGS acepta maxradiuskm directamente (extensión propia de USGS).
+        //  - EMSC/ISC solo aceptan maxradius en GRADOS (maxradiuskm da 400).
+        //  - SGC (caparrRadial) acepta el radio en km, igual que USGS.
+        function urlUSGS(p, metodo, minsig) {
+            let geo;
+            if (p.modo === 'circulo') {
+                const c = p.circulo;
+                geo = `&latitude=${c.lat}&longitude=${c.lon}&maxradiuskm=${c.radioKm}`;
+            } else {
+                const b = p.bbox;
+                geo = `&minlatitude=${b.s}&maxlatitude=${b.n}&minlongitude=${b.o}&maxlongitude=${b.e}`;
+            }
+            return `${USGS}${metodo}?format=geojson${geo}` +
+                `&starttime=${p.inicio}&endtime=${p.fin}&minmagnitude=${p.minmag}` +
+                (metodo === 'query' ? `&limit=${p.limite}` : '') +
+                (minsig != null ? `&minsig=${minsig}` : '');
         }
 
-        function urlUSGS(p, metodo) {
-            const b = p.bbox;
-            return `${USGS}${metodo}?format=geojson` +
-                `&minlatitude=${b.s}&maxlatitude=${b.n}&minlongitude=${b.o}&maxlongitude=${b.e}` +
+        // ISC no tiene CORS: se pasa por el proxy serverless /api/proxy-isc,
+        // que arma la URL real de isc.ac.uk server-side y reenvía la respuesta.
+        function urlISC(p, metodo) {
+            let geo;
+            if (p.modo === 'circulo') {
+                const c = p.circulo;
+                const radioGrados = c.radioKm / KM_POR_GRADO;
+                geo = `&latitude=${c.lat}&longitude=${c.lon}&maxradius=${radioGrados}`;
+            } else {
+                const b = p.bbox;
+                geo = `&minlatitude=${b.s}&maxlatitude=${b.n}&minlongitude=${b.o}&maxlongitude=${b.e}`;
+            }
+            return `${PROXY_ISC}?endpoint=${metodo}${geo}` +
                 `&starttime=${p.inicio}&endtime=${p.fin}&minmagnitude=${p.minmag}` +
                 (metodo === 'query' ? `&limit=${p.limite}` : '');
         }
 
-        // EMSC: properties trae lat/lon/depth positivos; geometry.coordinates[2] es negativo.
-        function normalizarEMSC(features) {
-            const out = [];
-            let descartados = 0;
-            for (const f of features) {
-                const p = f.properties || {};
-                const lat = Number(p.lat), lon = Number(p.lon);
-                const prof = Number(p.depth), mag = Number(p.mag);
-                const t = p.time ? new Date(p.time) : null;
-                if (![lat, lon, prof, mag].every(isFinite) || !t || isNaN(t.getTime())) { descartados++; continue; }
-                out.push({
-                    id: f.id || p.source_id, lat, lon, prof: Math.abs(prof), mag,
-                    time: t, auth: p.auth || p.source_catalog || 'EMSC', region: p.flynn_region || ''
-                });
+        // SGC: ruta posicional (no query params), orden fijo ya verificado con curl.
+        // Bbox: latMin/latMax/lonMin/lonMax/profMin/profMax/magMin/magMax/fechaIniMs/fechaFinMs
+        // Radial: latCentro/lonCentro/radioKm/profMin/profMax/magMin/magMax/fechaIniMs/fechaFinMs
+        function urlSGC(p) {
+            const fechaIniMs = new Date(p.inicio + 'T00:00:00Z').getTime();
+            const fechaFinMs = new Date(p.fin + 'T23:59:59Z').getTime();
+            const profMin = 0, profMax = 40000, magMax = 1000;
+            if (p.modo === 'circulo') {
+                const c = p.circulo;
+                return `${SGC_CAPARR}Radial/${c.lat}/${c.lon}/${c.radioKm}/${profMin}/${profMax}/${p.minmag}/${magMax}/${fechaIniMs}/${fechaFinMs}`;
             }
-            return { eventos: out, descartados };
+            const b = p.bbox;
+            return `${SGC_CAPARR}/${b.s}/${b.n}/${b.o}/${b.e}/${profMin}/${profMax}/${p.minmag}/${magMax}/${fechaIniMs}/${fechaFinMs}`;
         }
 
         // USGS: profundidad positiva en geometry.coordinates[2], time en epoch ms.
+        // También sirve para USGS Significativos: mismo formato, solo cambia el
+        // parámetro minsig con el que se arma la URL.
         function normalizarUSGS(features) {
             const out = [];
             let descartados = 0;
@@ -761,7 +1619,51 @@
             return { eventos: out, descartados };
         }
 
+        // ISC: texto plano pipe-delimited, no GeoJSON. Formato confirmado:
+        // #EventID|Time|Latitude|Longitude|Depth/km|Author|Catalog|Contributor|
+        // ContributorID|MagType|Magnitude|MagAuthor|EventLocationName|EventType
+        function normalizarISC(texto) {
+            const out = [];
+            let descartados = 0;
+            const lineas = (texto || '').split('\n');
+            for (const linea of lineas) {
+                const l = linea.trim();
+                if (!l || l.startsWith('#')) continue;
+                const c = l.split('|');
+                if (c.length < 13) { descartados++; continue; }
+                const lat = Number(c[2]), lon = Number(c[3]), prof = Number(c[4]);
+                const mag = Number(c[10]);
+                const t = c[1] ? new Date(c[1]) : null;
+                if (![lat, lon, prof, mag].every(isFinite) || !t || isNaN(t.getTime())) { descartados++; continue; }
+                out.push({
+                    id: c[0], lat, lon, prof: Math.abs(prof), mag,
+                    time: t, auth: c[5] || 'ISC', region: c[12] || ''
+                });
+            }
+            return { eventos: out, descartados };
+        }
+
+        // SGC: GeoJSON confirmado, pero con nombres de campo propios (ESP_*).
+        function normalizarSGC(features) {
+            const out = [];
+            let descartados = 0;
+            for (const f of features) {
+                const p = f.properties || {};
+                const lat = Number(p.ESP_LATITUD), lon = Number(p.ESP_LONGITUD);
+                const prof = Number(p.ESP_PROFUNDIDAD), mag = Number(p.ESP_MAGNITUD);
+                const t = typeof p.ESP_FECHA_LONG === 'number' ? new Date(p.ESP_FECHA_LONG) : null;
+                if (![lat, lon, prof, mag].every(isFinite) || !t || isNaN(t.getTime())) { descartados++; continue; }
+                out.push({
+                    id: f.id || p.OBJECTID, lat, lon, prof: Math.abs(prof), mag,
+                    time: t, auth: p.ESP_FUENTE_LOCALIZACION || 'SGC', region: ''  // sin texto de región, solo códigos MUN_CODIGO/DEPT_CODIGO
+                });
+            }
+            return { eventos: out, descartados };
+        }
+
         // Pide el total disponible sin traerse los eventos. Si falla, no pasa nada.
+        // Solo existe /count verificado en USGS — ISC no tiene ese endpoint (404
+        // confirmado) y SGC no tiene noción de "total" (no pagina ni limita).
         async function pedirTotal(url) {
             try {
                 const res = await fetch(url);
@@ -771,180 +1673,317 @@
             } catch (e) { return null; }
         }
 
+        // Ejecuta la consulta contra la fuente indicada y devuelve el resultado ya
+        // normalizado al shape interno común. No toca el estado global `datos` ni
+        // el DOM — así lo puede reutilizar tanto la capa de fondo como la capa de
+        // evento especial (Parte 3) sin duplicar la lógica por fuente.
+        async function consultarFuenteRaw(p, fuenteId) {
+            const F = FUENTES[fuenteId];
+            if (!F) throw new Error('Unknown source: ' + fuenteId);
+
+            let crudos, notas = [];
+
+            if (fuenteId === 'usgs' || fuenteId === 'usgs_sig') {
+                const minsig = fuenteId === 'usgs_sig' ? p.minsig : null;
+                const res = await fetch(urlUSGS(p, 'query', minsig));
+                if (!res.ok) {
+                    let detalle = '';
+                    try { const j = await res.json(); detalle = j.message || ''; } catch (e) { /* sin cuerpo JSON */ }
+                    throw new Error(`USGS responded with HTTP ${res.status}. ${detalle}`);
+                }
+                const j = await res.json();
+                crudos = { tipo: 'usgs', features: (j && j.features) || [] };
+            } else if (fuenteId === 'isc') {
+                const res = await fetch(urlISC(p, 'query'));
+                if (!res.ok) {
+                    let detalle = '';
+                    try { detalle = (await res.text()).slice(0, 200); } catch (e) { /* nada que leer */ }
+                    throw new Error(`ISC responded with HTTP ${res.status} (via proxy). ${detalle}`);
+                }
+                const texto = await res.text();
+                crudos = { tipo: 'isc', texto };
+            } else if (fuenteId === 'sgc') {
+                const res = await fetch(urlSGC(p));
+                if (!res.ok) throw new Error('SGC responded with HTTP ' + res.status);
+                const texto = await res.text();
+                let j;
+                try { j = JSON.parse(texto); }
+                catch (e) { throw new Error('SGC returned a response that is not valid JSON.'); }
+                crudos = { tipo: 'sgc', features: (j && j.features) || [], bytes: texto.length };
+                if (crudos.bytes > 3_000_000) {
+                    notas.push(`The raw SGC response was ~${(crudos.bytes / 1e6).toFixed(1)} MB. You can narrow the dates/magnitude to lighten it.`);
+                }
+                if (p.fin > FECHA_CORTE_SGC) {
+                    notas.push(`SGC Historical has no data after late 2020 (last confirmed event: ${FECHA_CORTE_SGC}). The requested range includes dates outside its coverage.`);
+                }
+            }
+
+            let norm;
+            if (crudos.tipo === 'usgs') norm = normalizarUSGS(crudos.features);
+            else if (crudos.tipo === 'isc') norm = normalizarISC(crudos.texto);
+            else norm = normalizarSGC(crudos.features);
+
+            norm.eventos.sort((a, b) => a.time - b.time);
+
+            let total = null;
+            if (fuenteId === 'usgs' || fuenteId === 'usgs_sig') {
+                total = await pedirTotal(urlUSGS(p, 'count', fuenteId === 'usgs_sig' ? p.minsig : null));
+            }
+
+            // Truncamiento: para fuentes con tope (USGS/USGS Sig/ISC), si el
+            // resultado llegó exactamente al límite pedido, probablemente hay más.
+            const truncado = F.maxLimite != null && norm.eventos.length >= Math.min(p.limite, F.maxLimite);
+
+            const urlUsada = fuenteId === 'usgs' || fuenteId === 'usgs_sig' ? urlUSGS(p, 'query', fuenteId === 'usgs_sig' ? p.minsig : null)
+                : fuenteId === 'isc' ? urlISC(p, 'query')
+                : urlSGC(p);
+
+            return { norm, total, notas, truncado, fuenteId, fuenteLabel: F.label, urlUsada };
+        }
+
         async function consultar() {
             if (consultando) return;
 
-            const problema = revisarBbox(leerBbox());
+            const problema = revisarArea();
             if (problema && problema.tipo === 'error') {
                 mensaje(problema.texto, 'error');   // no se llama a la API
                 return;
             }
 
             const p = leerParams();
-            if (!p.inicio || !p.fin) { mensaje('Definí el rango de fechas.', 'error'); return; }
-            if (p.inicio > p.fin) { mensaje('La fecha "desde" es posterior a la fecha "hasta".', 'error'); return; }
+            if (!p.inicio || !p.fin) { mensaje('Set the date range.', 'error'); return; }
+            if (p.inicio > p.fin) { mensaje('The "from" date is after the "to" date.', 'error'); return; }
+
+            const fuenteId = fuenteSeleccionada();
+            const F = FUENTES[fuenteId];
 
             consultando = true;
             $('btnConsultar').disabled = true;
-            mensaje('Consultando EMSC…', 'cargando');
+            mensaje(`Querying ${F.label}…`, 'cargando');
 
-            let fuente = null, crudos = null, notas = [];
-
-            // --- Fuente primaria: EMSC ---
+            let resultado;
             try {
-                const res = await fetch(urlEMSC(p, 'query'));
-                if (res.status === 204) {
-                    // EMSC responde 204 SIN CUERPO cuando no hay eventos: res.json() reventaría.
-                    notas.push('EMSC no reportó eventos (HTTP 204); se verificó contra USGS.');
-                } else if (!res.ok) {
-                    notas.push(`EMSC respondió HTTP ${res.status}; se usó USGS.`);
-                } else {
-                    const j = await res.json();
-                    crudos = { tipo: 'EMSC', features: (j && j.features) || [] };
-                    fuente = 'EMSC';
-                }
+                resultado = await consultarFuenteRaw(p, fuenteId);
             } catch (err) {
-                notas.push('El navegador bloqueó o falló la petición a EMSC (posible CORS o red); se usó USGS.');
+                consultando = false;
+                $('btnConsultar').disabled = false;
+                mensaje(
+                    `<strong>Could not query ${F.label}.</strong><br>${err.message}` +
+                    '<br>Check your connection and try again with the "Query catalog" button.',
+                    'error'
+                );
+                return;
             }
 
-            // --- Respaldo: USGS ---
-            if (!fuente) {
-                mensaje('EMSC no respondió con datos. Consultando USGS…', 'cargando');
-                try {
-                    const res = await fetch(urlUSGS(p, 'query'));
-                    if (!res.ok) throw new Error('HTTP ' + res.status);
-                    const j = await res.json();
-                    crudos = { tipo: 'USGS', features: (j && j.features) || [] };
-                    fuente = 'USGS';
-                } catch (err) {
-                    consultando = false;
-                    $('btnConsultar').disabled = false;
-                    mensaje(
-                        '<strong>No se pudo consultar ningún catálogo.</strong><br>' +
-                        notas.join('<br>') + '<br>USGS: ' + err.message +
-                        '<br>Revisá la conexión y volvé a intentar con el botón «Consultar catálogo».',
-                        'error'
-                    );
-                    return;
-                }
-            }
-
-            const norm = crudos.tipo === 'EMSC'
-                ? normalizarEMSC(crudos.features)
-                : normalizarUSGS(crudos.features);
-
-            norm.eventos.sort((a, b) => a.time - b.time);
-
-            const total = await pedirTotal(fuente === 'EMSC' ? urlEMSC(p, 'count') : urlUSGS(p, 'count'));
-
-            aplicarResultado(norm, p, fuente, total, notas);
+            aplicarResultado(resultado.norm, p, resultado.fuenteLabel, resultado.total, resultado.notas, {
+                fuenteId: resultado.fuenteId,
+                urlConsulta: resultado.urlUsada,
+                truncado: resultado.truncado
+            });
 
             consultando = false;
             $('btnConsultar').disabled = false;
-            guardarPreferencias(p);
+            guardarPreferencias(p, fuenteId);
         }
 
         // ============================================================
         // 6. Aplicar el resultado: reconstruye TODO lo dependiente de los datos
         // ============================================================
 
-        function aplicarResultado(norm, p, fuente, total, notas) {
-            // Estado nuevo, sin arrastrar nada de la consulta anterior.
-            datos = {
-                eventos: norm.eventos, bbox: p.bbox, fuente, total,
-                truncado: norm.eventos.length >= p.limite,
+        // Encuadra el mapa y dibuja el área consultada, respetando el modo
+        // (rectángulo o círculo) — en modo círculo NO se dibuja un rectángulo,
+        // se conserva el círculo real (fitBounds acepta directo circulo.getBounds()).
+        function encuadrarYPintarArea(p) {
+            if (p.modo === 'circulo') {
+                const c = p.circulo;
+                pintarCirculo(L.latLng(c.lat, c.lon), c.radioKm * 1000);
+                if (circuloDibujo) map.fitBounds(circuloDibujo.getBounds(), { padding: [12, 12] });
+            } else {
+                map.fitBounds(bboxALatLngBounds(p.bbox), { padding: [12, 12] });
+                pintarRectangulo(bboxALatLngBounds(p.bbox));
+            }
+        }
+
+        function aplicarResultado(norm, p, fuente, total, notas, opciones) {
+            opciones = opciones || {};
+            // Estado nuevo de la capa de FONDO, sin arrastrar nada de la
+            // consulta anterior (la capa de evento especial, si hay una
+            // cargada, no se toca — son independientes).
+            datosFondo = {
+                eventos: norm.eventos, bbox: p.bbox,
+                modo: p.modo, circulo: p.circulo || null,
+                fuente,
+                fuenteId: opciones.fuenteId || null,
+                urlConsulta: opciones.urlConsulta || null,
+                total,
+                truncado: !!opciones.truncado,
                 descartados: norm.descartados, params: p,
-                buckets: [], profTope: 0, profPiso: 1, minTime: null, maxTime: null
+                profTope: 0, profPiso: 1, maxDepth: 0, minTime: null, maxTime: null
             };
 
-            limpiarMarcadores();
-            limpiarEscena();
-
-            const b = p.bbox;
-            map.fitBounds(bboxALatLngBounds(b), { padding: [12, 12] });
-            pintarRectangulo(bboxALatLngBounds(b));
+            encuadrarYPintarArea(p);
+            refrescarCapaGeologicaSiActiva(true);
 
             if (!norm.eventos.length) {
-                visibles = 0;
-                $('canvasVacio').style.display = 'flex';
-                $('btnExportar').disabled = true;
-                actualizarPanel();
-                actualizarTimeline(1);
+                // SGC no cubre fechas recientes: si el rango pedido cae después del
+                // corte, el mensaje debe explicarlo en vez de sugerir "no hubo sismos".
+                const sinCobertura = opciones.fuenteId === 'sgc' && p.fin > FECHA_CORTE_SGC;
                 mensaje(
-                    '<strong>No se encontraron sismos en esta área y rango de fechas.</strong><br>' +
+                    (sinCobertura
+                        ? `<strong>SGC Historical has no data in the requested range.</strong><br>This source is frozen through late 2020 (last confirmed event: ${FECHA_CORTE_SGC}) and is not a live catalog — it doesn't mean there were no earthquakes, just that this source doesn't cover them. Choose USGS, USGS Significant, or ISC Bulletin for recent seismicity.`
+                        : '<strong>No earthquakes were found in this area and date range.</strong>') + '<br>' +
                     (notas.length ? notas.join('<br>') + '<br>' : '') +
-                    `Consultado en ${fuente} con M≥${p.minmag}. Probá bajando la magnitud mínima o ampliando el rango.`,
+                    `Queried in ${fuente} with M≥${p.minmag}. Try lowering the minimum magnitude or widening the range.`,
                     'aviso'
                 );
+                refrescarTrasCambioDeCapas();
                 return;
             }
 
-            const prof = extremos(datos.eventos, e => e.prof);
+            const prof = extremos(datosFondo.eventos, e => e.prof);
             // El techo de la caja se ancla en 0 km (superficie) salvo que todos
             // los sismos sean profundos: ahí se acerca para no desperdiciar el volumen.
-            datos.profTope = prof.min > prof.max * 0.25 ? prof.min : 0;
-            datos.profPiso = Math.max(prof.max, datos.profTope + 1);
-            datos.buckets = calcularBuckets(datos.eventos);
-            datos.minTime = datos.eventos[0].time;
-            datos.maxTime = datos.eventos[datos.eventos.length - 1].time;
+            datosFondo.profTope = prof.min > prof.max * 0.25 ? prof.min : 0;
+            datosFondo.profPiso = Math.max(prof.max, datosFondo.profTope + 1);
+            datosFondo.maxDepth = prof.max;
+            datosFondo.minTime = datosFondo.eventos[0].time;
+            datosFondo.maxTime = datosFondo.eventos[datosFondo.eventos.length - 1].time;
 
-            $('canvasVacio').style.display = 'none';
-            construirEscena();
-
-            visibles = datos.eventos.length;
             $('timelineSlider').value = 100;
-            actualizarPanel();
-            actualizarTimeline(1);
-            $('btnExportar').disabled = false;
+            refrescarTrasCambioDeCapas();
 
-            const partes = [`<strong>${datos.eventos.length} eventos</strong> desde ${fuente}.`];
-            if (total !== null && total > datos.eventos.length) {
-                partes.push(`Mostrando ${datos.eventos.length} de ${total} disponibles (tope de ${p.limite}). Subí el límite para ver más.`);
+            const partes = [`<strong>${datosFondo.eventos.length} events</strong> from ${fuente}.`];
+            if (total !== null && total > datosFondo.eventos.length) {
+                partes.push(`Showing ${datosFondo.eventos.length} of ${total} available (cap of ${p.limite}). Raise the limit to see more.`);
+            } else if (datosFondo.truncado) {
+                partes.push('There may be more events than shown — narrow the area, the date range, or raise the minimum magnitude to see the full set.');
             }
-            if (datos.eventos.length > MAX_ESFERAS) {
-                partes.push(`En 3D se dibujan los ${MAX_ESFERAS} de mayor magnitud por rendimiento; el mapa y las estadísticas usan todos.`);
+            if (datosFondo.eventos.length > MAX_ESFERAS) {
+                partes.push(`For performance, only the ${MAX_ESFERAS} largest-magnitude events are drawn in 3D; the map and statistics use all of them.`);
             }
             if (norm.descartados) {
-                partes.push(`${norm.descartados} eventos se descartaron por venir sin magnitud o profundidad.`);
+                partes.push(`${norm.descartados} events were discarded for missing magnitude or depth.`);
             }
             if (notas.length) partes.push(notas.join(' '));
             mensaje(partes.join('<br>'), 'ok');
         }
 
-        function calcularBuckets(eventos) {
-            const fijos = [[0, 30], [30, 60], [60, 90], [90, Infinity]];
-            let ocupados = 0;
-            for (const [a, z] of fijos) {
-                if (eventos.some(e => e.prof >= a && e.prof < z)) ocupados++;
-            }
-            if (ocupados >= 2) return fijos;
-
-            // Todos los sismos caen en un mismo tramo fijo: se reparte el rango real en 4.
-            const { min, max } = extremos(eventos, e => e.prof);
-            if (max - min < 1) return fijos;
-            const paso = (max - min) / 4;
-            return [0, 1, 2, 3].map(i => [min + paso * i, i === 3 ? Infinity : min + paso * (i + 1)]);
-        }
-
-        function indiceBucket(prof) {
-            const bs = datos.buckets.length ? datos.buckets : [[0, 30], [30, 60], [60, 90], [90, Infinity]];
-            for (let i = 0; i < bs.length; i++) {
-                if (prof >= bs[i][0] && prof < bs[i][1]) return i;
-            }
-            return prof < bs[0][0] ? 0 : bs.length - 1;
-        }
-
-        const colorProf = (prof) => COLORES[indiceBucket(prof)];
-
         // ============================================================
-        // 7. Escena 3D
+        // 6b. Capa de evento especial: consulta por catálogo o carga por archivo
         // ============================================================
 
-        let scene, camera, renderer, grupo, malla, refs, animando = false;
+        async function consultarEvento() {
+            const problemaArea = revisarAreaEvento();
+            if (problemaArea && problemaArea.tipo === 'error') { mensajeEvento(problemaArea.texto, 'error'); return; }
+
+            const p = leerParamsEvento();
+            if (!p.inicio || !p.fin) { mensajeEvento('Set the date range.', 'error'); return; }
+            if (p.inicio > p.fin) { mensajeEvento('The "from" date is after the "to" date.', 'error'); return; }
+
+            const fuenteId = fuenteSeleccionadaEvento();
+            const F = FUENTES[fuenteId];
+            $('btnConsultarEvento').disabled = true;
+            mensajeEvento(`Querying ${F.label}…`, 'cargando');
+
+            let resultado;
+            try {
+                resultado = await consultarFuenteRaw(p, fuenteId);
+            } catch (err) {
+                $('btnConsultarEvento').disabled = false;
+                mensajeEvento(`<strong>Could not query ${F.label}.</strong><br>${err.message}`, 'error');
+                return;
+            }
+
+            aplicarResultadoEvento(resultado.norm, p, resultado.fuenteLabel, resultado.total, resultado.notas, {
+                fuenteId: resultado.fuenteId, urlConsulta: resultado.urlUsada,
+                truncado: resultado.truncado, origen: 'catalogo'
+            });
+            $('btnConsultarEvento').disabled = false;
+        }
+
+        function aplicarResultadoEvento(norm, p, fuente, total, notas, opciones) {
+            opciones = opciones || {};
+            norm.eventos.sort((a, b) => a.time - b.time);
+            const prof = norm.eventos.length ? extremos(norm.eventos, e => e.prof) : { min: 0, max: 0 };
+
+            datosEvento = {
+                eventos: norm.eventos,
+                bbox: p ? p.bbox : null, modo: p ? p.modo : null, circulo: p ? p.circulo : null,
+                fuente,
+                fuenteId: opciones.fuenteId || null,
+                urlConsulta: opciones.urlConsulta || null,
+                total, truncado: !!opciones.truncado, descartados: norm.descartados, params: p,
+                origen: opciones.origen || 'catalogo', nombreArchivo: opciones.nombreArchivo || null,
+                minDepth: prof.min, maxDepth: prof.max,
+                colorInicial: $('colorInicialEvento').value, colorFinal: $('colorFinalEvento').value,
+                minTime: norm.eventos.length ? norm.eventos[0].time : null,
+                maxTime: norm.eventos.length ? norm.eventos[norm.eventos.length - 1].time : null
+            };
+
+            $('btnQuitarEvento').disabled = false;
+
+            if (!norm.eventos.length) {
+                mensajeEvento(
+                    `The result has no events with complete data (lat/lon/depth/magnitude/date)` +
+                    (norm.descartados ? ` — ${norm.descartados} discarded.` : '.'),
+                    'aviso'
+                );
+            } else {
+                const partes = [`<strong>${norm.eventos.length} events</strong> loaded as special event (${fuente}).`];
+                if (norm.descartados) partes.push(`${norm.descartados} discarded for incomplete data.`);
+                if (opciones.truncado) partes.push('There may be more events than shown.');
+                if (notas.length) partes.push(notas.join(' '));
+                mensajeEvento(partes.join('<br>'), 'ok');
+            }
+            refrescarTrasCambioDeCapas();
+        }
+
+        function quitarCapaEvento() {
+            datosEvento = null;
+            $('btnQuitarEvento').disabled = true;
+            limpiarMensajeEvento();
+            refrescarTrasCambioDeCapas();
+        }
+
+        // Reconstruye todo lo que depende de tener 0, 1 o 2 capas cargadas —
+        // se llama tras cualquier cambio de datos de cualquiera de las 2 capas
+        // (nueva consulta de fondo, nueva consulta/archivo de evento, o quitar
+        // la capa de evento).
+        function refrescarTrasCambioDeCapas() {
+            limpiarMarcadores();
+            limpiarEscena();
+
+            const hayFondo = datosFondo.eventos.length > 0;
+            const hayEvento = datosEvento && datosEvento.eventos.length > 0;
+
+            if ((hayFondo || hayEvento) && datosFondo.bbox) {
+                $('canvasVacio').style.display = 'none';
+                mostrarPantalla('visor');
+                construirEscena();
+            } else {
+                $('canvasVacio').style.display = 'flex';
+                $('canvasVacio').textContent = (hayFondo || hayEvento) && !datosFondo.bbox
+                    ? 'Query the background layer first (Area tab) to see the 3D scene — the special event is already visible on the 2D map.'
+                    : 'Define an area and query the catalog to see the earthquakes in 3D';
+            }
+
+            actualizarPanel();
+            actualizarTimeline(parseFloat($('timelineSlider').value) / 100);
+            actualizarBotonExportar();
+        }
+
+        // ============================================================
+        // 7. Escena 3D — dos InstancedMesh (fondo + evento especial),
+        //    ambas hijas del mismo grupo para que roten juntas.
+        // ============================================================
+
+        let scene, camera, renderer, grupo, refs, animando = false;
+        let mallaSuperior = null;   // plano de la cara de arriba de la caja — puede llevar un mapa real texturado
+        let mallaBeachball = null;  // esfera focal del momento tensor (M7.4 Chocó, hardcodeado)
+        let bakeMapaToken = 0;      // descarta bakes de mapa superior que quedaron obsoletos por un cambio de área más nuevo
         let rot = { x: -0.5, y: 0.4 };
         let arrastre = null;
         let distancia = 60;
-        let indices3D = [];   // qué evento corresponde a cada instancia
 
         function init3D() {
             const cont = $('canvas3d');
@@ -979,7 +2018,7 @@
             window.addEventListener('mouseup', () => { arrastre = null; });
             renderer.domElement.addEventListener('wheel', (e) => {
                 e.preventDefault();
-                distancia = Math.max(15, Math.min(200, distancia + e.deltaY * 0.05));
+                distancia = Math.max(3, Math.min(300, distancia + e.deltaY * 0.05));
             }, { passive: false });
 
             window.addEventListener('resize', redimensionar3D);
@@ -1006,61 +2045,144 @@
                     hijo.material.dispose();
                 }
             }
-            malla = null;
             refs = null;
-            indices3D = [];
+            if (mallaSuperior && mallaSuperior.material && mallaSuperior.material.map) {
+                mallaSuperior.material.map.dispose();
+            }
+            mallaSuperior = null;
+            mallaBeachball = null;
+            renderFondo.malla = null; renderFondo.indices = [];
+            renderEvento.malla = null; renderEvento.indices = [];
         }
 
-        // Proyección geográfica → 3D, calculada del bbox real de la consulta.
+        // Proyección geográfica → 3D, calculada del bbox de la capa de FONDO —
+        // es la que ancla la escena (dimensiones de la caja, escala). La capa
+        // de evento especial se proyecta con el MISMO proyector (mismo centro y
+        // escala) para que ambas capas queden geográficamente coherentes entre
+        // sí; si sus eventos caen fuera del bbox de fondo, simplemente aparecen
+        // fuera de la caja de referencia — igual que ya pasa en modo círculo con
+        // las esquinas del bbox circunscrito.
+        // ============================================================
+        // Momento tensor — esfera focal ("beachball") 3D real, no la
+        // proyección 2D habitual. Datos tomados en vivo de la solución
+        // moment-tensor publicada por USGS para us6000tjl2 (M7.4, San José
+        // del Palmar, Chocó, 2026-08-10): properties.tensor-* del producto
+        // "moment-tensor", convención (r,θ,φ) = (arriba, sur, este), la
+        // misma que usa el Global CMT / Harvard.
+        // https://earthquake.usgs.gov/earthquakes/eventpage/us6000tjl2/moment-tensor
+        // Hardcodeado a propósito (alcance acordado): solo este evento.
+        // ============================================================
+        const MOMENT_TENSOR_CHOCO = {
+            lat: 4.5854, lon: -76.1613, depth: 120.5, // derived-latitude/longitude/depth (centroide CMT, no el hipocentro inicial)
+            mag: 7.4,
+            scalarMoment: 1.66e20,
+            mrr: 4.887e19, mtt: -1.5429e20, mpp: 1.0541e20,
+            mrt: -1.918e19, mrp: -9.009e19, mtp: -2.243e19
+        };
+
+        // Patrón de radiación de onda P: R(γ) = Σ Mij·γi·γj, con γ el vector
+        // unitario (r,t,p) hacia un punto de la esfera focal. R>0 = primer
+        // movimiento compresivo (rojo, convención sismológica estándar);
+        // R<0 = dilatación (blanco/azul). Normalizado por el momento escalar
+        // para que R quede en un rango manejable (~[-1,1]) sin importar la
+        // magnitud absoluta del tensor.
+        function radiacionP(T, gr, gt, gp) {
+            return (T.mrr * gr * gr + T.mtt * gt * gt + T.mpp * gp * gp +
+                    2 * T.mrt * gr * gt + 2 * T.mrp * gr * gp + 2 * T.mtp * gt * gp) / T.scalarMoment;
+        }
+
+        function construirBeachball(P) {
+            const T = MOMENT_TENSOR_CHOCO;
+            const escalaUsuario = parseFloat($('sizeSlider').value) / 100;
+            // Bastante más grande que una esfera normal de la misma magnitud —
+            // es una pieza destacada, no un evento más del catálogo.
+            const radio = escalaUsuario * (0.9 + T.mag * 0.35);
+
+            const geo = new THREE.SphereGeometry(radio, 48, 36);
+            const pos = geo.attributes.position;
+            const colores = new Float32Array(pos.count * 3);
+            const rojo = new THREE.Color(0xd03b3b), blanco = new THREE.Color(0xf2ede0);
+
+            for (let i = 0; i < pos.count; i++) {
+                // Vértice de una esfera unitaria en el espacio local de la
+                // geometría == vector dirección (r,t,p) sin rotación alguna,
+                // porque los ejes de la escena ya son x=este(p), y=norte
+                // (=> t=sur=-y), z=arriba(r) — los mismos que usa proyector().
+                const x = pos.getX(i) / radio, y = pos.getY(i) / radio, z = pos.getZ(i) / radio;
+                const gp = x, gt = -y, gr = z;
+                const R = radiacionP(T, gr, gt, gp);
+                // Degradado suave hacia blanco cerca de los planos nodales
+                // (R≈0) en vez de un corte binario duro.
+                const c = rojo.clone().lerp(blanco, 1 - Math.min(1, Math.abs(R) * 3));
+                const color = R >= 0 ? c : blanco.clone().lerp(new THREE.Color(0x3987e5), Math.min(1, Math.abs(R) * 3));
+                colores[i * 3] = color.r; colores[i * 3 + 1] = color.g; colores[i * 3 + 2] = color.b;
+            }
+            geo.setAttribute('color', new THREE.BufferAttribute(colores, 3));
+
+            const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.5, metalness: 0.05 });
+            const esfera = new THREE.Mesh(geo, mat);
+            esfera.position.set(P.x(T.lon), P.y(T.lat), P.z(T.depth));
+            return esfera;
+        }
+
         function proyector() {
-            const b = datos.bbox;
+            const b = datosFondo.bbox;
             const centroLat = (b.n + b.s) / 2, centroLon = (b.e + b.o) / 2;
             const kmLat = 111.32, kmLon = 111.32 * Math.cos(centroLat * Math.PI / 180);
             const anchoKm = (b.e - b.o) * kmLon, altoKm = (b.n - b.s) * kmLat;
             const escala = ANCHO_MUNDO / Math.max(anchoKm, altoKm, 1);   // unidades por km
-            const rangoProf = datos.profPiso - datos.profTope;
+            const rangoProf = datosFondo.profPiso - datosFondo.profTope;
             return {
                 centroLat, centroLon, escala, anchoKm, altoKm,
                 x: (lon) => (lon - centroLon) * kmLon * escala,
                 y: (lat) => (lat - centroLat) * kmLat * escala,
-                z: (prof) => -((prof - datos.profTope) / rangoProf) * PROF_MUNDO
+                z: (prof) => -((prof - datosFondo.profTope) / rangoProf) * PROF_MUNDO
             };
+        }
+
+        // Construye la InstancedMesh de UNA capa (fondo o evento) — se llama
+        // hasta 2 veces desde construirEscena(), una por capa cargada.
+        function construirMallaCapa(capaId, capa, P) {
+            const render = capaId === 'fondo' ? renderFondo : renderEvento;
+
+            let lista = capa.eventos;
+            if (lista.length > MAX_ESFERAS) {
+                // Se conservan los de mayor magnitud, pero ordenados por fecha
+                // para que el timeline siga siendo coherente. El tope aplica por
+                // capa: si cada una trae 800, se ven hasta 1600 esferas en total.
+                lista = lista.slice().sort((a, b) => b.mag - a.mag).slice(0, MAX_ESFERAS)
+                             .sort((a, b) => a.time - b.time);
+            }
+            render.indices = lista;
+
+            const geo = new THREE.SphereGeometry(1, 10, 10);
+            const mat = new THREE.MeshStandardMaterial({
+                transparent: true, opacity: 1, emissiveIntensity: 0.35, roughness: 0.6
+            });
+            render.malla = new THREE.InstancedMesh(geo, mat, lista.length);
+            render.malla.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+            grupo.add(render.malla);
+            colocarInstanciasCapa(capaId, P);
+
+            const color = new THREE.Color();
+            lista.forEach((ev, i) => {
+                color.set(colorParaCapa(capaId, ev));
+                render.malla.setColorAt(i, color);
+            });
+            if (render.malla.instanceColor) render.malla.instanceColor.needsUpdate = true;
         }
 
         function construirEscena() {
             limpiarEscena();
             const P = proyector();
 
-            // --- Eventos: una sola InstancedMesh para que 1000 esferas no ahoguen el render ---
-            let lista = datos.eventos;
-            if (lista.length > MAX_ESFERAS) {
-                // Se conservan los de mayor magnitud, pero ordenados por fecha
-                // para que el timeline siga siendo coherente.
-                lista = lista.slice().sort((a, b) => b.mag - a.mag).slice(0, MAX_ESFERAS)
-                             .sort((a, b) => a.time - b.time);
-            }
-            indices3D = lista;
+            if (datosFondo.eventos.length) construirMallaCapa('fondo', datosFondo, P);
+            if (datosEvento && datosEvento.eventos.length) construirMallaCapa('evento', datosEvento, P);
 
-            const geo = new THREE.SphereGeometry(1, 10, 10);
-            const mat = new THREE.MeshStandardMaterial({
-                transparent: true, opacity: 1, emissiveIntensity: 0.35, roughness: 0.6
-            });
-            malla = new THREE.InstancedMesh(geo, mat, lista.length);
-            malla.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-            grupo.add(malla);
-            colocarInstancias();
-
-            const color = new THREE.Color();
-            lista.forEach((ev, i) => {
-                color.set(colorProf(ev.prof));
-                malla.setColorAt(i, color);
-            });
-            if (malla.instanceColor) malla.instanceColor.needsUpdate = true;
-
-            // --- Caja de referencia, superficie y etiquetas ---
+            // --- Caja de referencia, superficie y etiquetas (siempre según fondo) ---
             refs = new THREE.Group();
-            const x0 = P.x(datos.bbox.o), x1 = P.x(datos.bbox.e);
-            const y0 = P.y(datos.bbox.s), y1 = P.y(datos.bbox.n);
+            const x0 = P.x(datosFondo.bbox.o), x1 = P.x(datosFondo.bbox.e);
+            const y0 = P.y(datosFondo.bbox.s), y1 = P.y(datosFondo.bbox.n);
             const z0 = 0, z1 = -PROF_MUNDO;
 
             const caja = new THREE.BoxGeometry(x1 - x0, y1 - y0, z0 - z1);
@@ -1078,36 +2200,53 @@
             );
             sup.position.set((x0 + x1) / 2, (y0 + y1) / 2, 0);
             refs.add(sup);
+            mallaSuperior = sup;
+            bakearMapaSuperior(datosFondo.bbox);
 
-            refs.add(etiqueta(`${datos.profTope.toFixed(0)} km`, x0 - 2.5, y1, 0));
-            refs.add(etiqueta(`${datos.profPiso.toFixed(0)} km`, x0 - 2.5, y1, -PROF_MUNDO));
+            refs.add(etiqueta(`${datosFondo.profTope.toFixed(0)} km`, x0 - 2.5, y1, 0));
+            refs.add(etiqueta(`${datosFondo.profPiso.toFixed(0)} km`, x0 - 2.5, y1, -PROF_MUNDO));
             refs.add(etiqueta('N', (x0 + x1) / 2, y1 + 2.2, 0));
             grupo.add(refs);
             refs.visible = $('showCaja').checked;
+
+            if ($('showBeachball').checked) {
+                mallaBeachball = construirBeachball(P);
+                grupo.add(mallaBeachball);
+            }
 
             // Encuadre: distancia justa para que quepa la esfera que envuelve la caja.
             const radio = Math.hypot((x1 - x0) / 2, (y1 - y0) / 2, PROF_MUNDO / 2);
             distancia = Math.max(24, radio / Math.sin(55 / 2 * Math.PI / 180) * 0.82);
             aplicarOpacidad();
+            aplicarVisibilidad3D();
         }
 
-        function colocarInstancias() {
-            if (!malla) return;
-            const P = proyector();
+        function colocarInstanciasCapa(capaId, P) {
+            const render = capaId === 'fondo' ? renderFondo : renderEvento;
+            if (!render.malla) return;
+            P = P || proyector();
             const escalaUsuario = parseFloat($('sizeSlider').value) / 100;
             const m = new THREE.Matrix4();
             const q = new THREE.Quaternion();
             const pos = new THREE.Vector3();
             const esc = new THREE.Vector3();
 
-            indices3D.forEach((ev, i) => {
+            render.indices.forEach((ev, i) => {
                 const r = escalaUsuario * (0.28 + Math.max(0, ev.mag) * 0.13);
                 pos.set(P.x(ev.lon), P.y(ev.lat), P.z(ev.prof));
                 esc.set(r, r, r);
                 m.compose(pos, q, esc);
-                malla.setMatrixAt(i, m);
+                render.malla.setMatrixAt(i, m);
             });
-            malla.instanceMatrix.needsUpdate = true;
+            render.malla.instanceMatrix.needsUpdate = true;
+        }
+
+        // Reposiciona AMBAS capas (usado por el slider de tamaño de esferas).
+        function colocarInstancias() {
+            if (!datosFondo.bbox) return;
+            const P = proyector();
+            colocarInstanciasCapa('fondo', P);
+            colocarInstanciasCapa('evento', P);
         }
 
         function etiqueta(texto, x, y, z) {
@@ -1128,7 +2267,26 @@
         }
 
         function aplicarOpacidad() {
-            if (malla) malla.material.opacity = parseFloat($('opacitySlider').value) / 100;
+            const v = parseFloat($('opacitySlider').value) / 100;
+            if (renderFondo.malla) renderFondo.malla.material.opacity = v;
+            if (renderEvento.malla) renderEvento.malla.material.opacity = v;
+        }
+
+        // Combina el checkbox general "Eventos 3D" con los checkboxes
+        // independientes por capa (Vista) para decidir si cada mesh se ve.
+        function aplicarVisibilidad3D() {
+            const ev3d = $('showEvents').checked;
+            if (renderFondo.malla) renderFondo.malla.visible = ev3d && $('showFondo').checked;
+            if (renderEvento.malla) renderEvento.malla.visible = ev3d && $('showEventoCapa').checked;
+        }
+
+        // Igual que arriba, pero para las 2 capas de marcadores 2D del mapa.
+        function aplicarVisibilidad2D() {
+            const showF = $('showFondo').checked, showEv = $('showEventoCapa').checked;
+            if (showF) { if (!map.hasLayer(capaMarcadores)) capaMarcadores.addTo(map); }
+            else if (map.hasLayer(capaMarcadores)) map.removeLayer(capaMarcadores);
+            if (showEv) { if (!map.hasLayer(capaMarcadoresEvento)) capaMarcadoresEvento.addTo(map); }
+            else if (map.hasLayer(capaMarcadoresEvento)) map.removeLayer(capaMarcadoresEvento);
         }
 
         function animar() {
@@ -1152,117 +2310,235 @@
         // 8. Timeline, panel y leyenda
         // ============================================================
 
+        // Rango de fechas combinado: si hay 2 capas activas, el timeline
+        // recorre desde el evento más antiguo de CUALQUIERA de las 2 hasta el
+        // más reciente de CUALQUIERA de las 2 — no solo el rango de la capa de fondo.
+        function rangoTiempoCombinado() {
+            let min = datosFondo.minTime, max = datosFondo.maxTime;
+            if (datosEvento && datosEvento.minTime) {
+                if (!min || datosEvento.minTime < min) min = datosEvento.minTime;
+                if (!max || datosEvento.maxTime > max) max = datosEvento.maxTime;
+            }
+            return { min, max };
+        }
+
+        // Los eventos de cada capa están ordenados por fecha: basta contar
+        // cuántos caen antes o igual al corte absoluto (mismo corte para
+        // ambas capas, así avanzan sincronizadas cronológicamente).
+        function contarHasta(capa, corte, fraccion) {
+            if (!capa || !capa.eventos.length) return 0;
+            if (fraccion >= 1) return capa.eventos.length;
+            let n = 0;
+            while (n < capa.eventos.length && capa.eventos[n].time <= corte) n++;
+            return n;
+        }
+
         function actualizarTimeline(fraccion) {
-            if (!datos.eventos.length) {
+            const { min, max } = rangoTiempoCombinado();
+            if (!min || !max) {
                 $('timeStart').textContent = '—';
                 $('timeEnd').textContent = '—';
                 $('timeValue').textContent = '—';
-                visibles = 0;
+                renderFondo.visibles = 0;
+                renderEvento.visibles = 0;
                 actualizarVisibles();
                 return;
             }
-            const t0 = datos.minTime.getTime(), t1 = datos.maxTime.getTime();
+            const t0 = min.getTime(), t1 = max.getTime();
             const corte = new Date(t0 + (t1 - t0) * fraccion);
 
-            // Los eventos están ordenados por fecha: basta contar hasta el corte.
-            let n = 0;
-            while (n < datos.eventos.length && datos.eventos[n].time <= corte) n++;
-            visibles = fraccion >= 1 ? datos.eventos.length : n;
+            renderFondo.visibles = contarHasta(datosFondo, corte, fraccion);
+            renderEvento.visibles = contarHasta(datosEvento, corte, fraccion);
 
-            $('timeStart').textContent = fechaHora(datos.minTime);
-            $('timeEnd').textContent = fechaHora(datos.maxTime);
-            $('timeValue').textContent = fraccion >= 1 ? 'Todos' : fechaHora(corte);
+            $('timeStart').textContent = fechaHora(min);
+            $('timeEnd').textContent = fechaHora(max);
+            $('timeValue').textContent = fraccion >= 1 ? 'All' : fechaHora(corte);
             actualizarVisibles();
         }
 
-        function actualizarVisibles() {
-            actualizarMarcadores();
-            if (malla) {
-                // Como las instancias van en orden cronológico, mover el "count"
-                // basta para revelar u ocultar el final de la serie.
-                let n = 0;
-                if (visibles > 0) {
-                    const corte = datos.eventos[Math.min(visibles, datos.eventos.length) - 1].time;
-                    while (n < indices3D.length && indices3D[n].time <= corte) n++;
-                }
-                malla.count = n;
+        // Aplica el conteo de "visibles" de cada capa tanto a sus marcadores 2D
+        // como al .count de su InstancedMesh (mover el count basta para revelar
+        // u ocultar el final de la serie, porque las instancias van en orden
+        // cronológico).
+        function aplicarConteoMalla(capaId) {
+            const render = capaId === 'fondo' ? renderFondo : renderEvento;
+            const capa = capaId === 'fondo' ? datosFondo : datosEvento;
+            if (!render.malla || !capa) return;
+            let n = 0;
+            if (render.visibles > 0) {
+                const corte = capa.eventos[Math.min(render.visibles, capa.eventos.length) - 1].time;
+                while (n < render.indices.length && render.indices[n].time <= corte) n++;
             }
-            $('visibleEvents').textContent = visibles;
+            render.malla.count = n;
+        }
+
+        function actualizarVisibles() {
+            actualizarMarcadoresCapa('fondo');
+            actualizarMarcadoresCapa('evento');
+            aplicarConteoMalla('fondo');
+            aplicarConteoMalla('evento');
+        }
+
+        function leyendaFondoHTML(maxDepth) {
+            return `
+                <div class="legend-item">
+                    <div class="legend-color" style="background-color:${AZUL_CORTEZA}"></div>
+                    <span>0–35 km · crust</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background:linear-gradient(135deg,#000,#fff); border-radius:2px; width:24px;"></div>
+                    <span>35 km → ${maxDepth.toFixed(0)} km</span>
+                </div>`;
+        }
+
+        function leyendaEventoHTML(capa) {
+            return `
+                <div class="legend-item">
+                    <div class="legend-color" style="background:linear-gradient(135deg,${capa.colorInicial},${capa.colorFinal}); border-radius:2px; width:24px;"></div>
+                    <span>${capa.minDepth.toFixed(0)} km → ${capa.maxDepth.toFixed(0)} km</span>
+                </div>`;
         }
 
         function actualizarPanel() {
-            $('totalEvents').textContent = datos.eventos.length;
-            $('visibleEvents').textContent = visibles;
+            // --- Capa de fondo ---
+            $('totalEvents').textContent = datosFondo.eventos.length;
+            $('visibleEventsFondo').textContent = renderFondo.visibles;
 
-            if (!datos.eventos.length) {
-                $('infoFuente').innerHTML = datos.fuente ? `<span class="fuente-tag">${datos.fuente}</span> sin resultados` : '—';
+            if (!datosFondo.eventos.length) {
+                $('infoFuente').innerHTML = datosFondo.fuente ? `<span class="fuente-tag">${datosFondo.fuente}</span> no results` : '—';
                 $('infoPeriodo').textContent = '—';
                 $('infoMag').textContent = '—';
                 $('infoProf').textContent = '—';
-                $('leyenda').innerHTML = '<div class="nota">Sin datos para clasificar.</div>';
-                return;
+                $('leyenda').innerHTML = '<div class="nota">No data to classify.</div>';
+            } else {
+                const mag = extremos(datosFondo.eventos, e => e.mag);
+                const prof = extremos(datosFondo.eventos, e => e.prof);
+                $('infoFuente').innerHTML = `<span class="fuente-tag">${datosFondo.fuente}</span>`;
+                $('infoPeriodo').textContent = `${fechaCorta(datosFondo.minTime)} – ${fechaCorta(datosFondo.maxTime)}`;
+                $('infoMag').textContent = `M ${mag.min.toFixed(1)} – ${mag.max.toFixed(1)}`;
+                $('infoProf').textContent = `${prof.min.toFixed(1)} – ${prof.max.toFixed(1)} km`;
+                $('leyenda').innerHTML = leyendaFondoHTML(datosFondo.maxDepth);
             }
 
-            const mag = extremos(datos.eventos, e => e.mag);
-            const prof = extremos(datos.eventos, e => e.prof);
-
-            $('infoFuente').innerHTML = `<span class="fuente-tag">${datos.fuente}</span>`;
-            $('infoPeriodo').textContent = `${fechaCorta(datos.minTime)} – ${fechaCorta(datos.maxTime)}`;
-            $('infoMag').textContent = `M ${mag.min.toFixed(1)} – ${mag.max.toFixed(1)}`;
-            $('infoProf').textContent = `${prof.min.toFixed(1)} – ${prof.max.toFixed(1)} km`;
-
-            const conteos = datos.buckets.map(() => 0);
-            datos.eventos.forEach(e => { conteos[indiceBucket(e.prof)]++; });
-
-            $('leyenda').innerHTML = datos.buckets.map(([a, z], i) => {
-                const etiq = z === Infinity ? `${a.toFixed(0)}+ km` : `${a.toFixed(0)}–${z.toFixed(0)} km`;
-                return `<div class="legend-item">
-                    <div class="legend-color" style="background-color:${COLORES[i]}"></div>
-                    <span>${etiq}</span><span class="legend-count">${conteos[i]}</span>
-                </div>`;
-            }).join('');
+            // --- Capa de evento especial (si está cargada) ---
+            $('infoBoxEvento').hidden = !datosEvento;
+            $('legendEvento').hidden = !datosEvento;
+            if (datosEvento) {
+                $('totalEventsEvento').textContent = datosEvento.eventos.length;
+                $('visibleEventsEvento').textContent = renderEvento.visibles;
+                if (!datosEvento.eventos.length) {
+                    $('infoFuenteEvento').innerHTML = '—';
+                    $('infoPeriodoEvento').textContent = '—';
+                    $('infoMagEvento').textContent = '—';
+                    $('infoProfEvento').textContent = '—';
+                    $('leyendaEvento').innerHTML = '<div class="nota">No data.</div>';
+                } else {
+                    const mag = extremos(datosEvento.eventos, e => e.mag);
+                    $('infoFuenteEvento').innerHTML = `<span class="fuente-tag">${datosEvento.fuente}</span>`;
+                    $('infoPeriodoEvento').textContent = `${fechaCorta(datosEvento.minTime)} – ${fechaCorta(datosEvento.maxTime)}`;
+                    $('infoMagEvento').textContent = `M ${mag.min.toFixed(1)} – ${mag.max.toFixed(1)}`;
+                    $('infoProfEvento').textContent = `${datosEvento.minDepth.toFixed(1)} – ${datosEvento.maxDepth.toFixed(1)} km`;
+                    $('leyendaEvento').innerHTML = leyendaEventoHTML(datosEvento);
+                }
+            }
         }
 
         // ============================================================
         // 9. Exportar GeoJSON
         // ============================================================
 
+        function metadataArea(capa) {
+            if (!capa.bbox) return null;
+            return capa.modo === 'circulo'
+                ? { tipo: 'circulo', centro: { lat: capa.circulo.lat, lon: capa.circulo.lon }, radio_km: capa.circulo.radioKm }
+                : { tipo: 'rectangulo', bbox: { norte: capa.bbox.n, sur: capa.bbox.s, este: capa.bbox.e, oeste: capa.bbox.o } };
+        }
+
+        // Mismo esquema de Feature sin importar de qué capa ni de qué fuente
+        // vino el evento — el campo "capa" es lo único que distingue origen
+        // cuando se exportan las dos juntas.
+        function construirFeature(e, capaId) {
+            return {
+                type: 'Feature',
+                geometry: { type: 'Point', coordinates: [e.lon, e.lat, -e.prof] },
+                properties: {
+                    id: e.id, mag: e.mag, prof_km: e.prof,
+                    time: e.time.toISOString(), auth: e.auth, region: e.region,
+                    capa: capaId
+                }
+            };
+        }
+
+        // Habilita/deshabilita el botón y las opciones del selector "Qué
+        // exportar" según qué capas haya cargadas con al menos 1 evento.
+        function actualizarBotonExportar() {
+            const hayFondo = datosFondo.eventos.length > 0;
+            const hayEvento = !!(datosEvento && datosEvento.eventos.length > 0);
+            $('btnExportar').disabled = !(hayFondo || hayEvento);
+
+            const sel = $('exportarQue');
+            for (const o of sel.options) {
+                if (o.value === 'fondo') o.disabled = !hayFondo;
+                else if (o.value === 'evento') o.disabled = !hayEvento;
+                else if (o.value === 'ambas') o.disabled = !(hayFondo && hayEvento);
+            }
+            if (sel.options[sel.selectedIndex].disabled) {
+                if (hayFondo) sel.value = 'fondo';
+                else if (hayEvento) sel.value = 'evento';
+            }
+        }
+
         function exportarGeoJSON() {
-            if (!datos.eventos.length) return;
-            const b = datos.bbox;
+            const que = $('exportarQue').value; // 'fondo' | 'evento' | 'ambas'
+            const hayFondo = datosFondo.eventos.length > 0;
+            const hayEvento = !!(datosEvento && datosEvento.eventos.length > 0);
+            if (que === 'fondo' && !hayFondo) return;
+            if (que === 'evento' && !hayEvento) return;
+            if (que === 'ambas' && !hayFondo && !hayEvento) return;
+
+            const features = [];
+            if ((que === 'fondo' || que === 'ambas') && hayFondo) {
+                features.push(...datosFondo.eventos.map(e => construirFeature(e, 'fondo')));
+            }
+            if ((que === 'evento' || que === 'ambas') && hayEvento) {
+                features.push(...datosEvento.eventos.map(e => construirFeature(e, 'evento')));
+            }
+
+            const bboxRef = datosFondo.bbox || (datosEvento && datosEvento.bbox);
+
             const fc = {
                 type: 'FeatureCollection',
-                bbox: [b.o, b.s, b.e, b.n],
+                bbox: bboxRef ? [bboxRef.o, bboxRef.s, bboxRef.e, bboxRef.n] : undefined,
                 metadata: {
                     generado: new Date().toISOString(),
-                    fuente: datos.fuente,
-                    endpoint: datos.fuente === 'EMSC' ? EMSC + 'query' : USGS + 'query',
-                    bbox: { norte: b.n, sur: b.s, este: b.e, oeste: b.o },
-                    rango_fechas: { desde: datos.params.inicio, hasta: datos.params.fin },
-                    magnitud_minima: datos.params.minmag,
-                    limite_solicitado: datos.params.limite,
-                    cantidad: datos.eventos.length,
-                    total_disponible: datos.total,
-                    truncado: datos.total !== null && datos.total > datos.eventos.length,
+                    exportado: que,
+                    capa_fondo: hayFondo ? {
+                        fuente: datosFondo.fuente, endpoint: datosFondo.urlConsulta,
+                        area: metadataArea(datosFondo),
+                        rango_fechas: datosFondo.params ? { desde: datosFondo.params.inicio, hasta: datosFondo.params.fin } : null,
+                        magnitud_minima: datosFondo.params ? datosFondo.params.minmag : null,
+                        cantidad: datosFondo.eventos.length,
+                        total_disponible: datosFondo.total,
+                        truncado: datosFondo.truncado
+                    } : null,
+                    capa_evento: hayEvento ? {
+                        origen: datosEvento.origen, fuente: datosEvento.fuente,
+                        endpoint: datosEvento.urlConsulta, nombre_archivo: datosEvento.nombreArchivo,
+                        area: metadataArea(datosEvento),
+                        rango_fechas: datosEvento.params ? { desde: datosEvento.params.inicio, hasta: datosEvento.params.fin } : null,
+                        color_inicial: datosEvento.colorInicial, color_final: datosEvento.colorFinal,
+                        cantidad: datosEvento.eventos.length
+                    } : null,
                     generador: 'explorador-area.html'
                 },
-                features: datos.eventos.map(e => ({
-                    type: 'Feature',
-                    geometry: { type: 'Point', coordinates: [e.lon, e.lat, -e.prof] },
-                    properties: {
-                        id: e.id, mag: e.mag, prof_km: e.prof,
-                        time: e.time.toISOString(), auth: e.auth, region: e.region
-                    }
-                }))
+                features
             };
 
             const blob = new Blob([JSON.stringify(fc, null, 2)], { type: 'application/geo+json' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            const coord = (v, pos, neg) => `${Math.abs(v).toFixed(1)}${v >= 0 ? pos : neg}`;
-            a.download = `sismos_${coord(b.s, 'N', 'S')}-${coord(b.n, 'N', 'S')}_` +
-                         `${coord(b.o, 'E', 'O')}-${coord(b.e, 'E', 'O')}.geojson`;
+            a.download = `sismos_${que}_${Date.now()}.geojson`;
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
@@ -1273,43 +2549,89 @@
         // 10. Persistencia ligera
         // ============================================================
 
-        function guardarPreferencias(p) {
+        function guardarPreferencias(p, fuenteId) {
             try {
                 localStorage.setItem(CLAVE_LS, JSON.stringify({
-                    bbox: p.bbox, inicio: p.inicio, fin: p.fin,
-                    minmag: p.minmag, limite: p.limite
+                    modo: p.modo,
+                    bbox: p.modo === 'circulo' ? null : p.bbox,
+                    circulo: p.modo === 'circulo' ? p.circulo : null,
+                    inicio: p.inicio, fin: p.fin,
+                    minmag: p.minmag, limite: p.limite,
+                    fuenteId, minsig: p.minsig
                 }));
             } catch (e) { /* modo privado o storage lleno: no es crítico */ }
         }
 
+        // Devuelve true si había una consulta guardada de una sesión anterior
+        // (área real, no el placeholder vacío) — se usa para decidir si el
+        // mapa arranca centrado en esa área o mundial (map.fitWorld()).
         function cargarPreferencias() {
-            const hoy = new Date();
-            const haceUnAnio = new Date(hoy.getTime());
-            haceUnAnio.setFullYear(hoy.getFullYear() - 1);
-
             let guardado = null;
             try {
                 const raw = localStorage.getItem(CLAVE_LS);
                 if (raw) guardado = JSON.parse(raw);
             } catch (e) { guardado = null; }
 
-            const bbox = (guardado && guardado.bbox) || { n: 6, s: 3, e: -75.5, o: -78 };
-            escribirBbox(bbox);
-            $('fechaIni').value = (guardado && guardado.inicio) || isoDia(haceUnAnio);
-            $('fechaFin').value = (guardado && guardado.fin) || isoDia(hoy);
+            const huboGuardado = !!(guardado && (guardado.bbox || guardado.circulo));
+
+            modoArea = (guardado && guardado.modo) || 'rect';
+            // Primera visita (nada guardado): los campos de área quedan vacíos
+            // (solo placeholder) — el mapa arranca mundial, no en Colombia. Si
+            // había una consulta guardada, se restaura igual que antes.
+            if (guardado && guardado.bbox) escribirBbox(guardado.bbox);
+            if (guardado && guardado.circulo) escribirCirculo(guardado.circulo);
+
+            const fuenteId = (guardado && guardado.fuenteId) || 'usgs';
+            const radio = document.querySelector(`input[name="fuente"][value="${fuenteId}"]`);
+            if (radio) radio.checked = true;
+
+            // Fechas por defecto: todo el rango real de la fuente elegida (ver
+            // rangoFechasFuente), no una ventana corta — evita el caso típico de
+            // "primera consulta trae 0 o casi ningún evento" por un span de
+            // tiempo demasiado angosto.
+            const rango = rangoFechasFuente(fuenteId);
+            $('fechaIni').value = (guardado && guardado.inicio) || rango.desde;
+            $('fechaFin').value = (guardado && guardado.fin) || rango.hasta;
             $('magSlider').value = Math.round(((guardado && guardado.minmag) || 2.5) * 10);
-            $('limite').value = (guardado && guardado.limite) || 500;
             $('magValue').textContent = 'M' + (parseInt($('magSlider').value, 10) / 10).toFixed(1);
+
+            $('sigThreshold').value = (guardado && guardado.minsig) || 600;
+            actualizarLimiteUI();
+            if (guardado && guardado.limite) $('limite').value = guardado.limite;
+
+            return huboGuardado;
         }
 
         // ============================================================
         // 11. Controles e inicio
         // ============================================================
 
+        // ============================================================
+        // Pantallas: Mapa (selección de área) <-> 3D (visor de resultados).
+        // Cada una ocupa toda la superficie de #sceneWrap; nunca compiten
+        // por espacio. Al construir una escena con datos, se salta sola a 3D.
+        // ============================================================
+        let pantallaActual = 'area';
+
+        function mostrarPantalla(nombre) {
+            pantallaActual = nombre;
+            $('pantallaArea').hidden = nombre !== 'area';
+            $('pantallaVisor').hidden = nombre !== 'visor';
+            $('btnVistaArea').setAttribute('aria-pressed', String(nombre === 'area'));
+            $('btnVistaVisor').setAttribute('aria-pressed', String(nombre === 'visor'));
+            if (nombre === 'area' && map) {
+                setTimeout(() => map.invalidateSize(), 50);
+            } else if (nombre === 'visor') {
+                setTimeout(redimensionar3D, 50);
+            }
+        }
+
         function conectarControles() {
             $('btnDibujar').addEventListener('click', () => modoDibujo3(!modoDibujo));
             $('btnConsultar').addEventListener('click', consultar);
             $('btnExportar').addEventListener('click', exportarGeoJSON);
+            $('btnVistaArea').addEventListener('click', () => mostrarPantalla('area'));
+            $('btnVistaVisor').addEventListener('click', () => mostrarPantalla('visor'));
 
             ['bboxN', 'bboxS', 'bboxE', 'bboxO'].forEach(id => {
                 $(id).addEventListener('input', () => {
@@ -1324,6 +2646,27 @@
                     if ([b.n, b.s, b.e, b.o].every(isFinite) && b.n > b.s && b.e > b.o) {
                         map.fitBounds(bboxALatLngBounds(b), { padding: [12, 12] });
                     }
+                    refrescarCapaGeologicaSiActiva();
+                });
+            });
+
+            $('btnModoRect').addEventListener('click', () => setModoArea('rect'));
+            $('btnModoCirculo').addEventListener('click', () => setModoArea('circulo'));
+
+            ['circLat', 'circLon', 'circRadio'].forEach(id => {
+                $(id).addEventListener('input', () => {
+                    const c = leerCirculo();
+                    if ([c.lat, c.lon, c.radioKm].every(isFinite) && c.radioKm > 0) {
+                        pintarCirculo(L.latLng(c.lat, c.lon), c.radioKm * 1000);
+                    }
+                });
+                $(id).addEventListener('change', () => {
+                    validarArea(false);
+                    const c = leerCirculo();
+                    if ([c.lat, c.lon, c.radioKm].every(isFinite) && c.radioKm > 0 && circuloDibujo) {
+                        map.fitBounds(circuloDibujo.getBounds(), { padding: [12, 12] });
+                    }
+                    refrescarCapaGeologicaSiActiva();
                 });
             });
 
@@ -1331,12 +2674,40 @@
                 $('magValue').textContent = 'M' + (parseInt($('magSlider').value, 10) / 10).toFixed(1);
             });
 
-            $('showEvents').addEventListener('change', (e) => {
-                if (malla) malla.visible = e.target.checked;
+            document.querySelectorAll('input[name="fuente"]').forEach(r => {
+                r.addEventListener('change', () => {
+                    actualizarLimiteUI();
+                    // Cada fuente cubre un rango de fechas real distinto (ver
+                    // rangoFechasFuente) — al cambiar de fuente, las fechas se
+                    // actualizan a su rango completo para no arrastrar un rango
+                    // corto que en la nueva fuente traiga pocos o cero resultados.
+                    const rango = rangoFechasFuente(r.value);
+                    $('fechaIni').value = rango.desde;
+                    $('fechaFin').value = rango.hasta;
+                });
             });
+
+            $('showEvents').addEventListener('change', aplicarVisibilidad3D);
+            $('showFondo').addEventListener('change', () => { aplicarVisibilidad3D(); aplicarVisibilidad2D(); });
+            $('showEventoCapa').addEventListener('change', () => { aplicarVisibilidad3D(); aplicarVisibilidad2D(); });
 
             $('showCaja').addEventListener('change', (e) => {
                 if (refs) refs.visible = e.target.checked;
+            });
+
+            $('showBeachball').addEventListener('change', () => {
+                if (datosFondo.bbox) construirEscena();
+            });
+
+            $('mapaSuperiorSelector').addEventListener('change', () => {
+                if (mallaSuperior && datosFondo.bbox) bakearMapaSuperior(datosFondo.bbox);
+            });
+
+            $('opacidadMapaSuperiorSlider').addEventListener('input', (e) => {
+                $('opacidadMapaSuperiorValue').textContent = e.target.value + '%';
+                if (mallaSuperior && $('mapaSuperiorSelector').value !== 'ninguno') {
+                    mallaSuperior.material.opacity = parseFloat(e.target.value) / 100;
+                }
             });
 
             $('showMap').addEventListener('change', (e) => {
@@ -1360,31 +2731,215 @@
             });
 
             $('timelineSlider').addEventListener('input', (e) => {
+                // El usuario tomó control manual del timeline: si estaba
+                // reproduciendo, se pausa (no pelea con el usuario).
+                if (reproduciendo) { reproduciendo = false; $('btnPlay').textContent = '▶ Play'; }
                 actualizarTimeline(parseFloat(e.target.value) / 100);
             });
+
+            $('btnPlay').addEventListener('click', togglePlay);
+            document.querySelectorAll('.vel-btn').forEach(b => {
+                b.addEventListener('click', () => {
+                    velocidad = parseFloat(b.dataset.vel);
+                    document.querySelectorAll('.vel-btn').forEach(x => x.classList.toggle('activo', x === b));
+                    // Re-ancla el reloj al punto actual para que el cambio de
+                    // velocidad, hecho mientras reproduce, no salte ni se acelere
+                    // de golpe sobre el tramo ya recorrido.
+                    if (reproduciendo) {
+                        fraccionInicio = parseFloat($('timelineSlider').value) / 100;
+                        tiempoInicio = performance.now();
+                    }
+                });
+            });
+
+            // --- Pestañas del panel ---
+            document.querySelectorAll('.tab-btn').forEach(b => {
+                b.addEventListener('click', () => setTab(b.dataset.tab));
+            });
+
+            // --- Pestaña "Evento especial" ---
+            $('btnOrigenCatalogo').addEventListener('click', () => setOrigenEvento('catalogo'));
+            $('btnOrigenArchivo').addEventListener('click', () => setOrigenEvento('archivo'));
+            $('btnModoRectEv').addEventListener('click', () => setModoAreaEvento('rect'));
+            $('btnModoCirculoEv').addEventListener('click', () => setModoAreaEvento('circulo'));
+            $('btnCopiarAreaFondo').addEventListener('click', () => {
+                setModoAreaEvento(modoArea);
+                if (modoArea === 'circulo') escribirCirculoEv(leerCirculo());
+                else escribirBboxEv(leerBbox());
+            });
+            document.querySelectorAll('input[name="fuenteEvento"]').forEach(r => {
+                r.addEventListener('change', () => {
+                    actualizarLimiteUIEvento();
+                    const rango = rangoFechasFuente(r.value);
+                    $('fechaIniEv').value = rango.desde;
+                    $('fechaFinEv').value = rango.hasta;
+                });
+            });
+            $('btnConsultarEvento').addEventListener('click', consultarEvento);
+            $('btnQuitarEvento').addEventListener('click', quitarCapaEvento);
+
+            $('archivoGeoJSON').addEventListener('change', (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = () => {
+                    let fc;
+                    try { fc = JSON.parse(reader.result); }
+                    catch (err) { mensajeEvento('The file is not valid JSON.', 'error'); return; }
+                    if (!fc || fc.type !== 'FeatureCollection' || !Array.isArray(fc.features)) {
+                        mensajeEvento(
+                            `The file doesn't look like a valid point GeoJSON — expected ` +
+                            `<code>type: "FeatureCollection"</code> with a <code>features</code> array; ` +
+                            `found <code>type: "${fc && fc.type}"</code>.`,
+                            'error'
+                        );
+                        return;
+                    }
+                    const norm = normalizarGeoJSONPropio(fc);
+                    if (!norm.eventos.length) {
+                        mensajeEvento(
+                            `Could not extract any valid event from the file ` +
+                            `(${norm.descartados} of ${fc.features.length} features discarded for missing ` +
+                            `recognizable lat/lon/depth/magnitude/date).`,
+                            'error'
+                        );
+                        return;
+                    }
+                    aplicarResultadoEvento(norm, null, `Own file (${file.name})`, null, [], {
+                        fuenteId: null, urlConsulta: null, truncado: false,
+                        origen: 'archivo', nombreArchivo: file.name
+                    });
+                };
+                reader.onerror = () => mensajeEvento('Could not read the file.', 'error');
+                reader.readAsText(file);
+            });
+
+            $('colorInicialEvento').addEventListener('input', actualizarColoresEvento);
+            $('colorFinalEvento').addEventListener('input', actualizarColoresEvento);
+        }
+
+        // Recolorea la capa de evento especial ya cargada en vivo (mesh 3D +
+        // marcadores 2D + leyenda), sin volver a consultar nada.
+        function actualizarColoresEvento() {
+            if (!datosEvento) return;
+            datosEvento.colorInicial = $('colorInicialEvento').value;
+            datosEvento.colorFinal = $('colorFinalEvento').value;
+
+            if (renderEvento.malla) {
+                const color = new THREE.Color();
+                renderEvento.indices.forEach((ev, i) => {
+                    color.set(colorParaCapa('evento', ev));
+                    renderEvento.malla.setColorAt(i, color);
+                });
+                if (renderEvento.malla.instanceColor) renderEvento.malla.instanceColor.needsUpdate = true;
+            }
+            renderEvento.marcadores.forEach((m, i) => {
+                const ev = datosEvento.eventos[i];
+                if (ev) m.setStyle({ fillColor: colorParaCapa('evento', ev) });
+            });
+            actualizarPanel();
+        }
+
+        // ============================================================
+        // 11b. Pestañas del panel y origen de la capa de evento especial
+        // ============================================================
+
+        const TAB_IDS = { area: 'tabArea', evento: 'tabEvento', vista: 'tabVista' };
+
+        function setTab(tabId) {
+            Object.keys(TAB_IDS).forEach(t => { $(TAB_IDS[t]).hidden = t !== tabId; });
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('activo', b.dataset.tab === tabId));
+        }
+
+        let origenEvento = 'catalogo';
+        function setOrigenEvento(origen) {
+            origenEvento = origen;
+            $('btnOrigenCatalogo').classList.toggle('activo', origen === 'catalogo');
+            $('btnOrigenArchivo').classList.toggle('activo', origen === 'archivo');
+            $('origenCatalogo').hidden = origen !== 'catalogo';
+            $('origenArchivo').hidden = origen !== 'archivo';
+        }
+
+        // ============================================================
+        // 12. Reproducción automática del timeline (Requisito 6)
+        // ============================================================
+
+        let reproduciendo = false, tiempoInicio = 0, fraccionInicio = 0;
+        let velocidad = 1;
+        const DURACION_BASE_MS = 30000; // a 1x, recorrido completo 0%->100%
+
+        function togglePlay() {
+            reproduciendo = !reproduciendo;
+            $('btnPlay').textContent = reproduciendo ? '⏸ Pause' : '▶ Play';
+            if (reproduciendo) {
+                const actual = parseFloat($('timelineSlider').value) / 100;
+                fraccionInicio = actual >= 1 ? 0 : actual;   // en 100%: reinicia desde 0
+                tiempoInicio = performance.now();
+                requestAnimationFrame(pasoReproduccion);
+            }
+        }
+
+        function pasoReproduccion(ahora) {
+            if (!reproduciendo) return;
+            const transcurrido = ahora - tiempoInicio;
+            const fraccion = Math.min(1, fraccionInicio + (transcurrido / (DURACION_BASE_MS / velocidad)));
+            $('timelineSlider').value = fraccion * 100;
+            actualizarTimeline(fraccion);
+            if (fraccion >= 1) {
+                reproduciendo = false;
+                $('btnPlay').textContent = '▶ Play';
+                return;
+            }
+            requestAnimationFrame(pasoReproduccion);
         }
 
         document.addEventListener('DOMContentLoaded', () => {
-            cargarPreferencias();
+            mostrarPantalla('area');
+            const huboGuardado = cargarPreferencias();
             initMap();
             init3D();
             conectarControles();
-            pintarRectangulo(bboxALatLngBounds(leerBbox()));
+            setModoArea(modoArea);
+            setModoAreaEvento('rect');
+            setOrigenEvento('catalogo');
+            setTab('area');
+            const rangoEv = rangoFechasFuente(fuenteSeleccionadaEvento());
+            $('fechaIniEv').value = rangoEv.desde;
+            $('fechaFinEv').value = rangoEv.hasta;
+            actualizarLimiteUIEvento();
+            actualizarBotonExportar();
+            aplicarVisibilidad2D();
             actualizarPanel();
             setTimeout(() => {
                 map.invalidateSize();
-                const b = bboxALatLngBounds(leerBbox());
-                if (b) map.fitBounds(b, { padding: [12, 12] });
+                if (huboGuardado) {
+                    // Sesión anterior: se restaura el área que el usuario ya tenía.
+                    if (modoArea === 'circulo' && circuloDibujo) {
+                        map.fitBounds(circuloDibujo.getBounds(), { padding: [12, 12] });
+                    } else {
+                        const b = bboxALatLngBounds(leerBbox());
+                        if (b) map.fitBounds(b, { padding: [12, 12] });
+                    }
+                } else {
+                    // Primera visita: punto de entrada mundial, sin área preseleccionada.
+                    map.fitWorld();
+                }
                 redimensionar3D();
             }, 200);
         });
 
         // Expuesto para las pruebas automatizadas del navegador.
         window.__explorador = {
-            estado: () => datos,
-            visibles: () => visibles,
+            estadoFondo: () => datosFondo,
+            estadoEvento: () => datosEvento,
+            visiblesFondo: () => renderFondo.visibles,
+            visiblesEvento: () => renderEvento.visibles,
             consultar,
-            setBbox: (b) => { escribirBbox(b); pintarRectangulo(bboxALatLngBounds(b)); }
+            consultarEvento,
+            quitarCapaEvento,
+            setBbox: (b) => { escribirBbox(b); pintarRectangulo(bboxALatLngBounds(b)); },
+            togglePlay,
+            setVelocidad: (v) => { velocidad = v; }
         };
     })();
     </script>
