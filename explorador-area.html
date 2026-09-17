@@ -3,7 +3,21 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Seismic Area Explorer — Live Query</title>
+    <title>Seismic Explorer — SWTectonics</title>
+    <script>
+        // Tema claro/oscuro antes del primer pintado (misma clave que SWTectonics Web).
+        (function () {
+            var tema = 'dark';
+            try {
+                tema = localStorage.getItem('swtectonics-theme') ||
+                    (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+            } catch (e) { /* sin storage: oscuro */ }
+            document.documentElement.dataset.theme = tema === 'light' ? 'light' : 'dark';
+        })();
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap">
     <link rel="icon" type="image/png" href="favicon.png">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -209,20 +223,130 @@
         .leaflet-control-layers label { color: var(--ink-2) !important; font-size: 11px; margin-bottom: 3px; }
         .leaflet-control-layers-separator { border-top: 1px solid var(--line) !important; }
         .leaflet-control-layers-selector { accent-color: var(--accent); }
+
+        /* ================================================================
+           SWTectonics Web Workbench — tokens neutral/indigo/lime, dark + light
+           ================================================================ */
+        :root[data-theme="dark"] {
+            color-scheme: dark;
+            --plane:#0a0a0a; --surface:#171717; --surface-2:#1c1c1f; --line:#262626; --axis:#3f3f46;
+            --ink:#fafafa; --ink-2:#d4d4d8; --ink-3:#a3a3a3;
+            --accent:#6366f1; --accent-hover:#818cf8; --accent-soft:rgba(99,102,241,.14); --accent-2:#84cc16;
+            --warning:#f97316; --critical:#ef4444; --hover:#27272a; --overlay:rgba(10,10,10,.82);
+            --msg-error-bg:rgba(239,68,68,.1); --msg-error-line:rgba(239,68,68,.3); --msg-error-ink:#fca5a5;
+            --msg-aviso-bg:rgba(249,115,22,.1); --msg-aviso-line:rgba(249,115,22,.3);
+            --msg-ok-bg:rgba(132,204,22,.1); --msg-ok-line:rgba(132,204,22,.3); --msg-ok-ink:#a3e635;
+            --msg-load-bg:rgba(99,102,241,.12); --msg-load-line:rgba(129,140,248,.35); --msg-load-ink:#a5b4fc;
+            --scene-bg:#0a0a0a; --scene-box:#71717a; --scene-surface:#1c1c1f; --scene-label:#a3a3a3; --area-draw:#818cf8;
+            --crust:#737373;
+            --o0:#ecfccb; --o1:#bef264; --o2:#84cc16; --o3:#65a30d; --o4:#4d7c0f;
+            --shadow:0 24px 70px rgba(24,24,40,.28);
+            --glow:radial-gradient(circle at top, rgba(99,102,241,.16), transparent 34%);
+            --vignette:rgba(0,0,0,.45);
+        }
+        :root[data-theme="light"] {
+            color-scheme: light;
+            --plane:#f7f7f8; --surface:#ffffff; --surface-2:#f4f4f5; --line:#e4e4e7; --axis:#d4d4d8;
+            --ink:#171717; --ink-2:#3f3f46; --ink-3:#52525b;
+            --accent:#6366f1; --accent-hover:#4f46e5; --accent-soft:#eef2ff; --accent-2:#65a30d;
+            --warning:#ea580c; --critical:#dc2626; --hover:#e4e4e7; --overlay:rgba(255,255,255,.88);
+            --msg-error-bg:#fef2f2; --msg-error-line:#fecaca; --msg-error-ink:#b91c1c;
+            --msg-aviso-bg:#fff7ed; --msg-aviso-line:#fed7aa;
+            --msg-ok-bg:#f7fee7; --msg-ok-line:#d9f99d; --msg-ok-ink:#3f6212;
+            --msg-load-bg:#eef2ff; --msg-load-line:#c7d2fe; --msg-load-ink:#4338ca;
+            --scene-bg:#f7f7f8; --scene-box:#71717a; --scene-surface:#e4e4e7; --scene-label:#52525b; --area-draw:#4f46e5;
+            --crust:#a1a1aa;
+            --o0:#bef264; --o1:#84cc16; --o2:#65a30d; --o3:#4d7c0f; --o4:#365314;
+            --shadow:0 18px 48px rgba(24,24,27,.08);
+            --glow:radial-gradient(circle at top, rgba(99,102,241,.12), transparent 30%);
+            --vignette:rgba(24,24,27,.08);
+        }
+        :root {
+            --font:"Inter",system-ui,-apple-system,"Segoe UI",sans-serif;
+            --font-display:"Space Grotesk","Inter",system-ui,sans-serif;
+            --font-mono:"JetBrains Mono",ui-monospace,Consolas,monospace;
+            --timevalue-width:150px;
+        }
+        body { background: var(--plane); background-image: var(--glow); }
+        ::selection { background: rgba(99,102,241,.32); }
+
+        /* tarjetas redondeadas flotando sobre el fondo, como el workbench */
+        #app { background: transparent; gap: 10px; padding: 10px; }
+        #topbar, #sceneWrap, #timeWrap, #panel { border: 1px solid var(--line); border-radius: 20px; box-shadow: var(--shadow); }
+        #sceneWrap, #panel { overflow: hidden; }
+        #panel { overflow-y: auto; }
+        #topbar { padding: 10px 16px; gap: 16px; }
+        #timeWrap { padding: 10px 16px 12px; }
+
+        .brand { align-items: center; gap: 12px; }
+        .brand-logo { width: 28px; height: 28px; flex-shrink: 0; }
+        .brand-logo-inv { filter: invert(1) brightness(.92); }   /* el gris del legado se pierde sobre #0a0a0a */
+        .brand-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+        .eyebrow { font-size: 10px; font-weight: 600; letter-spacing: .28em; text-transform: uppercase; color: var(--ink-3); white-space: nowrap; }
+        .brand h1 { font-family: var(--font-display); font-size: 17px; font-weight: 600; letter-spacing: -.01em; }
+        .brand .sub { display: none; }
+        .theme-dark-only { display: inline; }
+        .theme-light-only { display: none; }
+        :root[data-theme="light"] .theme-dark-only { display: none; }
+        :root[data-theme="light"] .theme-light-only { display: inline; }
+
+        .seg { border-radius: 12px; padding: 3px; gap: 2px; }
+        .seg button { border-right: none; border-radius: 9px; padding: 5px 12px; font-weight: 500; }
+        .seg button[aria-pressed="true"], .seg button.activo { box-shadow: 0 4px 14px rgba(99,102,241,.35); }
+        .pill { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); background: var(--surface-2); color: var(--ink-2); border-radius: 999px; padding: 6px 12px; font-size: 12px; font-weight: 600; }
+        .pill:hover { border-color: var(--axis); color: var(--ink); }
+        .pill svg { width: 15px; height: 15px; }
+        .pill-lime { border-color: color-mix(in srgb, var(--accent-2) 40%, transparent); background: color-mix(in srgb, var(--accent-2) 12%, transparent); color: var(--accent-2); font-weight: 500; font-size: 11px; padding: 4px 10px; }
+
+        .tabs { padding: 6px 8px 0; }
+        .tab-btn { font-weight: 500; }
+        .tab-btn.activo { font-weight: 600; }
+        .group-title, .timeline-header, .legend-title, .campo label { letter-spacing: .16em; }
+        .group-title { font-size: 10px; }
+
+        .btn { border-radius: 12px; font-weight: 500; }
+        #btnConsultar, #btnConsultarEvento { border-radius: 12px; box-shadow: 0 8px 22px rgba(99,102,241,.3); }
+        input[type="number"], input[type="date"], select, input[type="color"] { border-radius: 10px; }
+        input[type="number"], input[type="date"] { font-family: var(--font-mono); font-size: 11px; }
+        .fuente-opcion, .info-box, .msg { border-radius: 14px; }
+        .fuente-opcion { padding: 10px 12px; }
+        .fuente-nombre { font-family: var(--font-display); font-size: 13px; }
+        .iconbtn { border-radius: 12px; }
+        .slider-value, #timeValue, .timeline-info, .info-box span, .legend-item span, .leaflet-popup-content { font-family: var(--font-mono); }
+        .slider-value { border-radius: 999px; }
+        input[type="range"]::-webkit-slider-runnable-track { background: var(--axis); }
+        input[type="range"]::-webkit-slider-thumb { background: var(--accent); border-color: var(--surface); box-shadow: 0 0 0 1px var(--accent); }
+        input[type="range"]::-moz-range-thumb { background: var(--accent); border-color: var(--surface); box-shadow: 0 0 0 1px var(--accent); }
+        .hud { border-radius: 12px; }
+        #vignette { background: radial-gradient(ellipse 78% 68% at 50% 46%, transparent 40%, var(--vignette) 100%); }
+        .leaflet-bar { border-radius: 12px !important; }
+        .leaflet-control-layers { border-radius: 12px !important; }
+        :root[data-theme="light"] .leaflet-control-layers-toggle { filter: none; }
+        :root[data-theme="light"] input[type="date"]::-webkit-calendar-picker-indicator { filter: none; }
     </style>
 </head>
 <body>
     <div id="app">
         <header id="topbar">
             <div class="brand">
-                <h1>Seismic Explorer · 3D</h1>
-                <span class="sub">live catalog query · USGS · ISC · SGC</span>
+                <img class="brand-logo brand-logo-inv theme-dark-only" src="branding/swtectonics_logo_black_64.png" alt="SWTectonics">
+                <img class="brand-logo theme-light-only" src="branding/swtectonics_logo_black_64.png" alt="SWTectonics">
+                <div class="brand-text">
+                    <span class="eyebrow">SWTectonics · live catalog</span>
+                    <h1>Seismic Explorer</h1>
+                </div>
             </div>
             <div class="seg" id="segPantalla" role="group" aria-label="View">
                 <button type="button" id="btnVistaArea" aria-pressed="true">Map</button>
                 <button type="button" id="btnVistaVisor" aria-pressed="false">3D</button>
             </div>
             <div class="spacer"></div>
+            <span class="pill pill-lime">USGS · ISC · SGC</span>
+            <button type="button" class="pill" id="btnTema" aria-pressed="false">
+                <svg class="theme-dark-only" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+                <svg class="theme-light-only" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
+                <span class="theme-dark-only">Light mode</span><span class="theme-light-only">Dark mode</span>
+            </button>
         </header>
 
         <div id="sceneWrap">
@@ -854,9 +978,10 @@
             // adentro de este layerGroup (ver Requisito 4 / actualizarCapaGeologica).
             capaGeologica = L.layerGroup();
 
-            capaCartoOscuro.addTo(map);
-            capaBaseActual = capaCartoOscuro;
-            capaBaseAnterior = capaCartoOscuro;
+            const capaInicial = document.documentElement.dataset.theme === 'light' ? capaCartoClaro : capaCartoOscuro;
+            capaInicial.addTo(map);
+            capaBaseActual = capaInicial;
+            capaBaseAnterior = capaInicial;
 
             const capasBase = {
                 'OpenStreetMap': capaOSM,
@@ -2700,7 +2825,43 @@
             }
         }
 
+        // Cambia claro/oscuro sin recargar: tokens CSS, escena 3D, marcadores 2D,
+        // leyenda y, si el mapa base es el gris neutro, su variante del tema.
+        function aplicarTema(tema) {
+            document.documentElement.dataset.theme = tema;
+            try { localStorage.setItem('swtectonics-theme', tema); } catch (e) { /* sin storage */ }
+            $('btnTema').setAttribute('aria-pressed', String(tema === 'light'));
+            temaCache = null;
+            const t = leerTema3D();
+
+            if (scene) scene.background = new THREE.Color(t.fondo);
+            if (datosFondo.bbox) {
+                const d = distancia;       // conserva el zoom del usuario
+                construirEscena();
+                distancia = d;
+            }
+
+            [['fondo', datosFondo, renderFondo], ['evento', datosEvento, renderEvento]].forEach(([id, capa, render]) => {
+                if (!capa || !render.marcadores) return;
+                render.marcadores.forEach((m, i) => m.setStyle({ fillColor: colorParaCapa(id, capa.eventos[i]) }));
+            });
+            [rectangulo, circuloDibujo].forEach(f => { if (f) f.setStyle({ color: t.area, fillColor: t.area }); });
+
+            const gris = tema === 'light' ? capaCartoClaro : capaCartoOscuro;
+            if (map && (capaBaseActual === capaCartoClaro || capaBaseActual === capaCartoOscuro) && capaBaseActual !== gris) {
+                map.removeLayer(capaBaseActual);
+                gris.addTo(map);
+                capaBaseAnterior = capaBaseActual;
+                capaBaseActual = gris;
+            }
+            actualizarPanel();
+        }
+
         function conectarControles() {
+            $('btnTema').setAttribute('aria-pressed', String(document.documentElement.dataset.theme === 'light'));
+            $('btnTema').addEventListener('click', () => {
+                aplicarTema(document.documentElement.dataset.theme === 'light' ? 'dark' : 'light');
+            });
             $('btnDibujar').addEventListener('click', () => modoDibujo3(!modoDibujo));
             $('btnConsultar').addEventListener('click', consultar);
             $('btnExportar').addEventListener('click', exportarGeoJSON);
