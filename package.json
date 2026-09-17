@@ -2,7 +2,7 @@
   "name": "sismos-3d-colombia",
   "version": "1.0.0",
   "description": "Cubo 3D de sismicidad de Colombia: enjambre de Choco (SGC), historico USGS 1900-2026 y subduccion de Nazca, con mapa geologico, importacion de GeoJSON y perfiles de profundidad",
-  "main": "sismos-cube.html",
+  "main": "explorador-area.html",
   "scripts": {
     "dev": "python -m http.server 8000",
     "build": "echo 'Static site - no build needed'"
