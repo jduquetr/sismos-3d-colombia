@@ -39,7 +39,7 @@ Solo una de las dos bases de datos históricas se muestra a la vez (selector des
 
 - `explorador-area.html` — explorador por área: se dibuja un bbox en el mapa y consulta en vivo el catálogo de EMSC (con respaldo automático a USGS), reproyecta la escena 3D al área pedida y exporta GeoJSON
 - `cubo-v2.html` — versión 2 del visor (demo en vivo): misma base de datos, revisión de la experiencia de uso y de las gráficas, con pestaña de análisis sismológico
-- `sismos-cube.html` — versión original completa (`index.html` redirige aquí)
+- `index.html` — redirige a `explorador-area.html` (vista por defecto)
 - `subduccion-puntos.json` — dataset USGS 1960–2026 (subducción Nazca), formato compacto `[lon, lat, depth, mag]`
 - `historico-1900-puntos.json` — dataset USGS 1900–2026 (Colombia completa), mismo formato
 - `swtectonics-logo.png` — branding
@@ -51,7 +51,7 @@ Solo una de las dos bases de datos históricas se muestra a la vez (selector des
 python -m http.server 8000
 ```
 
-Luego abre `http://localhost:8000/sismos-cube.html`
+Luego abre `http://localhost:8000/explorador-area.html`
 
 ## Despliegue
 
