@@ -559,7 +559,7 @@
                     <div id="slab2Controles" hidden>
                         <div class="slider-group" style="margin-top:8px">
                             <div class="slider-label">
-                                <span>Slab volume opacity</span>
+                                <span>Slab opacity (volume + contours)</span>
                                 <span class="slider-value" id="slab2OpacidadValue">35%</span>
                             </div>
                             <input type="range" id="slab2OpacidadSlider" min="0" max="100" value="35">
@@ -2839,15 +2839,19 @@
 
         function construirGrupoSlab2(lineas, P) {
             const g = new THREE.Group();
+            // Las curvas comparten el control de opacidad con el volumen: son la misma
+            // placa, y bajar solo el cuerpo dejaba el alambrado flotando encima.
             const material = new THREE.LineBasicMaterial({
-                color: new THREE.Color(leerTema3D().slab), transparent: true, opacity: 0.85
+                color: new THREE.Color(leerTema3D().slab), transparent: true, opacity: leerOpacidadSlab2()
             });
             const tope = datosFondo.profTope, piso = datosFondo.profPiso;
             lineas.forEach(l => {
                 if (l.prof < tope || l.prof > piso) return;
                 const geo = new THREE.BufferGeometry().setFromPoints(
                     l.pts.map(p => new THREE.Vector3(P.x(p[0]), P.y(p[1]), P.z(l.prof))));
-                g.add(new THREE.Line(geo, material));
+                const linea = new THREE.Line(geo, material);
+                linea.name = 'slab2Contorno';
+                g.add(linea);
             });
             const volumen = volumenSlab2(lineas, P);
             if (volumen) g.add(volumen);
@@ -3780,7 +3784,9 @@
                 if (!grupoSlab2) return;
                 const v = parseFloat(e.target.value) / 100;
                 grupoSlab2.traverse(o => {
-                    if (o.name === 'slab2Volumen') { o.material.opacity = v; o.visible = v > 0; }
+                    if (o.name !== 'slab2Volumen' && o.name !== 'slab2Contorno') return;
+                    o.material.opacity = v;
+                    o.visible = v > 0;
                 });
             });
 
