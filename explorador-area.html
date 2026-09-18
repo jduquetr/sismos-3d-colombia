@@ -50,7 +50,7 @@
             --scene-box:#8a8a86;
             --scene-surface:#232322;
             --scene-label:#898781;
-            --area-draw:#3987e5;
+            --area-draw:#84cc16;         /* área marcada (rectángulo/círculo) */
             --slab:#6da7ec;              /* superficie de la placa (Slab2) */
             /* capa de fondo: <=35 km corteza (neutro) y rampa naranja 35 km -> máx., como cubo-v2 */
             --crust:#8a8a86;
@@ -215,7 +215,7 @@
         .modo-area-selector { display: flex; gap: 6px; margin-bottom: 10px; }
         .modo-area-selector .btn { margin-top: 0; }
 
-        .esquina-marker { width: 12px; height: 12px; border-radius: 50%; background: var(--accent); border: 2px solid var(--plane); box-shadow: 0 0 4px rgba(0,0,0,.6); cursor: grab; }
+        .esquina-marker { width: 12px; height: 12px; border-radius: 50%; background: var(--area-draw); border: 2px solid var(--plane); box-shadow: 0 0 4px rgba(0,0,0,.6); cursor: grab; }
         .esquina-marker:active { cursor: grabbing; }
 
         .leaflet-control-layers { background: var(--surface-2) !important; box-shadow: none !important; color: var(--ink-2) !important; border: 1px solid var(--line) !important; border-radius: 8px !important; }
@@ -238,7 +238,7 @@
             --msg-aviso-bg:rgba(249,115,22,.1); --msg-aviso-line:rgba(249,115,22,.3);
             --msg-ok-bg:rgba(132,204,22,.1); --msg-ok-line:rgba(132,204,22,.3); --msg-ok-ink:#a3e635;
             --msg-load-bg:rgba(99,102,241,.12); --msg-load-line:rgba(129,140,248,.35); --msg-load-ink:#a5b4fc;
-            --scene-bg:#0a0a0a; --scene-box:#71717a; --scene-surface:#1c1c1f; --scene-label:#a3a3a3; --area-draw:#818cf8;
+            --scene-bg:#0a0a0a; --scene-box:#71717a; --scene-surface:#1c1c1f; --scene-label:#a3a3a3; --area-draw:#a3e635;
             --slab:#818cf8;
             --crust:#737373;
             --o0:#ecfccb; --o1:#bef264; --o2:#84cc16; --o3:#65a30d; --o4:#4d7c0f;
@@ -256,7 +256,7 @@
             --msg-aviso-bg:#fff7ed; --msg-aviso-line:#fed7aa;
             --msg-ok-bg:#f7fee7; --msg-ok-line:#d9f99d; --msg-ok-ink:#3f6212;
             --msg-load-bg:#eef2ff; --msg-load-line:#c7d2fe; --msg-load-ink:#4338ca;
-            --scene-bg:#f7f7f8; --scene-box:#71717a; --scene-surface:#e4e4e7; --scene-label:#52525b; --area-draw:#4f46e5;
+            --scene-bg:#f7f7f8; --scene-box:#71717a; --scene-surface:#e4e4e7; --scene-label:#52525b; --area-draw:#65a30d;
             --slab:#4f46e5;
             --crust:#a1a1aa;
             --o0:#bef264; --o1:#84cc16; --o2:#65a30d; --o3:#4d7c0f; --o4:#365314;
@@ -1005,7 +1005,9 @@
                 }
             });
             capaSlab2 = new TeselasSlab2('', {
-                opacity: 0.9, maxZoom: 12, pane: 'overlayPane',
+                // En overlayPane las teselas quedaban por encima del rectángulo del área.
+                // En tilePane con zIndex alto van sobre el mapa base y bajo los vectores.
+                opacity: 0.9, maxZoom: 12, pane: 'tilePane', zIndex: 250,
                 attribution: 'Slab2 — Hayes et al. (2018), USGS'
             });
 
@@ -1102,8 +1104,8 @@
             if (!bounds) return;
             if (rectangulo) map.removeLayer(rectangulo);
             rectangulo = L.rectangle(bounds, {
-                color: leerTema3D().area, weight: 1, dashArray: '4 3',
-                fillColor: leerTema3D().area, fillOpacity: 0.07, interactive: false
+                color: leerTema3D().area, weight: 2, dashArray: '6 4',
+                fillColor: leerTema3D().area, fillOpacity: 0.12, interactive: false
             }).addTo(map);
             // Mientras se está dibujando un rectángulo nuevo a mano (arrastre en
             // curso), los campos numéricos todavía no reflejan el bbox en vivo —
@@ -1118,8 +1120,8 @@
             if (!centro || !isFinite(radioM) || radioM <= 0) return;
             if (circuloDibujo) map.removeLayer(circuloDibujo);
             circuloDibujo = L.circle(centro, {
-                radius: radioM, color: leerTema3D().area, weight: 1, dashArray: '4 3',
-                fillColor: leerTema3D().area, fillOpacity: 0.07, interactive: false
+                radius: radioM, color: leerTema3D().area, weight: 2, dashArray: '6 4',
+                fillColor: leerTema3D().area, fillOpacity: 0.12, interactive: false
             }).addTo(map);
         }
 
@@ -1179,8 +1181,8 @@
             escribirBbox(b);
             if (rectangulo) map.removeLayer(rectangulo);
             rectangulo = L.rectangle(bboxALatLngBounds(b) || L.latLngBounds([b.s, b.o], [b.n, b.e]), {
-                color: leerTema3D().area, weight: 1, dashArray: '4 3',
-                fillColor: leerTema3D().area, fillOpacity: 0.07, interactive: false
+                color: leerTema3D().area, weight: 2, dashArray: '6 4',
+                fillColor: leerTema3D().area, fillOpacity: 0.12, interactive: false
             }).addTo(map);
             validarBbox(true);
         }
@@ -2223,7 +2225,7 @@
                 caja: v('--scene-box', '#8a8a86'),
                 superficie: v('--scene-surface', '#232322'),
                 etiqueta: v('--scene-label', '#898781'),
-                area: v('--area-draw', '#3987e5'),
+                area: v('--area-draw', '#84cc16'),
                 slab: v('--slab', '#6da7ec'),
                 fuente: v('--font', 'system-ui,sans-serif')
             };
