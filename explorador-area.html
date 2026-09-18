@@ -187,6 +187,14 @@
 
         .nota { font-size: 10px; color: var(--ink-3); line-height: 1.5; margin-top: 6px; }
 
+        .lista-anio { max-height: 300px; overflow-y: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); }
+        .evento-fila { display: block; width: 100%; text-align: left; padding: 7px 10px; font-size: 11px; color: var(--ink-2); border-bottom: 1px solid var(--line); line-height: 1.45; }
+        .evento-fila:last-child { border-bottom: none; }
+        .evento-fila:hover { background: var(--hover); color: var(--ink); }
+        .evento-fila .m { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
+        .evento-fila .f { color: var(--ink-3); font-variant-numeric: tabular-nums; }
+        .evento-fila .mt { color: var(--accent-2, var(--accent)); font-size: 10px; }
+
         .fuente-selector { display: flex; flex-direction: column; gap: 8px; }
         .fuente-opcion { display: block; cursor: pointer; padding: 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface-2); }
         .fuente-opcion:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); }
@@ -683,6 +691,20 @@
                     <div class="nota">Reads the USGS event feed and derives the area and the time window from the magnitude. It is queried live and nothing is stored — to keep it, add it to the library with <code>node tools/snapshot-eventos.mjs --add &lt;id&gt;</code>.</div>
                 </div>
 
+                <div class="control-group">
+                    <div class="group-title">Significant events by year</div>
+                    <div class="nota">USGS's own significance criterion — the <code>sig</code> field behind their significant earthquakes page, which weighs magnitude, felt reports and damage — not a magnitude cutoff. Open a year to see its events; picking one loads it with the seismicity around it.</div>
+                    <button class="btn secundario" id="btnAbrirIndice" style="margin-top:8px">Browse significant events</button>
+                    <div class="campo" id="campoAnio" hidden style="margin-top:8px">
+                        <label for="anioSignificativos">Year</label>
+                        <select id="anioSignificativos">
+                            <option value="">— pick a year —</option>
+                        </select>
+                    </div>
+                    <div class="msg" id="mensajeIndice"></div>
+                    <div id="listaAnio" style="margin-top:8px"></div>
+                </div>
+
                 <div class="control-group" id="grupoTensor" hidden>
                     <div class="group-title">Moment tensor</div>
                     <div class="checkbox-item">
@@ -974,6 +996,12 @@
         function limpiarMensaje() {
             $('mensaje').className = 'msg';
             $('mensaje').innerHTML = '';
+        }
+
+        function mensajeIndice(texto, tipo) {
+            const el = $('mensajeIndice');
+            el.className = 'msg visible ' + tipo;
+            el.innerHTML = (tipo === 'cargando' ? '<span class="spinner"></span>' : '') + texto;
         }
 
         function mensajeBiblioteca(texto, tipo) {
@@ -2468,8 +2496,71 @@
             return moduloDerivar;
         }
 
-        async function cargarPorIdUSGS() {
-            const id = $('idUSGS').value.trim();
+        // ============================================================
+        // Índice de significativos por año (eventos/significativos.json)
+        // ============================================================
+        const INDICE_URL = 'eventos/significativos.json';
+        let indiceAnios = null;
+
+        async function abrirIndiceSignificativos() {
+            if (indiceAnios) return;             // ya está en memoria
+            $('btnAbrirIndice').disabled = true;
+            mensajeIndice('Reading the significant-events index…', 'cargando');
+            try {
+                const res = await fetch(INDICE_URL);
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                indiceAnios = await res.json();
+                pintarSelectorAnios(indiceAnios);
+                const total = Object.values(indiceAnios.anios).reduce((n, f) => n + f.length, 0);
+                mensajeIndice(`${total} significant events, ${indiceAnios.desde}–${indiceAnios.hasta} ` +
+                    `(sig ≥ ${indiceAnios.minsig}). Index frozen on ${indiceAnios.generado.slice(0, 10)}; ` +
+                    'each event is then read live from USGS.', 'ok');
+                $('btnAbrirIndice').hidden = true;
+            } catch (err) {
+                mensajeIndice(`The index could not be read: ${err.message}. ` +
+                    'Regenerate it with <code>node tools/snapshot-eventos.mjs --indice</code>.', 'error');
+            } finally {
+                $('btnAbrirIndice').disabled = false;
+            }
+        }
+
+        // Un año se elige en la caja de selección y su lista se arma en ese momento:
+        // son miles de filas si se arman todas de golpe.
+        function pintarSelectorAnios(indice) {
+            const sel = $('anioSignificativos');
+            sel.innerHTML = '<option value="">— pick a year —</option>';
+            Object.keys(indice.anios).map(Number).sort((a, b) => b - a).forEach(anio => {
+                const op = document.createElement('option');
+                op.value = String(anio);
+                op.textContent = `${anio} — ${(indice.anios[anio] || []).length} events`;
+                sel.appendChild(op);
+            });
+            $('campoAnio').hidden = false;
+        }
+
+        function pintarListaAnio(anio) {
+            const cont = $('listaAnio');
+            cont.innerHTML = '';
+            const filas = (indiceAnios && indiceAnios.anios[anio]) || [];
+            if (!filas.length) return;
+            const lista = document.createElement('div');
+            lista.className = 'lista-anio';
+            filas.slice().sort((a, b) => b[5] - a[5]).forEach(f => {
+                const b = document.createElement('button');
+                b.type = 'button';
+                b.className = 'evento-fila';
+                b.innerHTML = `<span class="m">M${f[5].toFixed(1)}</span> ${f[6]}` +
+                    (f[8] ? ' <span class="mt">· tensor</span>' : '') +
+                    `<br><span class="f">${new Date(f[1]).toISOString().slice(0, 10)}` +
+                    (isFinite(f[4]) ? ` · ${f[4].toFixed(0)} km` : '') + '</span>';
+                b.addEventListener('click', () => cargarPorIdUSGS(f[0]));
+                lista.appendChild(b);
+            });
+            cont.appendChild(lista);
+        }
+
+        async function cargarPorIdUSGS(idDirecto) {
+            const id = (typeof idDirecto === 'string' ? idDirecto : $('idUSGS').value).trim();
             if (!id) { mensajeBiblioteca('Type a USGS event id, like us6000tjl2.', 'aviso'); return; }
             $('btnCargarPorId').disabled = true;
             mensajeBiblioteca(`Reading the USGS feed for ${id}…`, 'cargando');
@@ -3666,7 +3757,9 @@
             $('libreriaEvento').addEventListener('change', () => pintarFichaBiblioteca(fichaPorId($('libreriaEvento').value)));
             $('btnCargarBiblioteca').addEventListener('click', cargarDeBiblioteca);
             $('btnActualizarBiblioteca').addEventListener('click', actualizarDesdeCatalogo);
-            $('btnCargarPorId').addEventListener('click', cargarPorIdUSGS);
+            $('btnCargarPorId').addEventListener('click', () => cargarPorIdUSGS());
+            $('btnAbrirIndice').addEventListener('click', abrirIndiceSignificativos);
+            $('anioSignificativos').addEventListener('change', (e) => pintarListaAnio(Number(e.target.value)));
             $('idUSGS').addEventListener('keydown', (e) => { if (e.key === 'Enter') cargarPorIdUSGS(); });
 
             $('showTensor').addEventListener('change', rehacerTensores);

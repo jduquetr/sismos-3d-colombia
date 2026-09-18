@@ -91,6 +91,22 @@ en zonas muy activas conviene subir la magnitud mínima del contexto en vez del 
 Sin tocar el repo, el panel también tiene un campo **Or load any USGS event by id**: carga
 cualquier evento en vivo con la misma regla, sin guardarlo.
 
+### Eventos significativos por año
+
+El panel trae también el catálogo de significativos de USGS navegable: se elige el año en una
+caja de selección y sale la lista de ese año, ordenada por magnitud y marcando cuáles tienen
+mecanismo focal. Al elegir uno se lee su feed de detalle y se carga con la sismicidad
+alrededor, igual que con un id escrito a mano.
+
+La lista sale de `eventos/significativos.json`, que se genera con
+
+```bash
+node tools/snapshot-eventos.mjs --indice --desde-anio 2000 [--minsig 600]
+```
+
+`sig` es el criterio del propio USGS (pesa magnitud, reportes de sentido y daños), no un umbral
+de magnitud. El índice se descarga solo cuando se abre esa sección, no al cargar la página.
+
 ### Ventanas de catálogo
 
 Una ficha también puede ser un trozo de catálogo en vez de un sismo con nombre: todos los

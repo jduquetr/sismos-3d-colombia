@@ -12,6 +12,8 @@
 //   node tools/snapshot-eventos.mjs choco-2026-08-10   # solo una
 //   node tools/snapshot-eventos.mjs --add us6000tjl2   # agrega la ficha y la congela
 //   node tools/snapshot-eventos.mjs --ventana --desde 2026-01-01 --hasta 2026-01-31 --mag 5
+//   node tools/snapshot-eventos.mjs --indice --desde-anio 2000
+//                                                      # índice de significativos por año
 //                                                      # ventana de catálogo (mundial o con --bbox n,s,o,e)
 //
 // Con --add basta el id del evento en USGS: la ficha (área, ventana de tiempo,
@@ -162,6 +164,44 @@ async function instantanea(ficha) {
     console.log(`  → eventos/${ficha.id}.json (${kb} KB)`);
 }
 
+// Índice de eventos significativos por año: lo que alimenta el acordeón del panel.
+// 'significativo' es el criterio del propio USGS (campo sig, el mismo de su página de
+// significant earthquakes); no es un umbral de magnitud.
+async function indiceSignificativos(desdeAnio, hastaAnio, minsig) {
+    const anios = {};
+    let total = 0;
+    for (let a = hastaAnio; a >= desdeAnio; a--) {
+        const url = `${USGS}query?format=geojson&orderby=time&starttime=${a}-01-01` +
+            `&endtime=${a}-12-31T23:59:59&minsig=${minsig}&limit=20000`;
+        const j = await traer(url);
+        const filas = [];
+        for (const f of (j.features || [])) {
+            const p = f.properties || {}, c = (f.geometry || {}).coordinates || [];
+            const mag = Number(p.mag), lat = Number(c[1]), lon = Number(c[0]), prof = Number(c[2]);
+            if (![mag, lat, lon].every(Number.isFinite)) continue;
+            filas.push([
+                f.id, p.time, +lat.toFixed(3), +lon.toFixed(3),
+                Number.isFinite(prof) ? +Math.abs(prof).toFixed(1) : null,
+                +mag.toFixed(1), p.place || '', Number(p.sig) || 0,
+                String(p.types || '').split(',').includes('moment-tensor') ? 1 : 0
+            ]);
+        }
+        anios[a] = filas;
+        total += filas.length;
+        process.stdout.write(`  ${a}: ${filas.length}${String.fromCharCode(10)}`);
+    }
+    const salida = {
+        generado: new Date().toISOString(),
+        fuente: 'USGS FDSN event query, minsig',
+        minsig, desde: desdeAnio, hasta: hastaAnio,
+        nota: 'Índice para navegar por año. Al elegir un evento la página lee su feed de detalle y lo carga en vivo.',
+        columnas: ['id', 'tiempo', 'lat', 'lon', 'prof', 'mag', 'lugar', 'sig', 'tensor'],
+        anios
+    };
+    await writeFile(join(RAIZ, 'eventos', 'significativos.json'), JSON.stringify(salida), 'utf8');
+    console.log(`→ eventos/significativos.json (${(JSON.stringify(salida).length / 1024).toFixed(0)} KB, ${total} eventos)`);
+}
+
 const rutaLibreria = join(RAIZ, 'eventos', 'libreria.json');
 const libreria = JSON.parse(await readFile(rutaLibreria, 'utf8'));
 const args = process.argv.slice(2);
@@ -188,6 +228,13 @@ if (args[0] === '--add') {
     console.log(`  tensor    ${ficha.tensor ? 'sí' : 'no publicado'}`);
     await instantanea(libreria.eventos.find(f => f.usgsId === ficha.usgsId));
     console.log('Listo. Commitea eventos/libreria.json y eventos/<id>.json.');
+} else if (args[0] === '--indice') {
+    const opt = (n, d) => { const i = args.indexOf(n); return i >= 0 ? args[i + 1] : d; };
+    const desde = Number(opt('--desde-anio', 2000));
+    const hasta = Number(opt('--hasta-anio', new Date().getUTCFullYear()));
+    const minsig = Number(opt('--minsig', 600));
+    console.log(`Índice de significativos ${desde}–${hasta} (sig ≥ ${minsig})`);
+    await indiceSignificativos(desde, hasta, minsig);
 } else if (args[0] === '--ventana') {
     const opt = (n, d) => { const i = args.indexOf(n); return i >= 0 ? args[i + 1] : d; };
     const bboxTexto = opt('--bbox', null);
