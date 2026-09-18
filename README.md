@@ -43,6 +43,9 @@ Solo una de las dos bases de datos históricas se muestra a la vez (selector des
 - `subduccion-puntos.json` — dataset USGS 1960–2026 (subducción Nazca), formato compacto `[lon, lat, depth, mag]`
 - `historico-1900-puntos.json` — dataset USGS 1900–2026 (Colombia completa), mismo formato
 - `swtectonics-logo.png` — branding
+- `eventos/libreria.json` — biblioteca de eventos especiales: una ficha por evento (contexto regional, consulta de la secuencia, estilo, id de USGS y tensor de respaldo)
+- `eventos/<id>.json` — instantánea congelada de cada ficha: es lo que carga la página por defecto
+- `tools/snapshot-eventos.mjs` — regenera esas instantáneas desde USGS
 - `.github/workflows/pages.yml` — despliegue automático a GitHub Pages en cada push a `main`
 
 ## Uso local
@@ -52,6 +55,26 @@ python -m http.server 8000
 ```
 
 Luego abre `http://localhost:8000/explorador-area.html`
+
+## Eventos especiales
+
+La pestaña **Special Event** carga eventos con nombre propio desde `eventos/libreria.json`.
+Cada ficha trae el contexto regional (capa de fondo), la consulta de su secuencia (capa de
+evento), su estilo y el id del evento en USGS, de donde sale el tensor.
+
+Los datos se cargan desde la **instantánea** del repo, no en vivo: USGS revisa magnitudes y
+agrega réplicas, así que la consulta en vivo no devuelve lo mismo con el tiempo y una figura
+hecha con ella no sería reproducible. El botón *Update from catalog* del panel vuelve a
+consultar en vivo y dice cuánto cambió frente a la instantánea.
+
+Para agregar un evento: se añade su ficha a `eventos/libreria.json` y se corre
+
+```bash
+node tools/snapshot-eventos.mjs            # todas las fichas
+node tools/snapshot-eventos.mjs <id>       # solo una
+```
+
+que deja `eventos/<id>.json` listo para commitear.
 
 ## Despliegue
 
