@@ -673,6 +673,32 @@
                         <label for="showSlab2">Subduction slab — Slab2 (USGS)</label>
                     </div>
                     <div class="nota">Modeled top of the subducting slab (Slab2, Hayes et al. 2018). On the 2D map it draws USGS's depth contours worldwide. In 3D it builds the slab over the queried area from those contours, clipped to the box's depth range — where the model has no data, there's a hole.</div>
+                    <div id="slab2Controles" hidden>
+                        <div class="slider-group" style="margin-top:8px">
+                            <div class="slider-label">
+                                <span>Slab volume opacity</span>
+                                <span class="slider-value" id="slab2OpacidadValue">35%</span>
+                            </div>
+                            <input type="range" id="slab2OpacidadSlider" min="0" max="100" value="35">
+                        </div>
+                        <div class="campo">
+                            <label for="slab2Espesor">Slab thickness (km)</label>
+                            <input type="number" id="slab2Espesor" min="1" max="100" step="1" value="10">
+                        </div>
+                        <div class="info-box" style="margin-top:8px">
+                            <strong>From a surface to a volume.</strong><br>
+                            Slab2 publishes only the <strong>top</strong> of the slab: a surface, with no thickness.
+                            Giving it a floor turns it into a body you can see the seismicity fall inside of.<br><br>
+                            The default <strong>10 km</strong> is an assumption, not data: the average thickness of
+                            oceanic crust. It's the crust alone — the subducting lithosphere, crust plus its
+                            mantle, is several tens of km thick — so treat the volume as the crustal part of
+                            the slab, and change the number if your case calls for another one.<br><br>
+                            The floor is offset <strong>perpendicular to the slab</strong>, not straight down.
+                            A vertical offset would read as 10 km only where the slab is flat, and would inflate
+                            to 10/cos(dip) as it steepens — about 14 km at 45°. Measuring perpendicular keeps the
+                            thickness constant no matter the dip.
+                        </div>
+                    </div>
                     <div class="nota">Real focal sphere computed from USGS's published moment tensor — red = compression, blue = dilatation. Shown at the CMT centroid depth (120.5 km), only visible once an area/query is loaded.</div>
                 </div>
 
@@ -2437,10 +2463,27 @@
             return lineas;
         }
 
-        // Superficie a partir de los contornos: malla regular sobre el área, con la
-        // profundidad interpolada por distancia inversa. Las celdas sin contornos
-        // cerca quedan vacías — preferible un hueco a inventar geometría.
-        function mallaSlab2(lineas, P) {
+        function leerEspesorSlab2() {
+            const v = parseFloat(($('slab2Espesor') || {}).value);
+            return isFinite(v) && v > 0 ? Math.min(v, 100) : 10;   // 10 km: corteza oceánica media
+        }
+
+        function leerOpacidadSlab2() {
+            const el = $('slab2OpacidadSlider');
+            return el ? parseFloat(el.value) / 100 : 0.35;
+        }
+
+        // Volumen de la placa a partir de los contornos: malla regular sobre el área
+        // con la profundidad interpolada por distancia inversa (techo), su copia
+        // desplazada el espesor (piso) y las paredes del borde. Las celdas sin
+        // contornos cerca quedan vacías — preferible un hueco a inventar geometría.
+        //
+        // Slab2 solo publica el TECHO de la placa. El piso es un supuesto nuestro, y se
+        // desplaza PERPENDICULAR a la superficie, no en vertical: en vertical el espesor
+        // real sería 10·cos(buzamiento) y se inflaría donde la placa se empina. Por eso
+        // el cálculo se hace en km reales (la escena tiene exageración vertical, ahí una
+        // "perpendicular" no lo sería).
+        function volumenSlab2(lineas, P) {
             const b = datosFondo.bbox;
             const muestras = [];
             lineas.forEach(l => l.pts.forEach((p, i) => {
@@ -2448,15 +2491,14 @@
             }));
             if (muestras.length < 8) return null;
 
-            const N = 44;
+            const N = 44, nodos = N + 1;
             const pasoLon = (b.e - b.o) / N, pasoLat = (b.n - b.s) / N;
             const radio = Math.max(pasoLon, pasoLat) * 3, radio2 = radio * radio;
             const tope = datosFondo.profTope, piso = datosFondo.profPiso;
 
-            const indice = new Int32Array((N + 1) * (N + 1)).fill(-1);
-            const vertices = [];
-            for (let j = 0; j <= N; j++) {
-                for (let i = 0; i <= N; i++) {
+            const prof = new Float64Array(nodos * nodos).fill(NaN);
+            for (let j = 0; j < nodos; j++) {
+                for (let i = 0; i < nodos; i++) {
                     const lon = b.o + i * pasoLon, lat = b.s + j * pasoLat;
                     let num = 0, den = 0;
                     for (const m of muestras) {
@@ -2466,34 +2508,83 @@
                         const w = 1 / (d2 + 1e-9);
                         num += w * m[2]; den += w;
                     }
-                    if (!den) continue;
-                    const prof = num / den;
-                    if (prof < tope || prof > piso) continue;   // fuera de la caja
-                    indice[j * (N + 1) + i] = vertices.length / 3;
-                    vertices.push(P.x(lon), P.y(lat), P.z(prof));
+                    if (den) prof[j * nodos + i] = num / den;
                 }
             }
-            if (vertices.length < 9) return null;
 
+            const kmLat = 111.32, kmLon = 111.32 * Math.cos(((b.n + b.s) / 2) * Math.PI / 180);
+            const espesor = leerEspesorSlab2();
+            const valido = (k) => isFinite(prof[k]) && prof[k] >= tope && prof[k] <= piso;
+            // Pendiente en km/km; en el borde de la malla se usa diferencia hacia adentro.
+            const pendiente = (i, j, di, dj, pasoKm) => {
+                const k0 = (j - dj) * nodos + (i - di), k1 = (j + dj) * nodos + (i + di);
+                const hay0 = i - di >= 0 && i - di < nodos && j - dj >= 0 && j - dj < nodos && isFinite(prof[k0]);
+                const hay1 = i + di >= 0 && i + di < nodos && j + dj >= 0 && j + dj < nodos && isFinite(prof[k1]);
+                if (hay0 && hay1) return (prof[k1] - prof[k0]) / (2 * pasoKm);
+                if (hay1) return (prof[k1] - prof[j * nodos + i]) / pasoKm;
+                if (hay0) return (prof[j * nodos + i] - prof[k0]) / pasoKm;
+                return 0;
+            };
+
+            const indice = new Int32Array(nodos * nodos).fill(-1);
+            const techo = [], suelo = [];
+            for (let j = 0; j < nodos; j++) {
+                for (let i = 0; i < nodos; i++) {
+                    const k = j * nodos + i;
+                    if (!valido(k)) continue;
+                    const lon = b.o + i * pasoLon, lat = b.s + j * pasoLat, d = prof[k];
+                    const dx = pendiente(i, j, 1, 0, pasoLon * kmLon);
+                    const dy = pendiente(i, j, 0, 1, pasoLat * kmLat);
+                    const norma = Math.sqrt(1 + dx * dx + dy * dy);
+                    // Normal hacia el interior de la placa: (-dx, -dy, -1)/norma en km.
+                    indice[k] = techo.length / 3;
+                    techo.push(P.x(lon), P.y(lat), P.z(d));
+                    suelo.push(
+                        P.x(lon - (espesor * dx / norma) / kmLon),
+                        P.y(lat - (espesor * dy / norma) / kmLat),
+                        P.z(Math.min(d + espesor / norma, piso))
+                    );
+                }
+            }
+            if (techo.length < 9) return null;
+
+            const base = techo.length / 3;
             const caras = [];
+            const celda = (i, j) => {
+                if (i < 0 || j < 0 || i >= N || j >= N) return null;
+                const a = indice[j * nodos + i], c = indice[j * nodos + i + 1];
+                const d = indice[(j + 1) * nodos + i], e = indice[(j + 1) * nodos + i + 1];
+                return (a < 0 || c < 0 || d < 0 || e < 0) ? null : { a, c, d, e };
+            };
+            const pared = (p, q) => {   // p, q: índices de dos nodos contiguos del borde
+                caras.push(p, q, base + q, p, base + q, base + p);
+            };
+
             for (let j = 0; j < N; j++) {
                 for (let i = 0; i < N; i++) {
-                    const a = indice[j * (N + 1) + i], c = indice[j * (N + 1) + i + 1];
-                    const d = indice[(j + 1) * (N + 1) + i], e = indice[(j + 1) * (N + 1) + i + 1];
-                    if (a < 0 || c < 0 || d < 0 || e < 0) continue;
-                    caras.push(a, c, e, a, e, d);
+                    const q = celda(i, j);
+                    if (!q) continue;
+                    caras.push(q.a, q.c, q.e, q.a, q.e, q.d);                       // techo
+                    caras.push(base + q.a, base + q.e, base + q.c,
+                               base + q.a, base + q.d, base + q.e);                 // piso
+                    if (!celda(i, j - 1)) pared(q.a, q.c);                           // borde sur
+                    if (!celda(i + 1, j)) pared(q.c, q.e);                           // borde este
+                    if (!celda(i, j + 1)) pared(q.e, q.d);                           // borde norte
+                    if (!celda(i - 1, j)) pared(q.d, q.a);                           // borde oeste
                 }
             }
             if (!caras.length) return null;
 
             const geo = new THREE.BufferGeometry();
-            geo.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+            geo.setAttribute('position', new THREE.Float32BufferAttribute(techo.concat(suelo), 3));
             geo.setIndex(caras);
             geo.computeVertexNormals();
-            return new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
+            const malla = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({
                 color: new THREE.Color(leerTema3D().slab),
-                transparent: true, opacity: 0.22, side: THREE.DoubleSide, depthWrite: false
+                transparent: true, opacity: leerOpacidadSlab2(), side: THREE.DoubleSide, depthWrite: false
             }));
+            malla.name = 'slab2Volumen';
+            return malla;
         }
 
         function construirGrupoSlab2(lineas, P) {
@@ -2508,8 +2599,8 @@
                     l.pts.map(p => new THREE.Vector3(P.x(p[0]), P.y(p[1]), P.z(l.prof))));
                 g.add(new THREE.Line(geo, material));
             });
-            const superficie = mallaSlab2(lineas, P);
-            if (superficie) g.add(superficie);
+            const volumen = volumenSlab2(lineas, P);
+            if (volumen) g.add(volumen);
             return g.children.length ? g : null;
         }
 
@@ -3157,9 +3248,24 @@
             });
 
             $('showSlab2').addEventListener('change', (e) => {
+                $('slab2Controles').hidden = !e.target.checked;
                 if (!map) return;
                 if (e.target.checked) capaSlab2.addTo(map); else map.removeLayer(capaSlab2);
                 actualizarSlab2();
+            });
+
+            $('slab2OpacidadSlider').addEventListener('input', (e) => {
+                $('slab2OpacidadValue').textContent = e.target.value + '%';
+                // La opacidad no cambia la geometría: se toca el material y ya.
+                if (!grupoSlab2) return;
+                const v = parseFloat(e.target.value) / 100;
+                grupoSlab2.traverse(o => {
+                    if (o.name === 'slab2Volumen') { o.material.opacity = v; o.visible = v > 0; }
+                });
+            });
+
+            $('slab2Espesor').addEventListener('change', () => {
+                if ($('showSlab2').checked && datosFondo.bbox) actualizarSlab2();
             });
 
             $('mapaSuperiorSelector').addEventListener('change', () => {
