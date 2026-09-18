@@ -11,6 +11,8 @@
 //   node tools/snapshot-eventos.mjs                    # todas las fichas
 //   node tools/snapshot-eventos.mjs choco-2026-08-10   # solo una
 //   node tools/snapshot-eventos.mjs --add us6000tjl2   # agrega la ficha y la congela
+//   node tools/snapshot-eventos.mjs --ventana --desde 2026-01-01 --hasta 2026-01-31 --mag 5
+//                                                      # ventana de catálogo (mundial o con --bbox n,s,o,e)
 //
 // Con --add basta el id del evento en USGS: la ficha (área, ventana de tiempo,
 // estilo y tensor) se deriva del feed de detalle — ver tools/derivar-ficha.mjs —
@@ -19,7 +21,7 @@
 // Escribe eventos/<id>.json. Commitea el resultado.
 
 import { readFile, writeFile } from 'node:fs/promises';
-import { URL_DETALLE, fichaDesdeDetalle } from './derivar-ficha.mjs';
+import { URL_DETALLE, fichaDesdeDetalle, fichaVentana, tensorDesdeDetalle } from './derivar-ficha.mjs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
@@ -58,24 +60,7 @@ async function traer(url) {
 }
 
 async function tensorDe(idEvento) {
-    const j = await traer(URL_DETALLE(idEvento));
-    const prod = ((j.properties || {}).products || {})['moment-tensor'];
-    if (!prod || !prod.length) return null;
-    const q = prod[0].properties || {};
-    const n = (k) => Number(q[k]);
-    return {
-        lat: n('derived-latitude'), lon: n('derived-longitude'), depth: n('derived-depth'),
-        mag: n('derived-magnitude') || Number(j.properties.mag),
-        scalarMoment: n('scalar-moment'),
-        mrr: n('tensor-mrr'), mtt: n('tensor-mtt'), mpp: n('tensor-mpp'),
-        mrt: n('tensor-mrt'), mrp: n('tensor-mrp'), mtp: n('tensor-mtp'),
-        fuente: q['beachball-source'] || 'us',
-        revision: q['review-status'] || null,
-        dobleParejaPct: q['percent-double-couple'] != null ? n('percent-double-couple') * 100 : null,
-        planoA: {
-            strike: n('nodal-plane-1-strike'), dip: n('nodal-plane-1-dip'), rake: n('nodal-plane-1-rake')
-        }
-    };
+    return tensorDesdeDetalle(await traer(URL_DETALLE(idEvento)));
 }
 
 async function capa(c) {
@@ -90,7 +75,61 @@ async function capa(c) {
              total: (j.metadata || {}).count ?? filas.length };
 }
 
+// Los tensores de una ventana: solo los eventos que declaran 'moment-tensor' en
+// properties.types traen uno, así que se piden nada más esos, en tandas.
+async function tensoresDeVentana(features, tope) {
+    // 'types' es una lista separada por comas: hay que comparar el tipo completo,
+    // porque 'internal-moment-tensor' contiene la cadena pero NO es público — el
+    // feed de detalle de esos eventos no trae moment-tensor.
+    const conTensor = features.filter(f =>
+        String(f.properties.types || '').split(',').includes('moment-tensor'));
+    const elegidos = conTensor.slice(0, tope);
+    console.log(`  tensores: ${conTensor.length} publicados de ${features.length} eventos` +
+        (conTensor.length > elegidos.length ? ` (se bajan ${elegidos.length})` : ''));
+    const salida = [];
+    for (let i = 0; i < elegidos.length; i += 8) {
+        const tanda = elegidos.slice(i, i + 8).map(f =>
+            traer(URL_DETALLE(f.id)).then(d => tensorDesdeDetalle(d)).catch(() => null));
+        (await Promise.all(tanda)).forEach((T, k) => {
+            if (!T) return;
+            const f = elegidos[i + k];
+            salida.push({ ...T, usgsId: f.id, nombre: f.properties.place || f.id });
+        });
+        process.stdout.write(`  bajados ${salida.length}/${elegidos.length}   `);
+    }
+    return salida;
+}
+
+async function instantaneaVentana(ficha, opciones) {
+    const c = ficha.contexto;
+    const fin = c.fin || hoy();
+    const url = urlUSGS(c, fin);
+    console.log(`${ficha.id}`);
+    console.log(`  ${url}`);
+    const j = await traer(url);
+    const features = j.features || [];
+    const { filas, descartados } = filasDesdeGeoJSON(features);
+    console.log(`  eventos: ${filas.length}${filas.length >= c.limite ? ' (tope)' : ''}`);
+
+    const tensores = opciones.tensores === false ? [] : await tensoresDeVentana(features, opciones.topeTensores);
+
+    const salida = {
+        id: ficha.id, nombre: ficha.nombre, tipo: 'ventana',
+        generado: new Date().toISOString(),
+        fuente: 'USGS FDSN event query',
+        nota: 'Instantánea congelada de una ventana de catálogo. Regenerar con tools/snapshot-eventos.mjs.',
+        columnas: COLUMNAS,
+        contexto: { consulta: { ...c, fin }, url, total: (j.metadata || {}).count ?? filas.length,
+                    descartados, truncado: filas.length >= c.limite, filas },
+        evento: null,
+        tensores
+    };
+    await writeFile(join(RAIZ, 'eventos', `${ficha.id}.json`), JSON.stringify(salida), 'utf8');
+    console.log(`  → eventos/${ficha.id}.json (${(JSON.stringify(salida).length / 1024).toFixed(0)} KB, ${tensores.length} tensores)`);
+}
+
 async function instantanea(ficha) {
+    if (ficha.tipo === 'ventana') return instantaneaVentana(ficha, { topeTensores: 300 });
     process.stdout.write(`${ficha.id}: contexto… `);
     const contexto = await capa(ficha.contexto);
     process.stdout.write(`${contexto.filas.length}${contexto.truncado ? ' (tope)' : ''} · secuencia… `);
@@ -148,6 +187,28 @@ if (args[0] === '--add') {
     console.log(`  contexto  ${JSON.stringify(ficha.contexto.bbox)}`);
     console.log(`  tensor    ${ficha.tensor ? 'sí' : 'no publicado'}`);
     await instantanea(libreria.eventos.find(f => f.usgsId === ficha.usgsId));
+    console.log('Listo. Commitea eventos/libreria.json y eventos/<id>.json.');
+} else if (args[0] === '--ventana') {
+    const opt = (n, d) => { const i = args.indexOf(n); return i >= 0 ? args[i + 1] : d; };
+    const bboxTexto = opt('--bbox', null);
+    const bbox = bboxTexto ? (() => {
+        const [n, s, o, e] = bboxTexto.split(',').map(Number);
+        if (![n, s, o, e].every(Number.isFinite)) throw new Error('--bbox espera n,s,o,e');
+        return { n, s, o, e };
+    })() : null;
+    const ficha = fichaVentana({
+        inicio: opt('--desde', '2026-01-01'),
+        fin: opt('--hasta', hoy()),
+        minmag: Number(opt('--mag', 5)),
+        bbox,
+        nombre: opt('--nombre', null),
+        limite: Number(opt('--limite', 20000)),
+        tensores: !args.includes('--sin-tensores')
+    });
+    const ya = libreria.eventos.findIndex(f => f.id === ficha.id);
+    if (ya >= 0) libreria.eventos[ya] = ficha; else libreria.eventos.push(ficha);
+    await writeFile(rutaLibreria, JSON.stringify(libreria, null, 2) + String.fromCharCode(10), 'utf8');
+    await instantaneaVentana(ficha, { tensores: !args.includes('--sin-tensores'), topeTensores: Number(opt('--tope-tensores', 300)) });
     console.log('Listo. Commitea eventos/libreria.json y eventos/<id>.json.');
 } else {
     const fichas = args.length ? libreria.eventos.filter(f => args.includes(f.id)) : libreria.eventos;

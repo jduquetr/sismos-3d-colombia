@@ -70,6 +70,42 @@ export function idFicha(detalle) {
     return `${lugar || detalle.id}-${fecha}`;
 }
 
+// Ficha de VENTANA: no es un sismo con nombre sino un trozo de catálogo
+// (un mes del mundo con M5+, un año de una región). La capa de fondo es la
+// ventana entera y se dibujan los mecanismos focales de los eventos que tengan
+// tensor publicado. Sirve para mirar patrones, no un evento en particular.
+export function fichaVentana({ inicio, fin, minmag, bbox, nombre, limite, tensores }) {
+    // ±85.05 y no ±90: es el límite de Web Mercator, y el mapa 2D y la cara
+    // superior de la caja 3D están en Mercator.
+    const mundo = { n: 85.05, s: -85.05, o: -180, e: 180 };
+    const caja = bbox || mundo;
+    const global = !bbox;
+    const etiqueta = nombre || `${global ? 'Global' : 'Regional'} M${minmag}+ · ${inicio} → ${fin}`;
+    return {
+        id: (nombre ? nombre.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+                    : `ventana-${global ? 'global' : 'region'}-m${String(minmag).replace('.', '')}-${inicio}-${fin}`),
+        tipo: 'ventana',
+        nombre: etiqueta,
+        lugar: global ? 'Worldwide' : `${caja.s}…${caja.n}° lat, ${caja.o}…${caja.e}° lon`,
+        fecha: `${inicio}T00:00:00Z`,
+        mag: Number(minmag),
+        magTipo: '',
+        profundidad: null,
+        usgsId: null,
+        resumen: `Catalog window, not a single earthquake: every USGS event of M${minmag} or more ` +
+            `between ${inicio} and ${fin}` + (global ? ' worldwide' : ' inside the given box') + '. ' +
+            (tensores === false ? 'Moment tensors are not included.'
+                : 'The focal spheres of every event with a published moment tensor are drawn.'),
+        contexto: {
+            fuenteId: 'usgs', bbox: caja,
+            inicio, fin, minmag: Number(minmag), limite: limite || 20000
+        },
+        consulta: null,   // una ventana no tiene "secuencia": la capa especial queda libre
+        estilo: { colorInicial: '#ffd166', colorFinal: '#9d0208', escala: 22, opacidad: 100 },
+        tensor: null
+    };
+}
+
 export function fichaDesdeDetalle(detalle, opciones = {}) {
     const p = detalle.properties || {};
     const [lon, lat, prof] = (detalle.geometry || {}).coordinates || [];

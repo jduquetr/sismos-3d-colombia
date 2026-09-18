@@ -91,6 +91,23 @@ en zonas muy activas conviene subir la magnitud mínima del contexto en vez del 
 Sin tocar el repo, el panel también tiene un campo **Or load any USGS event by id**: carga
 cualquier evento en vivo con la misma regla, sin guardarlo.
 
+### Ventanas de catálogo
+
+Una ficha también puede ser un trozo de catálogo en vez de un sismo con nombre: todos los
+eventos de un rango de fechas, con los mecanismos focales de los que tengan tensor publicado.
+
+```bash
+node tools/snapshot-eventos.mjs --ventana --desde 2026-01-01 --hasta 2026-01-31 --mag 5      --nombre "Global M5+ January 2026"
+```
+
+Sin `--bbox n,s,o,e` es mundial. `--sin-tensores` omite los mecanismos y `--tope-tensores N`
+limita cuántos se bajan (uno por evento, así que son N peticiones al generar, no al usarlo).
+
+En una ventana la capa de fondo es la ventana entera y la capa de evento especial queda libre
+para cargar encima una secuencia con la consulta manual. El botón *Update from catalog*
+re-consulta los eventos, pero los mecanismos siguen siendo los de la instantánea: bajarlos
+desde el navegador serían decenas de peticiones.
+
 ## Despliegue
 
 El sitio se publica automáticamente en **Vercel** con cada push a `main`: https://sismos-3d-colombia.vercel.app — es público, no pide cuenta ni login.
