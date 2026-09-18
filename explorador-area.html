@@ -389,8 +389,8 @@
         <aside id="panel">
             <div class="tabs">
                 <button class="tab-btn activo" data-tab="area" type="button">Area</button>
-                <button class="tab-btn" data-tab="evento" type="button">Special Event</button>
                 <button class="tab-btn" data-tab="vista" type="button">View</button>
+                <button class="tab-btn" data-tab="evento" type="button">Special Event</button>
             </div>
 
             <!-- ============ TAB 1: AREA (background layer) ============ -->
@@ -507,11 +507,204 @@
                 </div>
             </div>
 
-            <!-- ============ TAB 2: SPECIAL EVENT ============ -->
+            <!-- ============ TAB 2: VIEW ============ -->
+            <div class="tab-panel" id="tabVista" hidden>
+                <div class="control-group">
+                    <div class="group-title">Visible layers</div>
+                    <div class="checkbox-item">
+                        <input type="checkbox" id="showEvents" checked>
+                        <label for="showEvents">3D events</label>
+                    </div>
+                    <div class="checkbox-item">
+                        <input type="checkbox" id="showMap" checked>
+                        <label for="showMap">2D map</label>
+                    </div>
+                    <div class="checkbox-item">
+                        <input type="checkbox" id="showCaja" checked>
+                        <label for="showCaja">Box & reference lines</label>
+                    </div>
+                    <div class="campo" style="margin-top:8px">
+                        <label for="mapaSuperiorSelector">Top-face map</label>
+                        <select id="mapaSuperiorSelector">
+                            <option value="osm" selected>OpenStreetMap</option>
+                            <option value="hot">OSM Humanitarian</option>
+                            <option value="topo">OpenTopoMap</option>
+                            <option value="claro">Light Gray (Esri)</option>
+                            <option value="oscuro">Dark Gray (Esri)</option>
+                            <option value="geologico">Geological Map (SGC)</option>
+                            <option value="ninguno">None (flat plane)</option>
+                        </select>
+                        <div class="nota">It's cropped to the queried area and updates automatically when it changes. The geological map only has data for Colombia/Central America.</div>
+                    </div>
+                    <div class="slider-group">
+                        <div class="slider-label">
+                            <span>Top-map opacity</span>
+                            <span class="slider-value" id="opacidadMapaSuperiorValue">100%</span>
+                        </div>
+                        <input type="range" id="opacidadMapaSuperiorSlider" min="0" max="100" value="100">
+                    </div>
+                    <div class="checkbox-item">
+                        <input type="checkbox" id="showFondo" checked>
+                        <label for="showFondo">Background layer</label>
+                    </div>
+                    <div class="checkbox-item">
+                        <input type="checkbox" id="showEventoCapa" checked>
+                        <label for="showEventoCapa">Special event layer</label>
+                    </div>
+                    <div class="checkbox-item">
+                        <input type="checkbox" id="showSlab2">
+                        <label for="showSlab2">Subduction slab — Slab2 (USGS)</label>
+                    </div>
+                    <div class="nota">Modeled top of the subducting slab (Slab2, Hayes et al. 2018). On the 2D map it draws USGS's depth contours worldwide. In 3D it builds the slab over the queried area from those contours, clipped to the box's depth range — where the model has no data, there's a hole.</div>
+                    <div id="slab2Controles" hidden>
+                        <div class="slider-group" style="margin-top:8px">
+                            <div class="slider-label">
+                                <span>Slab volume opacity</span>
+                                <span class="slider-value" id="slab2OpacidadValue">35%</span>
+                            </div>
+                            <input type="range" id="slab2OpacidadSlider" min="0" max="100" value="35">
+                        </div>
+                        <div class="campo">
+                            <label for="slab2Espesor">Slab thickness (km)</label>
+                            <input type="number" id="slab2Espesor" min="1" max="100" step="1" value="10">
+                        </div>
+                        <div class="info-box" style="margin-top:8px">
+                            <strong>From a surface to a volume.</strong><br>
+                            Slab2 publishes only the <strong>top</strong> of the slab: a surface, with no thickness.
+                            Giving it a floor turns it into a body you can see the seismicity fall inside of.<br><br>
+                            The default <strong>10 km</strong> is an assumption, not data: the average thickness of
+                            oceanic crust. It's the crust alone — the subducting lithosphere, crust plus its
+                            mantle, is several tens of km thick — so treat the volume as the crustal part of
+                            the slab, and change the number if your case calls for another one.<br><br>
+                            The floor is offset <strong>perpendicular to the slab</strong>, not straight down.
+                            A vertical offset would read as 10 km only where the slab is flat, and would inflate
+                            to 10/cos(dip) as it steepens — about 14 km at 45°. Measuring perpendicular keeps the
+                            thickness constant no matter the dip.
+                        </div>
+                    </div>
+                    <div class="nota">Moment tensors now live in the <strong>Special Event</strong> tab, with the event they belong to.</div>
+                </div>
+
+                <div class="control-group">
+                    <div class="group-title">Opacity — background layer</div>
+                    <div class="slider-group">
+                        <div class="slider-label">
+                            <span>Opacity</span>
+                            <span class="slider-value" id="opacityValue">100%</span>
+                        </div>
+                        <input type="range" id="opacitySlider" min="0" max="100" value="100">
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <div class="group-title">Size — background spheres</div>
+                    <div class="slider-group">
+                        <div class="slider-label">
+                            <span>Scale</span>
+                            <span class="slider-value" id="sizeValue">15%</span>
+                        </div>
+                        <input type="range" id="sizeSlider" min="0" max="50" value="15">
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <div class="group-title">Rotation speed</div>
+                    <div class="slider-group">
+                        <div class="slider-label">
+                            <span>Speed</span>
+                            <span class="slider-value" id="speedValue">0%</span>
+                        </div>
+                        <input type="range" id="speedSlider" min="0" max="200" value="0">
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <div class="info-box">
+                        <strong>Background layer</strong><br>
+                        Source: <span id="infoFuente">—</span><br>
+                        Events: <span id="totalEvents">0</span> · Showing: <span id="visibleEventsFondo">0</span><br>
+                        Period: <span id="infoPeriodo">—</span><br>
+                        Magnitudes: <span id="infoMag">—</span><br>
+                        Depths: <span id="infoProf">—</span>
+                    </div>
+                    <div class="legend">
+                        <div class="legend-title">Depth scale — Background</div>
+                        <div id="leyenda"></div>
+                    </div>
+
+                    <div class="info-box" id="infoBoxEvento" hidden style="margin-top:10px">
+                        <strong>Special event</strong><br>
+                        Source: <span id="infoFuenteEvento">—</span><br>
+                        Events: <span id="totalEventsEvento">0</span> · Showing: <span id="visibleEventsEvento">0</span><br>
+                        Period: <span id="infoPeriodoEvento">—</span><br>
+                        Magnitudes: <span id="infoMagEvento">—</span><br>
+                        Depths: <span id="infoProfEvento">—</span>
+                    </div>
+                    <div class="legend" id="legendEvento" hidden>
+                        <div class="legend-title">Depth scale — Special event</div>
+                        <div id="leyendaEvento"></div>
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <div class="group-title">Export</div>
+                    <div class="campo">
+                        <label for="exportarQue">What to export</label>
+                        <select id="exportarQue">
+                            <option value="fondo">Background layer</option>
+                            <option value="evento">Special event</option>
+                            <option value="ambas">Both (tagged by layer)</option>
+                        </select>
+                    </div>
+                    <button class="btn secundario" id="btnExportar" disabled style="margin-top:8px">Export GeoJSON</button>
+                </div>
+            </div>
+            <!-- ============ TAB 3: SPECIAL EVENT ============ -->
             <div class="tab-panel" id="tabEvento" hidden>
                 <div class="control-group">
-                    <div class="group-title">Special event (overlay layer)</div>
-                    <div class="nota">Optional second data layer, independent from the background layer — it's drawn at the same time, with its own color gradient.</div>
+                    <div class="group-title">Event library</div>
+                    <div class="campo">
+                        <label for="libreriaEvento">Curated events</label>
+                        <select id="libreriaEvento">
+                            <option value="">— pick an event —</option>
+                        </select>
+                    </div>
+                    <div class="info-box" id="libreriaFicha" style="margin-top:8px">Pick an event to see what loading it brings in.</div>
+                    <button class="btn" id="btnCargarBiblioteca" style="margin-top:8px" disabled>Load event</button>
+                    <div class="msg" id="mensajeBiblioteca"></div>
+                </div>
+
+                <div class="control-group" id="grupoTensor" hidden>
+                    <div class="group-title">Moment tensor</div>
+                    <div class="checkbox-item">
+                        <input type="checkbox" id="showTensor" checked>
+                        <label for="showTensor">Show focal sphere</label>
+                    </div>
+                    <div class="info-box" id="fichaTensor" style="margin-top:6px">—</div>
+                    <div class="slider-group" style="margin-top:8px">
+                        <div class="slider-label">
+                            <span>Focal sphere size</span>
+                            <span class="slider-value" id="tensorEscalaValue">100%</span>
+                        </div>
+                        <input type="range" id="tensorEscalaSlider" min="10" max="400" step="5" value="100">
+                    </div>
+                    <div class="slider-group">
+                        <div class="slider-label">
+                            <span>Focal sphere opacity</span>
+                            <span class="slider-value" id="tensorOpacidadValue">100%</span>
+                        </div>
+                        <input type="range" id="tensorOpacidadSlider" min="0" max="100" value="100">
+                    </div>
+                    <div class="bbox-grid" style="margin-top:6px">
+                        <div class="campo"><label for="tensorColorComp">Compression</label><input type="color" id="tensorColorComp" value="#d03b3b"></div>
+                        <div class="campo"><label for="tensorColorDil">Dilatation</label><input type="color" id="tensorColorDil" value="#3987e5"></div>
+                    </div>
+                    <div class="nota">P-wave radiation pattern computed from the published moment tensor: compression on one side of the nodal planes, dilatation on the other. It is drawn at the CMT centroid, which is deeper than the hypocentre the catalog lists.</div>
+                </div>
+
+                <div class="control-group">
+                    <div class="group-title">Custom query</div>
+                    <div class="nota">Second data layer, independent from the background layer — same scene, its own colors, size and opacity. The library fills this in for you; you can also build it by hand.</div>
                 </div>
 
                 <div class="control-group">
@@ -606,12 +799,26 @@
                 </div>
 
                 <div class="control-group">
-                    <div class="group-title">Color by depth (this layer)</div>
+                    <div class="group-title">Style of this layer</div>
                     <div class="bbox-grid">
                         <div class="campo"><label for="colorInicialEvento">Shallow</label><input type="color" id="colorInicialEvento" value="#ffeb3b"></div>
                         <div class="campo"><label for="colorFinalEvento">Deep</label><input type="color" id="colorFinalEvento" value="#b71c1c"></div>
                     </div>
-                    <div class="nota">This layer's own gradient — it doesn't share a scale with the background layer.</div>
+                    <div class="slider-group" style="margin-top:8px">
+                        <div class="slider-label">
+                            <span>Sphere size</span>
+                            <span class="slider-value" id="escalaEventoValue">22%</span>
+                        </div>
+                        <input type="range" id="escalaEventoSlider" min="0" max="80" value="22">
+                    </div>
+                    <div class="slider-group">
+                        <div class="slider-label">
+                            <span>Opacity</span>
+                            <span class="slider-value" id="opacidadEventoValue">100%</span>
+                        </div>
+                        <input type="range" id="opacidadEventoSlider" min="0" max="100" value="100">
+                    </div>
+                    <div class="nota">Colors, size and opacity of this layer are its own — the sliders in <strong>View</strong> only move the background layer.</div>
                 </div>
 
                 <div class="control-group">
@@ -620,162 +827,6 @@
                 </div>
             </div>
 
-            <!-- ============ TAB 3: VIEW ============ -->
-            <div class="tab-panel" id="tabVista" hidden>
-                <div class="control-group">
-                    <div class="group-title">Visible layers</div>
-                    <div class="checkbox-item">
-                        <input type="checkbox" id="showEvents" checked>
-                        <label for="showEvents">3D events</label>
-                    </div>
-                    <div class="checkbox-item">
-                        <input type="checkbox" id="showMap" checked>
-                        <label for="showMap">2D map</label>
-                    </div>
-                    <div class="checkbox-item">
-                        <input type="checkbox" id="showCaja" checked>
-                        <label for="showCaja">Box & reference lines</label>
-                    </div>
-                    <div class="campo" style="margin-top:8px">
-                        <label for="mapaSuperiorSelector">Top-face map</label>
-                        <select id="mapaSuperiorSelector">
-                            <option value="osm" selected>OpenStreetMap</option>
-                            <option value="hot">OSM Humanitarian</option>
-                            <option value="topo">OpenTopoMap</option>
-                            <option value="claro">Light Gray (Esri)</option>
-                            <option value="oscuro">Dark Gray (Esri)</option>
-                            <option value="geologico">Geological Map (SGC)</option>
-                            <option value="ninguno">None (flat plane)</option>
-                        </select>
-                        <div class="nota">It's cropped to the queried area and updates automatically when it changes. The geological map only has data for Colombia/Central America.</div>
-                    </div>
-                    <div class="slider-group">
-                        <div class="slider-label">
-                            <span>Top-map opacity</span>
-                            <span class="slider-value" id="opacidadMapaSuperiorValue">100%</span>
-                        </div>
-                        <input type="range" id="opacidadMapaSuperiorSlider" min="0" max="100" value="100">
-                    </div>
-                    <div class="checkbox-item">
-                        <input type="checkbox" id="showFondo" checked>
-                        <label for="showFondo">Background layer</label>
-                    </div>
-                    <div class="checkbox-item">
-                        <input type="checkbox" id="showEventoCapa" checked>
-                        <label for="showEventoCapa">Special event layer</label>
-                    </div>
-                    <div class="checkbox-item">
-                        <input type="checkbox" id="showBeachball">
-                        <label for="showBeachball">Moment tensor (M7.4 Chocó, us6000tjl2)</label>
-                    </div>
-                    <div class="checkbox-item">
-                        <input type="checkbox" id="showSlab2">
-                        <label for="showSlab2">Subduction slab — Slab2 (USGS)</label>
-                    </div>
-                    <div class="nota">Modeled top of the subducting slab (Slab2, Hayes et al. 2018). On the 2D map it draws USGS's depth contours worldwide. In 3D it builds the slab over the queried area from those contours, clipped to the box's depth range — where the model has no data, there's a hole.</div>
-                    <div id="slab2Controles" hidden>
-                        <div class="slider-group" style="margin-top:8px">
-                            <div class="slider-label">
-                                <span>Slab volume opacity</span>
-                                <span class="slider-value" id="slab2OpacidadValue">35%</span>
-                            </div>
-                            <input type="range" id="slab2OpacidadSlider" min="0" max="100" value="35">
-                        </div>
-                        <div class="campo">
-                            <label for="slab2Espesor">Slab thickness (km)</label>
-                            <input type="number" id="slab2Espesor" min="1" max="100" step="1" value="10">
-                        </div>
-                        <div class="info-box" style="margin-top:8px">
-                            <strong>From a surface to a volume.</strong><br>
-                            Slab2 publishes only the <strong>top</strong> of the slab: a surface, with no thickness.
-                            Giving it a floor turns it into a body you can see the seismicity fall inside of.<br><br>
-                            The default <strong>10 km</strong> is an assumption, not data: the average thickness of
-                            oceanic crust. It's the crust alone — the subducting lithosphere, crust plus its
-                            mantle, is several tens of km thick — so treat the volume as the crustal part of
-                            the slab, and change the number if your case calls for another one.<br><br>
-                            The floor is offset <strong>perpendicular to the slab</strong>, not straight down.
-                            A vertical offset would read as 10 km only where the slab is flat, and would inflate
-                            to 10/cos(dip) as it steepens — about 14 km at 45°. Measuring perpendicular keeps the
-                            thickness constant no matter the dip.
-                        </div>
-                    </div>
-                    <div class="nota">Real focal sphere computed from USGS's published moment tensor — red = compression, blue = dilatation. Shown at the CMT centroid depth (120.5 km), only visible once an area/query is loaded.</div>
-                </div>
-
-                <div class="control-group">
-                    <div class="group-title">Opacity - 3D events</div>
-                    <div class="slider-group">
-                        <div class="slider-label">
-                            <span>Opacity</span>
-                            <span class="slider-value" id="opacityValue">100%</span>
-                        </div>
-                        <input type="range" id="opacitySlider" min="0" max="100" value="100">
-                    </div>
-                </div>
-
-                <div class="control-group">
-                    <div class="group-title">Size - Spheres</div>
-                    <div class="slider-group">
-                        <div class="slider-label">
-                            <span>Scale</span>
-                            <span class="slider-value" id="sizeValue">15%</span>
-                        </div>
-                        <input type="range" id="sizeSlider" min="0" max="50" value="15">
-                    </div>
-                </div>
-
-                <div class="control-group">
-                    <div class="group-title">Rotation speed</div>
-                    <div class="slider-group">
-                        <div class="slider-label">
-                            <span>Speed</span>
-                            <span class="slider-value" id="speedValue">0%</span>
-                        </div>
-                        <input type="range" id="speedSlider" min="0" max="200" value="0">
-                    </div>
-                </div>
-
-                <div class="control-group">
-                    <div class="info-box">
-                        <strong>Background layer</strong><br>
-                        Source: <span id="infoFuente">—</span><br>
-                        Events: <span id="totalEvents">0</span> · Showing: <span id="visibleEventsFondo">0</span><br>
-                        Period: <span id="infoPeriodo">—</span><br>
-                        Magnitudes: <span id="infoMag">—</span><br>
-                        Depths: <span id="infoProf">—</span>
-                    </div>
-                    <div class="legend">
-                        <div class="legend-title">Depth scale — Background</div>
-                        <div id="leyenda"></div>
-                    </div>
-
-                    <div class="info-box" id="infoBoxEvento" hidden style="margin-top:10px">
-                        <strong>Special event</strong><br>
-                        Source: <span id="infoFuenteEvento">—</span><br>
-                        Events: <span id="totalEventsEvento">0</span> · Showing: <span id="visibleEventsEvento">0</span><br>
-                        Period: <span id="infoPeriodoEvento">—</span><br>
-                        Magnitudes: <span id="infoMagEvento">—</span><br>
-                        Depths: <span id="infoProfEvento">—</span>
-                    </div>
-                    <div class="legend" id="legendEvento" hidden>
-                        <div class="legend-title">Depth scale — Special event</div>
-                        <div id="leyendaEvento"></div>
-                    </div>
-                </div>
-
-                <div class="control-group">
-                    <div class="group-title">Export</div>
-                    <div class="campo">
-                        <label for="exportarQue">What to export</label>
-                        <select id="exportarQue">
-                            <option value="fondo">Background layer</option>
-                            <option value="evento">Special event</option>
-                            <option value="ambas">Both (tagged by layer)</option>
-                        </select>
-                    </div>
-                    <button class="btn secundario" id="btnExportar" disabled style="margin-top:8px">Export GeoJSON</button>
-                </div>
-            </div>
         </aside>
     </div>
     <script>
@@ -914,6 +965,12 @@
         function limpiarMensaje() {
             $('mensaje').className = 'msg';
             $('mensaje').innerHTML = '';
+        }
+
+        function mensajeBiblioteca(texto, tipo) {
+            const el = $('mensajeBiblioteca');
+            el.className = 'msg visible ' + tipo;
+            el.innerHTML = (tipo === 'cargando' ? '<span class="spinner"></span>' : '') + texto;
         }
 
         function mensajeEvento(texto, tipo) {
@@ -2231,7 +2288,7 @@
 
         let scene, camera, renderer, grupo, refs, animando = false;
         let mallaSuperior = null;   // plano de la cara de arriba de la caja — puede llevar un mapa real texturado
-        let mallaBeachball = null;  // esfera focal del momento tensor (M7.4 Chocó, hardcodeado)
+        let grupoTensores = null;   // esferas focales de la ficha de biblioteca cargada
         let bakeMapaToken = 0;      // descarta bakes de mapa superior que quedaron obsoletos por un cambio de área más nuevo
         let rot = { x: -0.5, y: 0.4 };
         let arrastre = null;
@@ -2322,7 +2379,7 @@
                 mallaSuperior.material.map.dispose();
             }
             mallaSuperior = null;
-            mallaBeachball = null;
+            grupoTensores = null;
             renderFondo.malla = null; renderFondo.indices = [];
             renderEvento.malla = null; renderEvento.indices = [];
         }
@@ -2344,13 +2401,85 @@
         // https://earthquake.usgs.gov/earthquakes/eventpage/us6000tjl2/moment-tensor
         // Hardcodeado a propósito (alcance acordado): solo este evento.
         // ============================================================
-        const MOMENT_TENSOR_CHOCO = {
-            lat: 4.5854, lon: -76.1613, depth: 120.5, // derived-latitude/longitude/depth (centroide CMT, no el hipocentro inicial)
-            mag: 7.4,
-            scalarMoment: 1.66e20,
-            mrr: 4.887e19, mtt: -1.5429e20, mpp: 1.0541e20,
-            mrt: -1.918e19, mrp: -9.009e19, mtp: -2.243e19
-        };
+
+        // ============================================================
+        // Biblioteca de eventos especiales
+        // ============================================================
+        // Cada ficha describe un evento con nombre propio: el contexto regional que
+        // se carga en la capa de fondo, la consulta de la propia secuencia (capa de
+        // evento), su estilo y su tensor. El tensor se baja de USGS por id de evento
+        // (products['moment-tensor']), así que agregar otro evento es agregar otra
+        // ficha; el tensor embebido solo sirve de respaldo si USGS no responde.
+        const LIBRERIA_EVENTOS = [
+            {
+                id: 'choco-2026-08-10',
+                nombre: 'Chocó, Colombia — M7.4 (10 Aug 2026)',
+                lugar: '2 km SE of San José del Palmar, Colombia',
+                fecha: '2026-08-10T12:34:28Z',
+                mag: 7.4, magTipo: 'Mww', profundidad: 108.2,
+                usgsId: 'us6000tjl2',
+                resumen: 'Intermediate-depth earthquake inside the subducting Nazca slab. ' +
+                    'Loading it brings in the regional context (M4+ since 1900), the sequence ' +
+                    'around the mainshock, and the focal sphere from the USGS moment tensor.',
+                contexto: {   // capa de fondo
+                    fuenteId: 'usgs',
+                    bbox: { n: 8, s: 2.5, o: -79, e: -74 },
+                    inicio: '1900-01-01', fin: null, minmag: 4, limite: 2000
+                },
+                consulta: {   // capa de evento especial
+                    fuenteId: 'usgs',
+                    bbox: { n: 6.5, s: 3.2, o: -78, e: -74.8 },
+                    inicio: '2026-08-10', fin: null, minmag: 2.5, limite: 2000
+                },
+                estilo: { colorInicial: '#ffd166', colorFinal: '#9d0208', escala: 22, opacidad: 100 },
+                tensor: {   // respaldo: USGS us6000tjl2, revisado
+                    lat: 4.5854, lon: -76.1613, depth: 120.5,   // centroide CMT, no el hipocentro
+                    mag: 7.4, scalarMoment: 1.66e20,
+                    mrr: 4.887e19, mtt: -1.5429e20, mpp: 1.0541e20,
+                    mrt: -1.918e19, mrp: -9.009e19, mtp: -2.243e19,
+                    fuente: 'us', planoA: { strike: 123.99, dip: 58.63, rake: 158.52 }
+                }
+            }
+        ];
+
+        let tensoresEvento = [];        // tensores de la ficha cargada (0, 1 o varios)
+        let eventoBiblioteca = null;    // ficha cargada
+        const cacheTensores = {};
+
+        function fichaPorId(id) {
+            return LIBRERIA_EVENTOS.find(f => f.id === id) || null;
+        }
+
+        // Tensor desde el propio catálogo de USGS: así una ficha nueva solo necesita
+        // el id del evento.
+        async function traerTensorUSGS(idEvento) {
+            if (cacheTensores[idEvento]) return cacheTensores[idEvento];
+            const res = await fetch(`${USGS}query?eventid=${encodeURIComponent(idEvento)}&format=geojson`);
+            if (!res.ok) throw new Error(`USGS responded with HTTP ${res.status}.`);
+            const j = await res.json();
+            const prod = ((j.properties || {}).products || {})['moment-tensor'];
+            if (!prod || !prod.length) throw new Error('That event has no published moment tensor.');
+            const q = prod[0].properties || {};
+            const num = (k) => Number(q[k]);
+            const T = {
+                lat: num('derived-latitude'), lon: num('derived-longitude'), depth: num('derived-depth'),
+                mag: num('derived-magnitude') || Number((j.properties || {}).mag),
+                scalarMoment: num('scalar-moment'),
+                mrr: num('tensor-mrr'), mtt: num('tensor-mtt'), mpp: num('tensor-mpp'),
+                mrt: num('tensor-mrt'), mrp: num('tensor-mrp'), mtp: num('tensor-mtp'),
+                fuente: q['beachball-source'] || 'us',
+                revision: q['review-status'] || null,
+                dobleParejaPct: q['percent-double-couple'] != null ? num('percent-double-couple') * 100 : null,
+                planoA: {
+                    strike: num('nodal-plane-1-strike'), dip: num('nodal-plane-1-dip'), rake: num('nodal-plane-1-rake')
+                }
+            };
+            const completo = ['lat', 'lon', 'depth', 'scalarMoment', 'mrr', 'mtt', 'mpp', 'mrt', 'mrp', 'mtp']
+                .every(k => isFinite(T[k]));
+            if (!completo) throw new Error('The published moment tensor is incomplete.');
+            cacheTensores[idEvento] = T;
+            return T;
+        }
 
         // Patrón de radiación de onda P: R(γ) = Σ Mij·γi·γj, con γ el vector
         // unitario (r,t,p) hacia un punto de la esfera focal. R>0 = primer
@@ -2363,17 +2492,20 @@
                     2 * T.mrt * gr * gt + 2 * T.mrp * gr * gp + 2 * T.mtp * gt * gp) / T.scalarMoment;
         }
 
-        function construirBeachball(P) {
-            const T = MOMENT_TENSOR_CHOCO;
-            const escalaUsuario = parseFloat($('sizeSlider').value) / 100;
+        // La esfera focal tiene su propia escala, opacidad y colores: no comparte
+        // controles con las esferas del catálogo.
+        function construirBeachball(P, T) {
+            const escalaUsuario = parseFloat($('tensorEscalaSlider').value) / 100;
             // Bastante más grande que una esfera normal de la misma magnitud —
             // es una pieza destacada, no un evento más del catálogo.
-            const radio = escalaUsuario * (0.9 + T.mag * 0.35);
+            const radio = escalaUsuario * (0.9 + (T.mag || 6) * 0.35);
 
             const geo = new THREE.SphereGeometry(radio, 48, 36);
             const pos = geo.attributes.position;
             const colores = new Float32Array(pos.count * 3);
-            const rojo = new THREE.Color(0xd03b3b), blanco = new THREE.Color(0xf2ede0);
+            const rojo = new THREE.Color($('tensorColorComp').value);
+            const azul = new THREE.Color($('tensorColorDil').value);
+            const blanco = new THREE.Color(0xf2ede0);
 
             for (let i = 0; i < pos.count; i++) {
                 // Vértice de una esfera unitaria en el espacio local de la
@@ -2386,15 +2518,58 @@
                 // Degradado suave hacia blanco cerca de los planos nodales
                 // (R≈0) en vez de un corte binario duro.
                 const c = rojo.clone().lerp(blanco, 1 - Math.min(1, Math.abs(R) * 3));
-                const color = R >= 0 ? c : blanco.clone().lerp(new THREE.Color(0x3987e5), Math.min(1, Math.abs(R) * 3));
+                const color = R >= 0 ? c : blanco.clone().lerp(azul, Math.min(1, Math.abs(R) * 3));
                 colores[i * 3] = color.r; colores[i * 3 + 1] = color.g; colores[i * 3 + 2] = color.b;
             }
             geo.setAttribute('color', new THREE.BufferAttribute(colores, 3));
 
-            const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.5, metalness: 0.05 });
+            const opacidad = parseFloat($('tensorOpacidadSlider').value) / 100;
+            const mat = new THREE.MeshStandardMaterial({
+                vertexColors: true, roughness: 0.5, metalness: 0.05,
+                transparent: opacidad < 1, opacity: opacidad
+            });
             const esfera = new THREE.Mesh(geo, mat);
             esfera.position.set(P.x(T.lon), P.y(T.lat), P.z(T.depth));
+            esfera.name = 'tensor';
             return esfera;
+        }
+
+        // Los tensores viven en su propio grupo, aparte de las capas de datos.
+        function construirTensores(P) {
+            if (!$('showTensor').checked || !tensoresEvento.length) return null;
+            const g = new THREE.Group();
+            tensoresEvento.forEach(T => {
+                if (!isFinite(T.lat) || !isFinite(T.lon) || !isFinite(T.depth)) return;
+                g.add(construirBeachball(P, T));
+            });
+            return g.children.length ? g : null;
+        }
+
+        function rehacerTensores() {
+            if (!grupo) return;
+            if (grupoTensores) {
+                grupo.remove(grupoTensores);
+                grupoTensores.traverse(o => {
+                    if (o.geometry) o.geometry.dispose();
+                    if (o.material) o.material.dispose();
+                });
+                grupoTensores = null;
+            }
+            if (!datosFondo.bbox) return;
+            grupoTensores = construirTensores(proyector());
+            if (grupoTensores) grupo.add(grupoTensores);
+        }
+
+        function describirTensor(T, ficha) {
+            const plano = T.planoA && isFinite(T.planoA.strike)
+                ? `Nodal plane: ${T.planoA.strike.toFixed(0)}° strike / ${T.planoA.dip.toFixed(0)}° dip / ${T.planoA.rake.toFixed(0)}° rake<br>`
+                : '';
+            const dc = isFinite(T.dobleParejaPct) ? `Double couple: ${T.dobleParejaPct.toFixed(0)}%<br>` : '';
+            return `<strong>${ficha.nombre}</strong><br>` +
+                `Centroid: ${T.lat.toFixed(3)}°, ${T.lon.toFixed(3)}° · ${T.depth.toFixed(1)} km<br>` +
+                `M${(T.mag || ficha.mag).toFixed(1)} · scalar moment ${T.scalarMoment.toExponential(2)} N·m<br>` +
+                plano + dc +
+                `Source: USGS ${T.fuente || ''} ${T.revision ? '(' + T.revision + ')' : ''} · ${ficha.usgsId}`;
         }
 
         // ============================================================
@@ -2720,10 +2895,8 @@
             grupo.add(refs);
             refs.visible = $('showCaja').checked;
 
-            if ($('showBeachball').checked) {
-                mallaBeachball = construirBeachball(P);
-                grupo.add(mallaBeachball);
-            }
+            grupoTensores = construirTensores(P);
+            if (grupoTensores) grupo.add(grupoTensores);
 
             grupoSlab2 = null;      // limpiarEscena ya vació el grupo
             actualizarSlab2();
@@ -2739,7 +2912,10 @@
             const render = capaId === 'fondo' ? renderFondo : renderEvento;
             if (!render.malla) return;
             P = P || proyector();
-            const escalaUsuario = parseFloat($('sizeSlider').value) / 100;
+            // Cada capa tiene su propia escala: la de fondo en Vista, la del evento
+            // especial en su pestaña.
+            const escalaUsuario = parseFloat(
+                (capaId === 'evento' ? $('escalaEventoSlider') : $('sizeSlider')).value) / 100;
             const m = new THREE.Matrix4();
             const q = new THREE.Quaternion();
             const pos = new THREE.Vector3();
@@ -2782,9 +2958,8 @@
         }
 
         function aplicarOpacidad() {
-            const v = parseFloat($('opacitySlider').value) / 100;
-            if (renderFondo.malla) renderFondo.malla.material.opacity = v;
-            if (renderEvento.malla) renderEvento.malla.material.opacity = v;
+            if (renderFondo.malla) renderFondo.malla.material.opacity = parseFloat($('opacitySlider').value) / 100;
+            if (renderEvento.malla) renderEvento.malla.material.opacity = parseFloat($('opacidadEventoSlider').value) / 100;
         }
 
         // Combina el checkbox general "Eventos 3D" con los checkboxes
@@ -3169,7 +3344,143 @@
             actualizarPanel();
         }
 
+        function fechaHoy() {
+            return new Date().toISOString().slice(0, 10);
+        }
+
+        function escribirConsultaFondo(c) {
+            setModoArea('rect');
+            escribirBbox(c.bbox);
+            const radio = document.querySelector(`input[name="fuente"][value="${c.fuenteId}"]`);
+            if (radio) { radio.checked = true; actualizarLimiteUI(); }
+            $('fechaIni').value = c.inicio;
+            $('fechaFin').value = c.fin || fechaHoy();
+            $('magSlider').value = Math.round(c.minmag * 10);
+            $('magValue').textContent = 'M' + c.minmag.toFixed(1);
+            $('limite').value = c.limite;
+        }
+
+        function escribirConsultaEvento(c) {
+            setOrigenEvento('catalogo');
+            setModoAreaEvento('rect');
+            escribirBboxEv(c.bbox);
+            const radio = document.querySelector(`input[name="fuenteEvento"][value="${c.fuenteId}"]`);
+            if (radio) { radio.checked = true; actualizarLimiteUIEvento(); }
+            $('fechaIniEv').value = c.inicio;
+            $('fechaFinEv').value = c.fin || fechaHoy();
+            $('magSliderEv').value = Math.round(c.minmag * 10);
+            $('magValueEv').textContent = 'M' + c.minmag.toFixed(1);
+            $('limiteEv').value = c.limite;
+        }
+
+        function aplicarEstiloEvento(e) {
+            if (!e) return;
+            $('colorInicialEvento').value = e.colorInicial;
+            $('colorFinalEvento').value = e.colorFinal;
+            $('escalaEventoSlider').value = e.escala;
+            $('escalaEventoValue').textContent = e.escala + '%';
+            $('opacidadEventoSlider').value = e.opacidad;
+            $('opacidadEventoValue').textContent = e.opacidad + '%';
+        }
+
+        function pintarFichaBiblioteca(ficha) {
+            if (!ficha) {
+                $('libreriaFicha').innerHTML = 'Pick an event to see what loading it brings in.';
+                $('btnCargarBiblioteca').disabled = true;
+                return;
+            }
+            const f = new Date(ficha.fecha);
+            $('libreriaFicha').innerHTML =
+                `<strong>${ficha.nombre}</strong><br>${ficha.lugar}<br>` +
+                `${fechaHora(f)} · M${ficha.mag.toFixed(1)} ${ficha.magTipo} · ${ficha.profundidad.toFixed(0)} km<br><br>` +
+                `${ficha.resumen}`;
+            $('btnCargarBiblioteca').disabled = false;
+        }
+
+        // Cargar una ficha = contexto regional (capa de fondo) + secuencia del evento
+        // (capa especial) + su estilo + su tensor. Cada paso avisa por su cuenta.
+        async function cargarDeBiblioteca() {
+            const ficha = fichaPorId($('libreriaEvento').value);
+            if (!ficha) return;
+            $('btnCargarBiblioteca').disabled = true;
+            mensajeBiblioteca(`Loading ${ficha.nombre}…`, 'cargando');
+            eventoBiblioteca = ficha;
+
+            try {
+                escribirConsultaFondo(ficha.contexto);
+                pintarRectangulo(bboxALatLngBounds(ficha.contexto.bbox));
+                await consultar();
+
+                aplicarEstiloEvento(ficha.estilo);
+                escribirConsultaEvento(ficha.consulta);
+                await consultarEvento();
+
+                tensoresEvento = [];
+                $('grupoTensor').hidden = true;
+                if (ficha.usgsId) {
+                    let T = null;
+                    try {
+                        T = await traerTensorUSGS(ficha.usgsId);
+                    } catch (err) {
+                        // El respaldo embebido evita quedarse sin esfera focal si USGS falla.
+                        if (ficha.tensor) T = ficha.tensor;
+                        else mensajeBiblioteca(`Moment tensor unavailable: ${err.message}`, 'aviso');
+                    }
+                    if (T) {
+                        tensoresEvento = [T];
+                        $('grupoTensor').hidden = false;
+                        $('fichaTensor').innerHTML = describirTensor(T, ficha);
+                        $('showTensor').checked = true;
+                    }
+                }
+                rehacerTensores();
+                mensajeBiblioteca(`<strong>${ficha.nombre}</strong> loaded: regional context, sequence` +
+                    (tensoresEvento.length ? ' and moment tensor.' : '.'), 'ok');
+            } catch (err) {
+                mensajeBiblioteca(`Could not load the event: ${err.message}`, 'error');
+            } finally {
+                $('btnCargarBiblioteca').disabled = false;
+            }
+        }
+
         function conectarControles() {
+            LIBRERIA_EVENTOS.forEach(f => {
+                const op = document.createElement('option');
+                op.value = f.id; op.textContent = f.nombre;
+                $('libreriaEvento').appendChild(op);
+            });
+            $('libreriaEvento').addEventListener('change', () => pintarFichaBiblioteca(fichaPorId($('libreriaEvento').value)));
+            $('btnCargarBiblioteca').addEventListener('click', cargarDeBiblioteca);
+
+            $('showTensor').addEventListener('change', rehacerTensores);
+            $('tensorColorComp').addEventListener('change', rehacerTensores);
+            $('tensorColorDil').addEventListener('change', rehacerTensores);
+            $('tensorEscalaSlider').addEventListener('input', (e) => {
+                $('tensorEscalaValue').textContent = e.target.value + '%';
+                rehacerTensores();
+            });
+            $('tensorOpacidadSlider').addEventListener('input', (e) => {
+                $('tensorOpacidadValue').textContent = e.target.value + '%';
+                const v = parseFloat(e.target.value) / 100;
+                if (!grupoTensores) return;
+                grupoTensores.traverse(o => {
+                    if (o.name !== 'tensor') return;
+                    o.material.transparent = v < 1;
+                    o.material.opacity = v;
+                    o.material.needsUpdate = true;
+                    o.visible = v > 0;
+                });
+            });
+
+            $('escalaEventoSlider').addEventListener('input', (e) => {
+                $('escalaEventoValue').textContent = e.target.value + '%';
+                if (datosFondo.bbox) colocarInstanciasCapa('evento', proyector());
+            });
+            $('opacidadEventoSlider').addEventListener('input', (e) => {
+                $('opacidadEventoValue').textContent = e.target.value + '%';
+                aplicarOpacidad();
+            });
+
             $('btnTema').setAttribute('aria-pressed', String(document.documentElement.dataset.theme === 'light'));
             $('btnTema').addEventListener('click', () => {
                 aplicarTema(document.documentElement.dataset.theme === 'light' ? 'dark' : 'light');
@@ -3241,10 +3552,6 @@
 
             $('showCaja').addEventListener('change', (e) => {
                 if (refs) refs.visible = e.target.checked;
-            });
-
-            $('showBeachball').addEventListener('change', () => {
-                if (datosFondo.bbox) construirEscena();
             });
 
             $('showSlab2').addEventListener('change', (e) => {
