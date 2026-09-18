@@ -3,7 +3,21 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Seismic Area Explorer — Live Query</title>
+    <title>Seismic Explorer — SWTectonics</title>
+    <script>
+        // Tema claro/oscuro antes del primer pintado (misma clave que SWTectonics Web).
+        (function () {
+            var tema = 'dark';
+            try {
+                tema = localStorage.getItem('swtectonics-theme') ||
+                    (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+            } catch (e) { /* sin storage: oscuro */ }
+            document.documentElement.dataset.theme = tema === 'light' ? 'light' : 'dark';
+        })();
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap">
     <link rel="icon" type="image/png" href="favicon.png">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -23,6 +37,24 @@
             --accent-2:#d95926;
             --warning:#fab219;
             --critical:#d03b3b;
+            --hover:#2b2b2a;             /* hover de botones de segmento */
+            --accent-hover:#4a93e8;
+            --accent-soft:#16233a;       /* fondo de la fuente elegida */
+            --overlay:rgba(13,13,13,.78);/* HUDs flotantes sobre mapa/3D */
+            --msg-error-bg:#2a1414; --msg-error-line:#40201f; --msg-error-ink:#f0a3a0;
+            --msg-aviso-bg:#221c13; --msg-aviso-line:#4c3718;
+            --msg-ok-bg:#132218;    --msg-ok-line:#2b4a34;    --msg-ok-ink:#7fcf9a;
+            --msg-load-bg:#132434;  --msg-load-line:#1e3a52;  --msg-load-ink:#8fc0fa;
+            /* escena 3D (las lee JS con leerTema3D) */
+            --scene-bg:#0d0d0d;
+            --scene-box:#8a8a86;
+            --scene-surface:#232322;
+            --scene-label:#898781;
+            --area-draw:#3987e5;
+            /* capa de fondo: <=35 km corteza (neutro) y rampa naranja 35 km -> máx., como cubo-v2 */
+            --crust:#8a8a86;
+            --o0:#fde0cc; --o1:#f7b389; --o2:#ef8348; --o3:#d95926; --o4:#a33f18;
+            --timevalue-width:96px;
             --font:system-ui,-apple-system,"Segoe UI",sans-serif;
         }
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -44,15 +76,21 @@
             background: var(--line);
         }
         #topbar { grid-area: top; background: var(--surface); display: flex; align-items: center; gap: 14px; padding: 9px 14px; flex-wrap: wrap; }
-        #topbar h1 { font-size: 14px; font-weight: 650; color: var(--ink); letter-spacing: -.01em; white-space: nowrap; }
-        #topbar .sub { font-size: 11px; color: var(--ink-3); white-space: nowrap; }
+        .brand { display: flex; align-items: baseline; gap: 9px; min-width: 0; }
+        .brand h1 { font-size: 14px; font-weight: 650; color: var(--ink); letter-spacing: -.01em; white-space: nowrap; }
+        .brand .sub { font-size: 11px; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .chips { display: flex; gap: 6px; flex-wrap: wrap; }
+        .chip { background: var(--surface-2); border: 1px solid var(--line); border-radius: 999px; padding: 4px 10px; font-size: 11px; color: var(--ink-2); display: flex; align-items: center; gap: 6px; font-variant-numeric: tabular-nums; }
+        .chip b { color: var(--ink); font-weight: 600; }
+        .iconbtn { width: 30px; height: 30px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface-2); display: grid; place-items: center; color: var(--ink-2); font-size: 12px; flex-shrink: 0; }
+        .iconbtn:hover { color: var(--ink); border-color: var(--axis); }
         .spacer { flex: 1; }
 
         .seg { display: flex; background: var(--surface-2); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
-        .seg button { padding: 6px 14px; font-size: 12px; color: var(--ink-3); border-right: 1px solid var(--line); }
+        .seg button { padding: 5px 10px; font-size: 11px; color: var(--ink-3); border-right: 1px solid var(--line); }
         .seg button:last-child { border-right: none; }
-        .seg button[aria-pressed="true"] { background: var(--accent); color: #fff; font-weight: 600; }
-        .seg button:hover:not([aria-pressed="true"]) { color: var(--ink); background: #2b2b2a; }
+        .seg button[aria-pressed="true"], .seg button.activo { background: var(--accent); color: #fff; font-weight: 600; }
+        .seg button:hover:not([aria-pressed="true"]):not(.activo) { color: var(--ink); background: var(--hover); }
 
         #sceneWrap { grid-area: scene; position: relative; background: var(--plane); overflow: hidden; min-height: 0; }
         #pantallaArea, #pantallaVisor { position: absolute; inset: 0; }
@@ -61,24 +99,26 @@
         #map.dibujando .leaflet-grab { cursor: crosshair; }
         #canvas3d { width: 100%; height: 100%; position: relative; overflow: hidden; }
 
-        .canvas-hint { position: absolute; bottom: 8px; left: 10px; font-size: 10px; color: var(--ink-3); pointer-events: none; }
-        .canvas-vacio { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; text-align: center; font-size: 12px; color: var(--ink-3); padding: 20px; pointer-events: none; }
+        .hud { position: absolute; background: var(--overlay); border: 1px solid var(--line); border-radius: 8px; backdrop-filter: blur(6px); z-index: 900; }
+        #credit { left: 12px; bottom: 12px; padding: 6px 10px; font-size: 10.5px; color: var(--ink-3); }
+        #credit b { color: var(--ink-2); font-weight: 600; }
+        #credit a { color: inherit; text-decoration: none; }
+        #credit a:hover { color: var(--ink-2); text-decoration: underline; }
+        #vignette { position: absolute; inset: 0; pointer-events: none; z-index: 1; background: radial-gradient(ellipse 78% 68% at 50% 46%, transparent 40%, rgba(0,0,0,.5) 100%); }
+        .canvas-hint { position: absolute; bottom: 12px; right: 12px; z-index: 2; font-size: 10px; color: var(--ink-3); pointer-events: none; }
+        .canvas-vacio { position: absolute; inset: 0; z-index: 2; display: flex; align-items: center; justify-content: center; text-align: center; font-size: 12px; color: var(--ink-3); padding: 20px; pointer-events: none; }
 
-        #timeWrap { grid-area: time; background: var(--surface); padding: 9px 14px 11px; }
-        .timeline-header { font-size: 10px; text-transform: uppercase; letter-spacing: .07em; font-weight: 600; color: var(--ink-3); margin-bottom: 8px; }
-        .timeline-controls { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; flex-wrap: wrap; }
-        #btnPlay { width: auto; padding: 6px 14px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 8px; color: var(--ink-2); }
-        #btnPlay:hover { color: var(--ink); border-color: var(--axis); }
-        .velocidad-selector { display: flex; gap: 4px; }
-        .vel-btn { width: auto; padding: 4px 9px; font-size: 10px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 6px; color: var(--ink-3); }
-        .vel-btn.activo { background: var(--accent); color: #fff; border-color: var(--accent); }
-        .timeline-slider { width: 100%; }
-        .timeline-info { display: flex; justify-content: space-between; font-size: 11px; color: var(--ink-3); margin-top: 8px; }
+        #timeWrap { grid-area: time; background: var(--surface); padding: 8px 14px 10px; }
+        .timeline-controls { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; flex-wrap: wrap; }
+        .timeline-header { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; font-weight: 600; color: var(--ink-3); }
+        #timeValue { font-size: 12px; color: var(--ink); font-variant-numeric: tabular-nums; font-weight: 600; min-width: var(--timevalue-width); }
+        .timeline-slider { width: 100%; display: block; }
+        .timeline-info { display: flex; justify-content: space-between; font-size: 10px; color: var(--ink-3); margin-top: 2px; font-variant-numeric: tabular-nums; }
 
         #panel { grid-area: panel; background: var(--surface); display: flex; flex-direction: column; min-height: 0; overflow-y: auto; }
         .panel-title { font-size: 10px; text-transform: uppercase; letter-spacing: .07em; color: var(--ink-3); font-weight: 600; padding: 14px 14px 0; }
 
-        .tabs { display: flex; border-bottom: 1px solid var(--line); flex-shrink: 0; gap: 0; margin: 12px 0 0; }
+        .tabs { display: flex; border-bottom: 1px solid var(--line); flex-shrink: 0; gap: 0; }
         .tab-btn { flex: 1; padding: 11px 4px; font-size: 12px; color: var(--ink-3); background: transparent; border: none; border-bottom: 2px solid transparent; }
         .tab-btn.activo { color: var(--ink); border-bottom-color: var(--accent); font-weight: 600; }
         .tab-btn:hover:not(.activo) { color: var(--ink-2); }
@@ -118,17 +158,17 @@
         .btn:hover:not(:disabled) { color: var(--ink); border-color: var(--axis); }
         .btn:disabled { opacity: .5; cursor: not-allowed; }
         #btnConsultar, #btnConsultarEvento { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
-        #btnConsultar:hover, #btnConsultarEvento:hover { background: #4a93e8; }
+        #btnConsultar:hover, #btnConsultarEvento:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
         .btn.secundario { background: transparent; }
         .btn.secundario.activo { background: var(--surface-2); color: var(--ink); border-color: var(--accent); }
         .btn + .btn { margin-top: 6px; }
 
         .msg { font-size: 11px; line-height: 1.5; padding: 8px; border-radius: 8px; margin-top: 8px; display: none; }
         .msg.visible { display: block; }
-        .msg.error { background: #2a1414; border: 1px solid #40201f; color: #f0a3a0; }
-        .msg.aviso { background: #221c13; border: 1px solid #4c3718; color: var(--warning); }
-        .msg.ok { background: #132218; border: 1px solid #2b4a34; color: #7fcf9a; }
-        .msg.cargando { background: #132434; border: 1px solid #1e3a52; color: #8fc0fa; }
+        .msg.error { background: var(--msg-error-bg); border: 1px solid var(--msg-error-line); color: var(--msg-error-ink); }
+        .msg.aviso { background: var(--msg-aviso-bg); border: 1px solid var(--msg-aviso-line); color: var(--warning); }
+        .msg.ok { background: var(--msg-ok-bg); border: 1px solid var(--msg-ok-line); color: var(--msg-ok-ink); }
+        .msg.cargando { background: var(--msg-load-bg); border: 1px solid var(--msg-load-line); color: var(--msg-load-ink); }
 
         .spinner { display: inline-block; width: 10px; height: 10px; margin-right: 6px; border: 2px solid var(--axis); border-top-color: var(--ink); border-radius: 50%; animation: girar .8s linear infinite; vertical-align: -1px; }
         @keyframes girar { to { transform: rotate(360deg); } }
@@ -148,7 +188,7 @@
 
         .fuente-selector { display: flex; flex-direction: column; gap: 8px; }
         .fuente-opcion { display: block; cursor: pointer; padding: 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface-2); }
-        .fuente-opcion:has(input:checked) { border-color: var(--accent); background: #16233a; }
+        .fuente-opcion:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); }
         .fuente-opcion input[type="radio"] { cursor: pointer; accent-color: var(--accent); margin-right: 6px; vertical-align: middle; }
         .fuente-nombre { font-size: 12px; font-weight: 600; color: var(--ink); vertical-align: middle; }
         .fuente-opcion .nota { margin-top: 4px; margin-left: 20px; }
@@ -159,7 +199,15 @@
         ::-webkit-scrollbar-track { background: var(--plane); }
         ::-webkit-scrollbar-thumb { background: var(--axis); border-radius: 3px; }
 
-        .leaflet-container { background: var(--plane); }
+        .leaflet-container { background: var(--plane); font-family: var(--font); }
+        .leaflet-bar { border: 1px solid var(--line) !important; border-radius: 8px !important; overflow: hidden; box-shadow: none !important; }
+        .leaflet-bar a, .leaflet-bar a:hover { background: var(--surface-2); color: var(--ink-2); border-bottom: 1px solid var(--line); width: 30px; height: 30px; line-height: 30px; }
+        .leaflet-bar a:last-child { border-bottom: none; }
+        .leaflet-bar a:hover { color: var(--ink); background: var(--hover); }
+        .leaflet-bar a.leaflet-disabled { background: var(--surface-2); color: var(--axis); }
+        .leaflet-control-attribution { background: var(--overlay) !important; color: var(--ink-3) !important; font-size: 9.5px; border-top-left-radius: 6px; }
+        .leaflet-control-attribution a { color: var(--ink-2) !important; }
+        .leaflet-control-attribution svg { display: none !important; }
         .leaflet-popup-content-wrapper, .leaflet-popup-tip { background: var(--surface); color: var(--ink-2); }
         .leaflet-popup-content { font-size: 11px; }
 
@@ -169,24 +217,136 @@
         .esquina-marker { width: 12px; height: 12px; border-radius: 50%; background: var(--accent); border: 2px solid var(--plane); box-shadow: 0 0 4px rgba(0,0,0,.6); cursor: grab; }
         .esquina-marker:active { cursor: grabbing; }
 
-        .leaflet-control-layers { background: var(--surface) !important; color: var(--ink-2) !important; border: 1px solid var(--line) !important; border-radius: 8px !important; }
+        .leaflet-control-layers { background: var(--surface-2) !important; box-shadow: none !important; color: var(--ink-2) !important; border: 1px solid var(--line) !important; border-radius: 8px !important; }
         .leaflet-control-layers-toggle { filter: invert(0.9); }
         .leaflet-control-layers-expanded { padding: 8px 10px !important; }
         .leaflet-control-layers label { color: var(--ink-2) !important; font-size: 11px; margin-bottom: 3px; }
         .leaflet-control-layers-separator { border-top: 1px solid var(--line) !important; }
         .leaflet-control-layers-selector { accent-color: var(--accent); }
+
+        /* ================================================================
+           SWTectonics Web Workbench — tokens neutral/indigo/lime, dark + light
+           ================================================================ */
+        :root[data-theme="dark"] {
+            color-scheme: dark;
+            --plane:#0a0a0a; --surface:#171717; --surface-2:#1c1c1f; --line:#262626; --axis:#3f3f46;
+            --ink:#fafafa; --ink-2:#d4d4d8; --ink-3:#a3a3a3;
+            --accent:#6366f1; --accent-hover:#818cf8; --accent-soft:rgba(99,102,241,.14); --accent-2:#84cc16;
+            --warning:#f97316; --critical:#ef4444; --hover:#27272a; --overlay:rgba(10,10,10,.82);
+            --msg-error-bg:rgba(239,68,68,.1); --msg-error-line:rgba(239,68,68,.3); --msg-error-ink:#fca5a5;
+            --msg-aviso-bg:rgba(249,115,22,.1); --msg-aviso-line:rgba(249,115,22,.3);
+            --msg-ok-bg:rgba(132,204,22,.1); --msg-ok-line:rgba(132,204,22,.3); --msg-ok-ink:#a3e635;
+            --msg-load-bg:rgba(99,102,241,.12); --msg-load-line:rgba(129,140,248,.35); --msg-load-ink:#a5b4fc;
+            --scene-bg:#0a0a0a; --scene-box:#71717a; --scene-surface:#1c1c1f; --scene-label:#a3a3a3; --area-draw:#818cf8;
+            --crust:#737373;
+            --o0:#ecfccb; --o1:#bef264; --o2:#84cc16; --o3:#65a30d; --o4:#4d7c0f;
+            --shadow:0 24px 70px rgba(24,24,40,.28);
+            --glow:radial-gradient(circle at top, rgba(99,102,241,.16), transparent 34%);
+            --vignette:rgba(0,0,0,.45);
+        }
+        :root[data-theme="light"] {
+            color-scheme: light;
+            --plane:#f7f7f8; --surface:#ffffff; --surface-2:#f4f4f5; --line:#e4e4e7; --axis:#d4d4d8;
+            --ink:#171717; --ink-2:#3f3f46; --ink-3:#52525b;
+            --accent:#6366f1; --accent-hover:#4f46e5; --accent-soft:#eef2ff; --accent-2:#65a30d;
+            --warning:#ea580c; --critical:#dc2626; --hover:#e4e4e7; --overlay:rgba(255,255,255,.88);
+            --msg-error-bg:#fef2f2; --msg-error-line:#fecaca; --msg-error-ink:#b91c1c;
+            --msg-aviso-bg:#fff7ed; --msg-aviso-line:#fed7aa;
+            --msg-ok-bg:#f7fee7; --msg-ok-line:#d9f99d; --msg-ok-ink:#3f6212;
+            --msg-load-bg:#eef2ff; --msg-load-line:#c7d2fe; --msg-load-ink:#4338ca;
+            --scene-bg:#f7f7f8; --scene-box:#71717a; --scene-surface:#e4e4e7; --scene-label:#52525b; --area-draw:#4f46e5;
+            --crust:#a1a1aa;
+            --o0:#bef264; --o1:#84cc16; --o2:#65a30d; --o3:#4d7c0f; --o4:#365314;
+            --shadow:0 18px 48px rgba(24,24,27,.08);
+            --glow:radial-gradient(circle at top, rgba(99,102,241,.12), transparent 30%);
+            --vignette:rgba(24,24,27,.08);
+        }
+        :root {
+            --font:"Inter",system-ui,-apple-system,"Segoe UI",sans-serif;
+            --font-display:"Space Grotesk","Inter",system-ui,sans-serif;
+            --font-mono:"JetBrains Mono",ui-monospace,Consolas,monospace;
+            --timevalue-width:150px;
+        }
+        body { background: var(--plane); background-image: var(--glow); }
+        ::selection { background: rgba(99,102,241,.32); }
+
+        /* tarjetas redondeadas flotando sobre el fondo, como el workbench */
+        #app { background: transparent; gap: 10px; padding: 10px; }
+        #topbar, #sceneWrap, #timeWrap, #panel { border: 1px solid var(--line); border-radius: 20px; box-shadow: var(--shadow); }
+        #sceneWrap, #panel { overflow: hidden; }
+        #panel { overflow-y: auto; }
+        #topbar { padding: 10px 16px; gap: 16px; }
+        #timeWrap { padding: 10px 16px 12px; }
+
+        .brand { align-items: center; gap: 12px; }
+        .brand-logo { width: 28px; height: 28px; flex-shrink: 0; }
+        .brand-logo-inv { filter: invert(1) brightness(.92); }   /* el gris del legado se pierde sobre #0a0a0a */
+        .brand-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+        .eyebrow { font-size: 10px; font-weight: 600; letter-spacing: .28em; text-transform: uppercase; color: var(--ink-3); white-space: nowrap; }
+        .brand h1 { font-family: var(--font-display); font-size: 17px; font-weight: 600; letter-spacing: -.01em; }
+        .brand .sub { display: none; }
+        .theme-dark-only { display: inline; }
+        .theme-light-only { display: none; }
+        :root[data-theme="light"] .theme-dark-only { display: none; }
+        :root[data-theme="light"] .theme-light-only { display: inline; }
+
+        .seg { border-radius: 12px; padding: 3px; gap: 2px; }
+        .seg button { border-right: none; border-radius: 9px; padding: 5px 12px; font-weight: 500; }
+        .seg button[aria-pressed="true"], .seg button.activo { box-shadow: 0 4px 14px rgba(99,102,241,.35); }
+        .pill { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); background: var(--surface-2); color: var(--ink-2); border-radius: 999px; padding: 6px 12px; font-size: 12px; font-weight: 600; }
+        .pill:hover { border-color: var(--axis); color: var(--ink); }
+        .pill svg { width: 15px; height: 15px; }
+        .pill-lime { border-color: color-mix(in srgb, var(--accent-2) 40%, transparent); background: color-mix(in srgb, var(--accent-2) 12%, transparent); color: var(--accent-2); font-weight: 500; font-size: 11px; padding: 4px 10px; }
+
+        .tabs { padding: 6px 8px 0; }
+        .tab-btn { font-weight: 500; }
+        .tab-btn.activo { font-weight: 600; }
+        .group-title, .timeline-header, .legend-title, .campo label { letter-spacing: .16em; }
+        .group-title { font-size: 10px; }
+
+        .btn { border-radius: 12px; font-weight: 500; }
+        #btnConsultar, #btnConsultarEvento { border-radius: 12px; box-shadow: 0 8px 22px rgba(99,102,241,.3); }
+        input[type="number"], input[type="date"], select, input[type="color"] { border-radius: 10px; }
+        input[type="number"], input[type="date"] { font-family: var(--font-mono); font-size: 11px; }
+        .fuente-opcion, .info-box, .msg { border-radius: 14px; }
+        .fuente-opcion { padding: 10px 12px; }
+        .fuente-nombre { font-family: var(--font-display); font-size: 13px; }
+        .iconbtn { border-radius: 12px; }
+        .slider-value, #timeValue, .timeline-info, .info-box span, .legend-item span, .leaflet-popup-content { font-family: var(--font-mono); }
+        .slider-value { border-radius: 999px; }
+        input[type="range"]::-webkit-slider-runnable-track { background: var(--axis); }
+        input[type="range"]::-webkit-slider-thumb { background: var(--accent); border-color: var(--surface); box-shadow: 0 0 0 1px var(--accent); }
+        input[type="range"]::-moz-range-thumb { background: var(--accent); border-color: var(--surface); box-shadow: 0 0 0 1px var(--accent); }
+        .hud { border-radius: 12px; }
+        #vignette { background: radial-gradient(ellipse 78% 68% at 50% 46%, transparent 40%, var(--vignette) 100%); }
+        .leaflet-bar { border-radius: 12px !important; }
+        .leaflet-control-layers { border-radius: 12px !important; }
+        :root[data-theme="light"] .leaflet-control-layers-toggle { filter: none; }
+        :root[data-theme="light"] input[type="date"]::-webkit-calendar-picker-indicator { filter: none; }
     </style>
 </head>
 <body>
     <div id="app">
         <header id="topbar">
-            <h1>Seismic Explorer</h1>
-            <span class="sub">Live query · USGS · ISC · SGC</span>
-            <div class="spacer"></div>
-            <div class="seg" id="segPantalla" role="group" aria-label="View">
-                <button type="button" id="btnVistaArea" aria-pressed="true">🗺️ Map</button>
-                <button type="button" id="btnVistaVisor" aria-pressed="false">🌐 3D</button>
+            <div class="brand">
+                <img class="brand-logo brand-logo-inv theme-dark-only" src="branding/swtectonics_logo_black_64.png" alt="SWTectonics">
+                <img class="brand-logo theme-light-only" src="branding/swtectonics_logo_black_64.png" alt="SWTectonics">
+                <div class="brand-text">
+                    <span class="eyebrow">SWTectonics · live catalog</span>
+                    <h1>Seismic Explorer</h1>
+                </div>
             </div>
+            <div class="seg" id="segPantalla" role="group" aria-label="View">
+                <button type="button" id="btnVistaArea" aria-pressed="true">Map</button>
+                <button type="button" id="btnVistaVisor" aria-pressed="false">3D</button>
+            </div>
+            <div class="spacer"></div>
+            <span class="pill pill-lime">USGS · ISC · SGC</span>
+            <button type="button" class="pill" id="btnTema" aria-pressed="false">
+                <svg class="theme-dark-only" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+                <svg class="theme-light-only" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
+                <span class="theme-dark-only">Light mode</span><span class="theme-light-only">Dark mode</span>
+            </button>
         </header>
 
         <div id="sceneWrap">
@@ -195,34 +355,35 @@
             </div>
             <div id="pantallaVisor" hidden>
                 <div id="canvas3d">
+                    <div id="vignette"></div>
                     <div class="canvas-hint">Drag to rotate · scroll to zoom</div>
                     <div class="canvas-vacio" id="canvasVacio">Define an area and query the catalog to see the earthquakes in 3D</div>
                 </div>
             </div>
+            <div class="hud" id="credit">Data <a href="https://earthquake.usgs.gov/fdsnws/event/1/" target="_blank" rel="noopener">USGS</a> · <a href="https://www.isc.ac.uk/iscbulletin/" target="_blank" rel="noopener">ISC</a> · <a href="https://www2.sgc.gov.co/sgc/sismos/Paginas/catalogo-sismico.aspx" target="_blank" rel="noopener">SGC</a> · <b>SWTectonics</b> — José Fernando Duque T.</div>
         </div>
 
         <div id="timeWrap">
-            <div class="timeline-header">⏱️ Timeline</div>
             <div class="timeline-controls">
-                <button class="btn secundario" id="btnPlay" type="button">▶ Play</button>
-                <div class="velocidad-selector" id="velocidadSelector">
-                    <button class="btn secundario vel-btn" data-vel="0.25" type="button">0.25×</button>
-                    <button class="btn secundario vel-btn" data-vel="0.5" type="button">0.5×</button>
-                    <button class="btn secundario vel-btn activo" data-vel="1" type="button">1×</button>
-                    <button class="btn secundario vel-btn" data-vel="2" type="button">2×</button>
+                <button class="iconbtn" id="btnPlay" type="button" aria-label="Play">▶</button>
+                <span id="timeValue">—</span>
+                <div class="seg velocidad-selector" id="velocidadSelector" role="group" aria-label="Speed">
+                    <button class="vel-btn" data-vel="0.25" type="button">0.25×</button>
+                    <button class="vel-btn" data-vel="0.5" type="button">0.5×</button>
+                    <button class="vel-btn activo" data-vel="1" type="button">1×</button>
+                    <button class="vel-btn" data-vel="2" type="button">2×</button>
                 </div>
+                <span class="spacer"></span>
+                <span class="timeline-header">Timeline</span>
             </div>
-            <input type="range" class="timeline-slider" id="timelineSlider" min="0" max="100" value="100">
+            <input type="range" class="timeline-slider" id="timelineSlider" min="0" max="100" value="100" aria-label="Time cutoff">
             <div class="timeline-info">
                 <span id="timeStart">—</span>
-                <span id="timeValue">—</span>
                 <span id="timeEnd">—</span>
             </div>
         </div>
 
         <aside id="panel">
-            <div class="panel-title">⚙️ Query & Controls</div>
-
             <div class="tabs">
                 <button class="tab-btn activo" data-tab="area" type="button">Area</button>
                 <button class="tab-btn" data-tab="evento" type="button">Special Event</button>
@@ -276,7 +437,7 @@
                         </div>
                     </div>
 
-                    <button class="btn secundario" id="btnDibujar">✏️ Draw on map</button>
+                    <button class="btn secundario" id="btnDibujar">Draw on map</button>
                     <div class="nota" id="notaArea">Drag on the map to define the area, or enter the coordinates.</div>
                 </div>
 
@@ -337,7 +498,7 @@
                 </div>
 
                 <div class="control-group">
-                    <button class="btn" id="btnConsultar">🔍 Query catalog (background layer)</button>
+                    <button class="btn" id="btnConsultar">Query catalog (background layer)</button>
                     <div class="msg" id="mensaje"></div>
                 </div>
             </div>
@@ -379,7 +540,7 @@
                             </div>
                             <div class="campo" style="margin-top:6px"><label for="circRadioEv">Radius (km)</label><input type="number" id="circRadioEv" min="1" step="10" value="200"></div>
                         </div>
-                        <button class="btn secundario" id="btnCopiarAreaFondo" type="button">⧉ Use the same area as the Background layer</button>
+                        <button class="btn secundario" id="btnCopiarAreaFondo" type="button">Use the same area as the Background layer</button>
                         <div class="nota">This layer isn't drawn by dragging on the map — enter the coordinates or copy the background layer's area.</div>
                     </div>
 
@@ -428,7 +589,7 @@
                     </div>
 
                     <div class="control-group">
-                        <button class="btn" id="btnConsultarEvento">🔍 Load special event (catalog)</button>
+                        <button class="btn" id="btnConsultarEvento">Load special event (catalog)</button>
                     </div>
                 </div>
 
@@ -450,7 +611,7 @@
                 </div>
 
                 <div class="control-group">
-                    <button class="btn secundario" id="btnQuitarEvento" disabled>🗑️ Remove special event layer</button>
+                    <button class="btn secundario" id="btnQuitarEvento" disabled>Remove special event layer</button>
                     <div class="msg" id="mensajeEvento"></div>
                 </div>
             </div>
@@ -477,8 +638,8 @@
                             <option value="osm" selected>OpenStreetMap</option>
                             <option value="hot">OSM Humanitarian</option>
                             <option value="topo">OpenTopoMap</option>
-                            <option value="claro">CARTO Light</option>
-                            <option value="oscuro">CARTO Dark</option>
+                            <option value="claro">Light Gray (Esri)</option>
+                            <option value="oscuro">Dark Gray (Esri)</option>
                             <option value="geologico">Geological Map (SGC)</option>
                             <option value="ninguno">None (flat plane)</option>
                         </select>
@@ -577,7 +738,7 @@
                             <option value="ambas">Both (tagged by layer)</option>
                         </select>
                     </div>
-                    <button class="btn secundario" id="btnExportar" disabled style="margin-top:8px">⬇️ Export GeoJSON</button>
+                    <button class="btn secundario" id="btnExportar" disabled style="margin-top:8px">Export GeoJSON</button>
                 </div>
             </div>
         </aside>
@@ -601,7 +762,6 @@
         const AREA_GRANDE = 40;     // grados; a partir de aquí se advierte
         const CLAVE_LS = 'explorador-area-sismos';
 
-        const AZUL_CORTEZA = '#1a3a6b'; // 0-35km (corteza) en la capa de fondo
 
         // Las 4 fuentes ofrecidas — límite real de extracción verificado con
         // pruebas en vivo contra cada servidor (ver documentación del proyecto).
@@ -733,12 +893,18 @@
         // son conceptualmente distintas (contexto regional vs. evento puntual).
         // ============================================================
 
+        // Interpola la rampa naranja de cubo-v2 (claro = somero, oscuro = profundo).
+        function colorRampa(t) {
+            const r = leerTema3D().rampa;
+            const x = Math.max(0, Math.min(1, t)) * (r.length - 1);
+            const i = Math.min(r.length - 2, Math.floor(x));
+            return '#' + new THREE.Color(r[i]).lerp(new THREE.Color(r[i + 1]), x - i).getHexString();
+        }
+
         function colorFondo(depth, maxDepth) {
-            if (depth <= 35) return AZUL_CORTEZA;
-            if (maxDepth <= 35) return '#000000';           // caso borde: todo el dataset es cortical salvo un outlier
-            const t = Math.min(1, (depth - 35) / (maxDepth - 35));
-            const v = Math.round(t * 255);
-            return `rgb(${v},${v},${v})`;
+            if (depth <= 35) return leerTema3D().corteza;
+            if (maxDepth <= 35) return colorRampa(1);        // caso borde: todo el dataset es cortical salvo un outlier
+            return colorRampa((depth - 35) / (maxDepth - 35));
         }
 
         function lerpColor(hexA, hexB, t) {
@@ -778,8 +944,18 @@
         let imagenGeologica = null, geoAbortController = null;
 
         function initMap() {
-            map = L.map('map', { zoomControl: true });
-            map.fitWorld();
+            map = L.map('map', { zoomControl: true, maxBoundsViscosity: 1 });
+            // Zoom mínimo tal que el mundo cubra el alto del contenedor: sin bandas vacías arriba/abajo.
+            const ajustarZoomMinimo = () => {
+                const h = $('map').clientHeight || 512;
+                const zMin = Math.max(0, Math.ceil(Math.log2(h / 256)));
+                map.setMinZoom(zMin);
+                if (map.getZoom() < zMin) map.setZoom(zMin);
+            };
+            map.setView([10, -40], 2);
+            ajustarZoomMinimo();
+            map.setMaxBounds([[-85.05, -1e4], [85.05, 1e4]]);
+            window.addEventListener('resize', ajustarZoomMinimo);
 
             capaOSM = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
                 attribution: '© OpenStreetMap', maxZoom: 19
@@ -790,26 +966,29 @@
             capaTopo = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
                 attribution: '© OpenTopoMap (OSM / SRTM data)', maxZoom: 17
             });
-            capaCartoClaro = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png', {
-                attribution: '© CARTO / OpenStreetMap', maxZoom: 19
+            // CARTO pasó a exigir API key (sus teselas salen con marca de agua), así que
+            // los mapas base neutros claro/oscuro vienen de Esri Canvas.
+            capaCartoClaro = L.tileLayer('https://services.arcgisonline.com/arcgis/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
+                attribution: 'Esri, HERE, Garmin, © OpenStreetMap contributors', maxZoom: 16
             });
-            capaCartoOscuro = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png', {
-                attribution: '© CARTO / OpenStreetMap', maxZoom: 19
+            capaCartoOscuro = L.tileLayer('https://services.arcgisonline.com/arcgis/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
+                attribution: 'Esri, HERE, Garmin, © OpenStreetMap contributors', maxZoom: 16
             });
             // Placeholder: el imageOverlay real se agrega/quita dinámicamente
             // adentro de este layerGroup (ver Requisito 4 / actualizarCapaGeologica).
             capaGeologica = L.layerGroup();
 
-            capaOSM.addTo(map);
-            capaBaseActual = capaOSM;
-            capaBaseAnterior = capaOSM;
+            const capaInicial = document.documentElement.dataset.theme === 'light' ? capaCartoClaro : capaCartoOscuro;
+            capaInicial.addTo(map);
+            capaBaseActual = capaInicial;
+            capaBaseAnterior = capaInicial;
 
             const capasBase = {
                 'OpenStreetMap': capaOSM,
                 'OSM Humanitarian (HOT)': capaHOT,
                 'OpenTopoMap': capaTopo,
-                'CARTO Light (Positron)': capaCartoClaro,
-                'CARTO Dark (Dark Matter)': capaCartoOscuro,
+                'Light Gray (Esri)': capaCartoClaro,
+                'Dark Gray (Esri)': capaCartoOscuro,
                 'Geological Map of Colombia (SGC)': capaGeologica
             };
             L.control.layers(capasBase, null, { position: 'topright' }).addTo(map);
@@ -892,8 +1071,8 @@
             if (!bounds) return;
             if (rectangulo) map.removeLayer(rectangulo);
             rectangulo = L.rectangle(bounds, {
-                color: '#64b5f6', weight: 1, dashArray: '4 3',
-                fillColor: '#64b5f6', fillOpacity: 0.07, interactive: false
+                color: leerTema3D().area, weight: 1, dashArray: '4 3',
+                fillColor: leerTema3D().area, fillOpacity: 0.07, interactive: false
             }).addTo(map);
             // Mientras se está dibujando un rectángulo nuevo a mano (arrastre en
             // curso), los campos numéricos todavía no reflejan el bbox en vivo —
@@ -908,8 +1087,8 @@
             if (!centro || !isFinite(radioM) || radioM <= 0) return;
             if (circuloDibujo) map.removeLayer(circuloDibujo);
             circuloDibujo = L.circle(centro, {
-                radius: radioM, color: '#64b5f6', weight: 1, dashArray: '4 3',
-                fillColor: '#64b5f6', fillOpacity: 0.07, interactive: false
+                radius: radioM, color: leerTema3D().area, weight: 1, dashArray: '4 3',
+                fillColor: leerTema3D().area, fillOpacity: 0.07, interactive: false
             }).addTo(map);
         }
 
@@ -969,8 +1148,8 @@
             escribirBbox(b);
             if (rectangulo) map.removeLayer(rectangulo);
             rectangulo = L.rectangle(bboxALatLngBounds(b) || L.latLngBounds([b.s, b.o], [b.n, b.e]), {
-                color: '#64b5f6', weight: 1, dashArray: '4 3',
-                fillColor: '#64b5f6', fillOpacity: 0.07, interactive: false
+                color: leerTema3D().area, weight: 1, dashArray: '4 3',
+                fillColor: leerTema3D().area, fillOpacity: 0.07, interactive: false
             }).addTo(map);
             validarBbox(true);
         }
@@ -1038,8 +1217,8 @@
             osm:    (x, y, z) => `https://tile.openstreetmap.org/${z}/${x}/${y}.png`,
             hot:    (x, y, z) => `https://a.tile.openstreetmap.fr/hot/${z}/${x}/${y}.png`,
             topo:   (x, y, z) => `https://tile.opentopomap.org/${z}/${x}/${y}.png`,
-            claro:  (x, y, z) => `https://basemaps.cartocdn.com/light_all/${z}/${x}/${y}.png`,
-            oscuro: (x, y, z) => `https://basemaps.cartocdn.com/dark_all/${z}/${x}/${y}.png`
+            claro:  (x, y, z) => `https://services.arcgisonline.com/arcgis/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/${z}/${y}/${x}`,
+            oscuro: (x, y, z) => `https://services.arcgisonline.com/arcgis/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/${z}/${y}/${x}`
         };
 
         function lon2xTile(lon, z) { return (lon + 180) / 360 * Math.pow(2, z); }
@@ -1070,7 +1249,7 @@
             if (tipo === 'ninguno') {
                 if (mallaSuperior.material.map) mallaSuperior.material.map.dispose();
                 mallaSuperior.material.map = null;
-                mallaSuperior.material.color.set(0x14274a);
+                mallaSuperior.material.color.set(leerTema3D().superficie);
                 mallaSuperior.material.opacity = 0.55;
                 mallaSuperior.material.needsUpdate = true;
                 return;
@@ -1207,7 +1386,7 @@
         function modoDibujo3(activar) {
             modoDibujo = activar;
             $('btnDibujar').classList.toggle('activo', activar);
-            $('btnDibujar').textContent = activar ? '✏️ Drawing… (click and drag)' : '✏️ Draw on map';
+            $('btnDibujar').textContent = activar ? 'Drawing… (click and drag)' : 'Draw on map';
             $('map').classList.toggle('dibujando', activar);
             if (activar) { map.dragging.disable(); map.boxZoom.disable(); }
             else { map.dragging.enable(); map.boxZoom.enable(); }
@@ -1985,10 +2164,29 @@
         let arrastre = null;
         let distancia = 60;
 
+        // Colores de la escena 3D leídos de los tokens CSS (--scene-*), para que la
+        // escena siga el mismo sistema visual que el resto de la interfaz.
+        let temaCache = null;
+        function leerTema3D() {
+            if (temaCache) return temaCache;
+            const cs = getComputedStyle(document.documentElement);
+            const v = (n, d) => (cs.getPropertyValue(n) || '').trim() || d;
+            return temaCache = {
+                corteza: v('--crust', '#8a8a86'),
+                rampa: ['--o0', '--o1', '--o2', '--o3', '--o4'].map((n, i) => v(n, ['#fde0cc', '#f7b389', '#ef8348', '#d95926', '#a33f18'][i])),
+                fondo: v('--scene-bg', '#0d0d0d'),
+                caja: v('--scene-box', '#8a8a86'),
+                superficie: v('--scene-surface', '#232322'),
+                etiqueta: v('--scene-label', '#898781'),
+                area: v('--area-draw', '#3987e5'),
+                fuente: v('--font', 'system-ui,sans-serif')
+            };
+        }
+
         function init3D() {
             const cont = $('canvas3d');
             scene = new THREE.Scene();
-            scene.background = new THREE.Color(0x0a0e27);
+            scene.background = new THREE.Color(leerTema3D().fondo);
 
             camera = new THREE.PerspectiveCamera(55, cont.clientWidth / cont.clientHeight, 0.1, 2000);
 
@@ -2188,7 +2386,7 @@
             const caja = new THREE.BoxGeometry(x1 - x0, y1 - y0, z0 - z1);
             const bordes = new THREE.LineSegments(
                 new THREE.EdgesGeometry(caja),
-                new THREE.LineBasicMaterial({ color: 0x2c4a6e })
+                new THREE.LineBasicMaterial({ color: leerTema3D().caja, transparent: true, opacity: 0.55 })
             );
             bordes.position.set((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2);
             refs.add(bordes);
@@ -2196,7 +2394,7 @@
 
             const sup = new THREE.Mesh(
                 new THREE.PlaneGeometry(x1 - x0, y1 - y0),
-                new THREE.MeshBasicMaterial({ color: 0x14274a, transparent: true, opacity: 0.55, side: THREE.DoubleSide })
+                new THREE.MeshBasicMaterial({ color: leerTema3D().superficie, transparent: true, opacity: 0.55, side: THREE.DoubleSide })
             );
             sup.position.set((x0 + x1) / 2, (y0 + y1) / 2, 0);
             refs.add(sup);
@@ -2253,8 +2451,9 @@
             const cv = document.createElement('canvas');
             cv.width = 128; cv.height = 40;
             const ctx = cv.getContext('2d');
-            ctx.fillStyle = '#8fb4dd';
-            ctx.font = 'bold 22px Arial';
+            const tema = leerTema3D();
+            ctx.fillStyle = tema.etiqueta;
+            ctx.font = `600 20px ${tema.fuente}`;
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
             ctx.fillText(texto, 64, 20);
@@ -2382,11 +2581,11 @@
         function leyendaFondoHTML(maxDepth) {
             return `
                 <div class="legend-item">
-                    <div class="legend-color" style="background-color:${AZUL_CORTEZA}"></div>
+                    <div class="legend-color" style="background-color:${leerTema3D().corteza}"></div>
                     <span>0–35 km · crust</span>
                 </div>
                 <div class="legend-item">
-                    <div class="legend-color" style="background:linear-gradient(135deg,#000,#fff); border-radius:2px; width:24px;"></div>
+                    <div class="legend-color" style="background:linear-gradient(90deg,${leerTema3D().rampa.join(',')}); border-radius:2px; width:24px;"></div>
                     <span>35 km → ${maxDepth.toFixed(0)} km</span>
                 </div>`;
         }
@@ -2626,7 +2825,43 @@
             }
         }
 
+        // Cambia claro/oscuro sin recargar: tokens CSS, escena 3D, marcadores 2D,
+        // leyenda y, si el mapa base es el gris neutro, su variante del tema.
+        function aplicarTema(tema) {
+            document.documentElement.dataset.theme = tema;
+            try { localStorage.setItem('swtectonics-theme', tema); } catch (e) { /* sin storage */ }
+            $('btnTema').setAttribute('aria-pressed', String(tema === 'light'));
+            temaCache = null;
+            const t = leerTema3D();
+
+            if (scene) scene.background = new THREE.Color(t.fondo);
+            if (datosFondo.bbox) {
+                const d = distancia;       // conserva el zoom del usuario
+                construirEscena();
+                distancia = d;
+            }
+
+            [['fondo', datosFondo, renderFondo], ['evento', datosEvento, renderEvento]].forEach(([id, capa, render]) => {
+                if (!capa || !render.marcadores) return;
+                render.marcadores.forEach((m, i) => m.setStyle({ fillColor: colorParaCapa(id, capa.eventos[i]) }));
+            });
+            [rectangulo, circuloDibujo].forEach(f => { if (f) f.setStyle({ color: t.area, fillColor: t.area }); });
+
+            const gris = tema === 'light' ? capaCartoClaro : capaCartoOscuro;
+            if (map && (capaBaseActual === capaCartoClaro || capaBaseActual === capaCartoOscuro) && capaBaseActual !== gris) {
+                map.removeLayer(capaBaseActual);
+                gris.addTo(map);
+                capaBaseAnterior = capaBaseActual;
+                capaBaseActual = gris;
+            }
+            actualizarPanel();
+        }
+
         function conectarControles() {
+            $('btnTema').setAttribute('aria-pressed', String(document.documentElement.dataset.theme === 'light'));
+            $('btnTema').addEventListener('click', () => {
+                aplicarTema(document.documentElement.dataset.theme === 'light' ? 'dark' : 'light');
+            });
             $('btnDibujar').addEventListener('click', () => modoDibujo3(!modoDibujo));
             $('btnConsultar').addEventListener('click', consultar);
             $('btnExportar').addEventListener('click', exportarGeoJSON);
@@ -2733,7 +2968,7 @@
             $('timelineSlider').addEventListener('input', (e) => {
                 // El usuario tomó control manual del timeline: si estaba
                 // reproduciendo, se pausa (no pelea con el usuario).
-                if (reproduciendo) { reproduciendo = false; $('btnPlay').textContent = '▶ Play'; }
+                if (reproduciendo) { reproduciendo = false; $('btnPlay').textContent = '▶'; $('btnPlay').setAttribute('aria-label', 'Play'); }
                 actualizarTimeline(parseFloat(e.target.value) / 100);
             });
 
@@ -2870,7 +3105,8 @@
 
         function togglePlay() {
             reproduciendo = !reproduciendo;
-            $('btnPlay').textContent = reproduciendo ? '⏸ Pause' : '▶ Play';
+            $('btnPlay').textContent = reproduciendo ? '❚❚' : '▶';
+            $('btnPlay').setAttribute('aria-label', reproduciendo ? 'Pause' : 'Play');
             if (reproduciendo) {
                 const actual = parseFloat($('timelineSlider').value) / 100;
                 fraccionInicio = actual >= 1 ? 0 : actual;   // en 100%: reinicia desde 0
@@ -2887,7 +3123,7 @@
             actualizarTimeline(fraccion);
             if (fraccion >= 1) {
                 reproduciendo = false;
-                $('btnPlay').textContent = '▶ Play';
+                $('btnPlay').textContent = '▶'; $('btnPlay').setAttribute('aria-label', 'Play');
                 return;
             }
             requestAnimationFrame(pasoReproduccion);
