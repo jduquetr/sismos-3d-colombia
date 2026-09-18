@@ -25,7 +25,12 @@
       "resumen": "Intermediate-depth earthquake inside the subducting Nazca slab. Loading it brings in the regional context (M4+ since 1900), the sequence around the mainshock, and the focal sphere from the USGS moment tensor.",
       "contexto": {
         "fuenteId": "usgs",
-        "bbox": { "n": 8, "s": 2.5, "o": -79, "e": -74 },
+        "bbox": {
+          "n": 8,
+          "s": 2.5,
+          "o": -79,
+          "e": -74
+        },
         "inicio": "1900-01-01",
         "fin": null,
         "minmag": 4,
@@ -33,7 +38,12 @@
       },
       "consulta": {
         "fuenteId": "usgs",
-        "bbox": { "n": 6.5, "s": 3.2, "o": -78, "e": -74.8 },
+        "bbox": {
+          "n": 6.5,
+          "s": 3.2,
+          "o": -78,
+          "e": -74.8
+        },
         "inicio": "2026-08-10",
         "fin": null,
         "minmag": 2.5,
@@ -50,15 +60,83 @@
         "lon": -76.1613,
         "depth": 120.5,
         "mag": 7.4,
-        "scalarMoment": 1.66e20,
-        "mrr": 4.887e19,
-        "mtt": -1.5429e20,
-        "mpp": 1.0541e20,
-        "mrt": -1.918e19,
-        "mrp": -9.009e19,
-        "mtp": -2.243e19,
+        "scalarMoment": 166000000000000000000,
+        "mrr": 48870000000000000000,
+        "mtt": -154290000000000000000,
+        "mpp": 105410000000000000000,
+        "mrt": -19180000000000000000,
+        "mrp": -90090000000000000000,
+        "mtp": -22430000000000000000,
         "fuente": "us",
-        "planoA": { "strike": 123.99, "dip": 58.63, "rake": 158.52 }
+        "planoA": {
+          "strike": 123.99,
+          "dip": 58.63,
+          "rake": 158.52
+        }
+      }
+    },
+    {
+      "id": "japan-2026-04-20",
+      "nombre": "102 km ENE of Miyako, Japan — M7.4 (2026-04-20)",
+      "lugar": "102 km ENE of Miyako, Japan",
+      "fecha": "2026-04-20T07:52:58.908Z",
+      "mag": 7.4,
+      "magTipo": "mww",
+      "profundidad": 25,
+      "usgsId": "us6000sri7",
+      "resumen": "Loaded from the USGS event feed. Area and time window are derived from the magnitude (rupture length ≈ 79 km): sequence within ±159 km of the epicentre, regional context three times wider. Adjust the card if your case needs another framing.",
+      "contexto": {
+        "fuenteId": "usgs",
+        "bbox": {
+          "n": 44.25,
+          "s": 35.69,
+          "o": 137.47,
+          "e": 148.65
+        },
+        "inicio": "1900-01-01",
+        "fin": null,
+        "minmag": 4,
+        "limite": 2000
+      },
+      "consulta": {
+        "fuenteId": "usgs",
+        "bbox": {
+          "n": 41.4,
+          "s": 38.54,
+          "o": 141.2,
+          "e": 144.92
+        },
+        "inicio": "2026-03-21",
+        "fin": null,
+        "minmag": 2.5,
+        "limite": 2000
+      },
+      "estilo": {
+        "colorInicial": "#ffd166",
+        "colorFinal": "#9d0208",
+        "escala": 22,
+        "opacidad": 100
+      },
+      "tensor": {
+        "lat": 39.9978,
+        "lon": 143.006,
+        "depth": 35.5,
+        "mag": 7.4,
+        "scalarMoment": 155000000000000000000,
+        "mrr": 75710000000000000000,
+        "mtt": 8160000000000000000,
+        "mpp": -83860000000000000000,
+        "mrt": 19760000000000000000,
+        "mrp": 129880000000000000000,
+        "mtp": -17810000000000000000,
+        "fuente": "us",
+        "revision": "reviewed",
+        "dobleParejaPct": 85.77,
+        "planoA": {
+          "strike": 8.87,
+          "dip": 74.11,
+          "rake": 88.9
+        }
       }
     }
   ]

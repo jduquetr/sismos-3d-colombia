@@ -67,14 +67,29 @@ agrega réplicas, así que la consulta en vivo no devuelve lo mismo con el tiemp
 hecha con ella no sería reproducible. El botón *Update from catalog* del panel vuelve a
 consultar en vivo y dice cuánto cambió frente a la instantánea.
 
-Para agregar un evento: se añade su ficha a `eventos/libreria.json` y se corre
+Para agregar un evento basta su id en USGS:
+
+```bash
+node tools/snapshot-eventos.mjs --add us6000tjl2
+```
+
+Eso lee el feed de detalle del evento (`.../feed/v1.0/detail/<id>.geojson`), deriva la ficha
+—área y ventana de tiempo salen de la magnitud, ver `tools/derivar-ficha.mjs`—, la agrega a
+`eventos/libreria.json` y deja la instantánea en `eventos/<id>.json`. Ambos se commitean.
+
+Lo derivado es un punto de partida, no la zona de réplicas real de ese sismo: si la caja o el
+rango no te sirven, edítalos en la ficha y regenera:
 
 ```bash
 node tools/snapshot-eventos.mjs            # todas las fichas
 node tools/snapshot-eventos.mjs <id>       # solo una
 ```
 
-que deja `eventos/<id>.json` listo para commitear.
+Si la instantánea llega al tope de `limite`, queda marcada como truncada y la página lo avisa;
+en zonas muy activas conviene subir la magnitud mínima del contexto en vez del límite.
+
+Sin tocar el repo, el panel también tiene un campo **Or load any USGS event by id**: carga
+cualquier evento en vivo con la misma regla, sin guardarlo.
 
 ## Despliegue
 

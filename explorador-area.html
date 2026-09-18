@@ -674,6 +674,13 @@
                     <button class="btn secundario" id="btnActualizarBiblioteca" hidden>Update from catalog</button>
                     <div class="nota" id="notaInstantanea" hidden></div>
                     <div class="msg" id="mensajeBiblioteca"></div>
+
+                    <div class="campo" style="margin-top:12px">
+                        <label for="idUSGS">Or load any USGS event by id</label>
+                        <input type="text" id="idUSGS" placeholder="e.g. us6000tjl2" spellcheck="false">
+                    </div>
+                    <button class="btn secundario" id="btnCargarPorId" style="margin-top:6px">Load by id</button>
+                    <div class="nota">Reads the USGS event feed and derives the area and the time window from the magnitude. It is queried live and nothing is stored — to keep it, add it to the library with <code>node tools/snapshot-eventos.mjs --add &lt;id&gt;</code>.</div>
                 </div>
 
                 <div class="control-group" id="grupoTensor" hidden>
@@ -2445,6 +2452,36 @@
             });
         }
 
+        // La regla para derivar una ficha desde un id vive en tools/derivar-ficha.mjs
+        // y la usan los dos lados: este import() y el script de instantáneas.
+        let moduloDerivar = null;
+        async function derivador() {
+            if (!moduloDerivar) moduloDerivar = await import('./tools/derivar-ficha.mjs');
+            return moduloDerivar;
+        }
+
+        async function cargarPorIdUSGS() {
+            const id = $('idUSGS').value.trim();
+            if (!id) { mensajeBiblioteca('Type a USGS event id, like us6000tjl2.', 'aviso'); return; }
+            $('btnCargarPorId').disabled = true;
+            mensajeBiblioteca(`Reading the USGS feed for ${id}…`, 'cargando');
+            try {
+                const D = await derivador();
+                const res = await fetch(D.URL_DETALLE(id));
+                if (!res.ok) throw new Error(`USGS responded with HTTP ${res.status} — check the id.`);
+                const ficha = D.fichaDesdeDetalle(await res.json());
+                eventoBiblioteca = ficha;
+                instantaneaCargada = null;
+                $('libreriaEvento').value = '';
+                pintarFichaBiblioteca(ficha);
+                await cargarEnVivo(ficha, 'Derived from the USGS event id, not from the library.');
+            } catch (err) {
+                mensajeBiblioteca(`Could not load ${id}: ${err.message}`, 'error');
+            } finally {
+                $('btnCargarPorId').disabled = false;
+            }
+        }
+
         async function traerInstantanea(id) {
             if (cacheInstantaneas[id] !== undefined) return cacheInstantaneas[id];
             let dato = null;
@@ -3420,9 +3457,10 @@
                 return;
             }
             const f = new Date(ficha.fecha);
+            const prof = isFinite(ficha.profundidad) ? ` · ${Number(ficha.profundidad).toFixed(0)} km` : '';
             $('libreriaFicha').innerHTML =
                 `<strong>${ficha.nombre}</strong><br>${ficha.lugar}<br>` +
-                `${fechaHora(f)} · M${ficha.mag.toFixed(1)} ${ficha.magTipo} · ${ficha.profundidad.toFixed(0)} km<br><br>` +
+                `${fechaHora(f)} · M${Number(ficha.mag).toFixed(1)} ${ficha.magTipo || ''}${prof}<br><br>` +
                 `${ficha.resumen}`;
             $('btnCargarBiblioteca').disabled = false;
         }
@@ -3469,7 +3507,8 @@
                 aplicarResultado(
                     { eventos: filasAEventos(snap.contexto.filas), descartados: snap.contexto.descartados || 0 },
                     pFondo, 'USGS (snapshot)', snap.contexto.total, [],
-                    { fuenteId: snap.contexto.consulta.fuenteId, urlConsulta: snap.contexto.url }
+                    { fuenteId: snap.contexto.consulta.fuenteId, urlConsulta: snap.contexto.url,
+                      truncado: !!snap.contexto.truncado }
                 );
 
                 const pEv = paramsDeConsulta(snap.evento.consulta);
@@ -3477,7 +3516,8 @@
                 aplicarResultadoEvento(
                     { eventos: filasAEventos(snap.evento.filas), descartados: snap.evento.descartados || 0 },
                     pEv, 'USGS (snapshot)', snap.evento.total, [],
-                    { fuenteId: snap.evento.consulta.fuenteId, urlConsulta: snap.evento.url, origen: 'instantanea' }
+                    { fuenteId: snap.evento.consulta.fuenteId, urlConsulta: snap.evento.url,
+                      origen: 'instantanea', truncado: !!snap.evento.truncado }
                 );
 
                 ponerTensor(snap.tensor || ficha.tensor || null, ficha);
@@ -3550,6 +3590,8 @@
             $('libreriaEvento').addEventListener('change', () => pintarFichaBiblioteca(fichaPorId($('libreriaEvento').value)));
             $('btnCargarBiblioteca').addEventListener('click', cargarDeBiblioteca);
             $('btnActualizarBiblioteca').addEventListener('click', actualizarDesdeCatalogo);
+            $('btnCargarPorId').addEventListener('click', cargarPorIdUSGS);
+            $('idUSGS').addEventListener('keydown', (e) => { if (e.key === 'Enter') cargarPorIdUSGS(); });
 
             $('showTensor').addEventListener('change', rehacerTensores);
             $('tensorColorComp').addEventListener('change', rehacerTensores);

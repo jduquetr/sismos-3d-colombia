@@ -8,12 +8,18 @@
 // "Update from catalog" del panel vuelve a consultar en vivo cuando haga falta.
 //
 // Uso:
-//   node tools/snapshot-eventos.mjs            # todas las fichas
-//   node tools/snapshot-eventos.mjs choco-2026-08-10
+//   node tools/snapshot-eventos.mjs                    # todas las fichas
+//   node tools/snapshot-eventos.mjs choco-2026-08-10   # solo una
+//   node tools/snapshot-eventos.mjs --add us6000tjl2   # agrega la ficha y la congela
+//
+// Con --add basta el id del evento en USGS: la ficha (área, ventana de tiempo,
+// estilo y tensor) se deriva del feed de detalle — ver tools/derivar-ficha.mjs —
+// y se agrega a eventos/libreria.json. Lo derivado se puede editar después.
 //
 // Escribe eventos/<id>.json. Commitea el resultado.
 
 import { readFile, writeFile } from 'node:fs/promises';
+import { URL_DETALLE, fichaDesdeDetalle } from './derivar-ficha.mjs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
@@ -52,7 +58,7 @@ async function traer(url) {
 }
 
 async function tensorDe(idEvento) {
-    const j = await traer(`${USGS}query?eventid=${encodeURIComponent(idEvento)}&format=geojson`);
+    const j = await traer(URL_DETALLE(idEvento));
     const prod = ((j.properties || {}).products || {})['moment-tensor'];
     if (!prod || !prod.length) return null;
     const q = prod[0].properties || {};
@@ -77,15 +83,19 @@ async function capa(c) {
     const url = urlUSGS(c, fin);
     const j = await traer(url);
     const { filas, descartados } = filasDesdeGeoJSON(j.features || []);
-    return { consulta: { ...c, fin }, url, filas, descartados, total: (j.metadata || {}).count ?? filas.length };
+    // USGS corta en 'limit' sin decirlo: si volvieron tantas filas como el tope,
+    // hay más eventos que los guardados y conviene que la página lo diga.
+    const truncado = filas.length >= c.limite;
+    return { consulta: { ...c, fin }, url, filas, descartados, truncado,
+             total: (j.metadata || {}).count ?? filas.length };
 }
 
 async function instantanea(ficha) {
     process.stdout.write(`${ficha.id}: contexto… `);
     const contexto = await capa(ficha.contexto);
-    process.stdout.write(`${contexto.filas.length} · secuencia… `);
+    process.stdout.write(`${contexto.filas.length}${contexto.truncado ? ' (tope)' : ''} · secuencia… `);
     const evento = await capa(ficha.consulta);
-    process.stdout.write(`${evento.filas.length} · tensor… `);
+    process.stdout.write(`${evento.filas.length}${evento.truncado ? ' (tope)' : ''} · tensor… `);
 
     let tensor = null;
     try {
@@ -103,8 +113,8 @@ async function instantanea(ficha) {
         fuente: 'USGS FDSN event query',
         nota: 'Instantánea congelada: es lo que la página carga por defecto. Regenerar con tools/snapshot-eventos.mjs.',
         columnas: COLUMNAS,
-        contexto: { consulta: contexto.consulta, url: contexto.url, total: contexto.total, descartados: contexto.descartados, filas: contexto.filas },
-        evento: { consulta: evento.consulta, url: evento.url, total: evento.total, descartados: evento.descartados, filas: evento.filas },
+        contexto: { consulta: contexto.consulta, url: contexto.url, total: contexto.total, descartados: contexto.descartados, truncado: contexto.truncado, filas: contexto.filas },
+        evento: { consulta: evento.consulta, url: evento.url, total: evento.total, descartados: evento.descartados, truncado: evento.truncado, filas: evento.filas },
         tensor
     };
     const destino = join(RAIZ, 'eventos', `${ficha.id}.json`);
@@ -113,14 +123,37 @@ async function instantanea(ficha) {
     console.log(`  → eventos/${ficha.id}.json (${kb} KB)`);
 }
 
-const libreria = JSON.parse(await readFile(join(RAIZ, 'eventos', 'libreria.json'), 'utf8'));
-const pedidos = process.argv.slice(2);
-const fichas = pedidos.length
-    ? libreria.eventos.filter(f => pedidos.includes(f.id))
-    : libreria.eventos;
+const rutaLibreria = join(RAIZ, 'eventos', 'libreria.json');
+const libreria = JSON.parse(await readFile(rutaLibreria, 'utf8'));
+const args = process.argv.slice(2);
 
-if (!fichas.length) {
-    console.error('No hay fichas que coincidan. Ids disponibles:', libreria.eventos.map(f => f.id).join(', '));
-    process.exit(1);
+if (args[0] === '--add') {
+    const idUSGS = args[1];
+    if (!idUSGS) {
+        console.error('Falta el id del evento:  node tools/snapshot-eventos.mjs --add us6000tjl2');
+        process.exit(1);
+    }
+    console.log(`Leyendo ${URL_DETALLE(idUSGS)}`);
+    const ficha = fichaDesdeDetalle(await traer(URL_DETALLE(idUSGS)));
+    const ya = libreria.eventos.findIndex(f => f.id === ficha.id || f.usgsId === ficha.usgsId);
+    if (ya >= 0) {
+        console.log(`Ya había una ficha para ${ficha.usgsId} (${libreria.eventos[ya].id}): se reemplaza lo derivado.`);
+        libreria.eventos[ya] = { ...libreria.eventos[ya], ...ficha, id: libreria.eventos[ya].id };
+    } else {
+        libreria.eventos.push(ficha);
+    }
+    await writeFile(rutaLibreria, JSON.stringify(libreria, null, 2) + String.fromCharCode(10), 'utf8');
+    console.log(`Ficha ${ficha.id}: ${ficha.nombre}`);
+    console.log(`  secuencia ${JSON.stringify(ficha.consulta.bbox)} desde ${ficha.consulta.inicio}`);
+    console.log(`  contexto  ${JSON.stringify(ficha.contexto.bbox)}`);
+    console.log(`  tensor    ${ficha.tensor ? 'sí' : 'no publicado'}`);
+    await instantanea(libreria.eventos.find(f => f.usgsId === ficha.usgsId));
+    console.log('Listo. Commitea eventos/libreria.json y eventos/<id>.json.');
+} else {
+    const fichas = args.length ? libreria.eventos.filter(f => args.includes(f.id)) : libreria.eventos;
+    if (!fichas.length) {
+        console.error('No hay fichas que coincidan. Ids disponibles:', libreria.eventos.map(f => f.id).join(', '));
+        process.exit(1);
+    }
+    for (const ficha of fichas) await instantanea(ficha);
 }
-for (const ficha of fichas) await instantanea(ficha);
