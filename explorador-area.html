@@ -438,6 +438,7 @@
                     </div>
 
                     <button class="btn secundario" id="btnDibujar">Draw on map</button>
+                    <button class="btn secundario" id="btnLimpiarArea" type="button">Clear area</button>
                     <div class="nota" id="notaArea">Drag on the map to define the area, or enter the coordinates.</div>
                 </div>
 
@@ -1155,6 +1156,20 @@
         }
 
         // --- Selector rectángulo / círculo ---
+        // Deja el área como en una visita nueva: campos vacíos, nada dibujado en el
+        // mapa y vista mundial. No borra los datos ya consultados ni las otras
+        // preferencias (fuente, fechas, magnitud, límite).
+        function limpiarArea() {
+            if (modoDibujo) modoDibujo3(false);
+            ['bboxN', 'bboxS', 'bboxE', 'bboxO', 'circLat', 'circLon'].forEach(id => { $(id).value = ''; });
+            quitarMarcadoresEsquina();
+            if (rectangulo) { map.removeLayer(rectangulo); rectangulo = null; }
+            if (circuloDibujo) { map.removeLayer(circuloDibujo); circuloDibujo = null; }
+            refrescarCapaGeologicaSiActiva();
+            map.fitWorld();
+            limpiarMensaje();
+        }
+
         function setModoArea(modo) {
             modoArea = modo;
             $('btnModoRect').classList.toggle('activo', modo === 'rect');
@@ -2750,10 +2765,10 @@
 
         function guardarPreferencias(p, fuenteId) {
             try {
+                // El área NO se guarda a propósito: la página siempre arranca mundial
+                // y sin área preseleccionada (ver cargarPreferencias y btnLimpiarArea).
                 localStorage.setItem(CLAVE_LS, JSON.stringify({
                     modo: p.modo,
-                    bbox: p.modo === 'circulo' ? null : p.bbox,
-                    circulo: p.modo === 'circulo' ? p.circulo : null,
                     inicio: p.inicio, fin: p.fin,
                     minmag: p.minmag, limite: p.limite,
                     fuenteId, minsig: p.minsig
@@ -2771,14 +2786,10 @@
                 if (raw) guardado = JSON.parse(raw);
             } catch (e) { guardado = null; }
 
-            const huboGuardado = !!(guardado && (guardado.bbox || guardado.circulo));
-
             modoArea = (guardado && guardado.modo) || 'rect';
-            // Primera visita (nada guardado): los campos de área quedan vacíos
-            // (solo placeholder) — el mapa arranca mundial, no en Colombia. Si
-            // había una consulta guardada, se restaura igual que antes.
-            if (guardado && guardado.bbox) escribirBbox(guardado.bbox);
-            if (guardado && guardado.circulo) escribirCirculo(guardado.circulo);
+            // El área nunca se restaura: cada visita arranca con el mapa mundial y los
+            // campos vacíos (solo placeholder). Lo que sí se recuerda es el resto de la
+            // consulta: fuente, fechas, magnitud mínima y límite.
 
             const fuenteId = (guardado && guardado.fuenteId) || 'usgs';
             const radio = document.querySelector(`input[name="fuente"][value="${fuenteId}"]`);
@@ -2798,7 +2809,6 @@
             actualizarLimiteUI();
             if (guardado && guardado.limite) $('limite').value = guardado.limite;
 
-            return huboGuardado;
         }
 
         // ============================================================
@@ -2863,6 +2873,7 @@
                 aplicarTema(document.documentElement.dataset.theme === 'light' ? 'dark' : 'light');
             });
             $('btnDibujar').addEventListener('click', () => modoDibujo3(!modoDibujo));
+            $('btnLimpiarArea').addEventListener('click', limpiarArea);
             $('btnConsultar').addEventListener('click', consultar);
             $('btnExportar').addEventListener('click', exportarGeoJSON);
             $('btnVistaArea').addEventListener('click', () => mostrarPantalla('area'));
@@ -3131,7 +3142,7 @@
 
         document.addEventListener('DOMContentLoaded', () => {
             mostrarPantalla('area');
-            const huboGuardado = cargarPreferencias();
+            cargarPreferencias();
             initMap();
             init3D();
             conectarControles();
@@ -3148,18 +3159,7 @@
             actualizarPanel();
             setTimeout(() => {
                 map.invalidateSize();
-                if (huboGuardado) {
-                    // Sesión anterior: se restaura el área que el usuario ya tenía.
-                    if (modoArea === 'circulo' && circuloDibujo) {
-                        map.fitBounds(circuloDibujo.getBounds(), { padding: [12, 12] });
-                    } else {
-                        const b = bboxALatLngBounds(leerBbox());
-                        if (b) map.fitBounds(b, { padding: [12, 12] });
-                    }
-                } else {
-                    // Primera visita: punto de entrada mundial, sin área preseleccionada.
-                    map.fitWorld();
-                }
+                map.fitWorld();   // siempre se entra por el mapa mundial, sin área
                 redimensionar3D();
             }, 200);
         });
