@@ -138,6 +138,39 @@
           "rake": 88.9
         }
       }
+    },
+    {
+      "id": "global-m5-january-2026",
+      "tipo": "ventana",
+      "nombre": "Global M5+ January 2026",
+      "lugar": "Worldwide",
+      "fecha": "2026-01-01T00:00:00Z",
+      "mag": 5,
+      "magTipo": "",
+      "profundidad": null,
+      "usgsId": null,
+      "resumen": "Catalog window, not a single earthquake: every USGS event of M5 or more between 2026-01-01 and 2026-01-31 worldwide. The focal spheres of every event with a published moment tensor are drawn.",
+      "contexto": {
+        "fuenteId": "usgs",
+        "bbox": {
+          "n": 85.05,
+          "s": -85.05,
+          "o": -180,
+          "e": 180
+        },
+        "inicio": "2026-01-01",
+        "fin": "2026-01-31",
+        "minmag": 5,
+        "limite": 20000
+      },
+      "consulta": null,
+      "estilo": {
+        "colorInicial": "#ffd166",
+        "colorFinal": "#9d0208",
+        "escala": 22,
+        "opacidad": 100
+      },
+      "tensor": null
     }
   ]
 }

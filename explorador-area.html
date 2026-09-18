@@ -1217,9 +1217,13 @@
             }).addTo(map);
         }
 
+        // Web Mercator no llega a los polos: con ±90 el mapa no puede encuadrar y
+        // Leaflet se queda dando vueltas, así que la latitud se acota al límite real.
+        const LAT_MERCATOR = 85.05;
         function bboxALatLngBounds(b) {
             if (!b || [b.n, b.s, b.e, b.o].some(v => !isFinite(v))) return null;
-            return L.latLngBounds([b.s, b.o], [b.n, b.e]);
+            const n = Math.min(b.n, LAT_MERCATOR), s = Math.max(b.s, -LAT_MERCATOR);
+            return L.latLngBounds([Math.min(s, n), b.o], [Math.max(s, n), b.e]);
         }
 
         // Leaflet deja arrastrar el mapa "dando la vuelta al mundo" varias
@@ -1414,6 +1418,9 @@
                     // Zoom que traiga ~9 teselas del lado mayor (más detalle al acercar la
                     // cámara), con tope de 150 teselas totales para no disparar cientos de
                     // pedidos en áreas grandes.
+                    // Mismo motivo: sin acotar, lat2yTile(±90) es infinito y el doble
+                    // bucle de teselas de más abajo nunca termina (la página se congela).
+                    b = { n: Math.min(b.n, LAT_MERCATOR), s: Math.max(b.s, -LAT_MERCATOR), e: b.e, o: b.o };
                     const lonSpan = Math.max(b.e - b.o, 0.001);
                     let z = Math.max(1, Math.min(16, Math.round(Math.log2(360 / lonSpan * 9))));
                     let x0, x1, y0, y1;
@@ -1425,6 +1432,7 @@
                     } while (true);
 
                     const nx = Math.max(1, x1 - x0 + 1), ny = Math.max(1, y1 - y0 + 1), TS = 256;
+                    if (!isFinite(nx) || !isFinite(ny) || nx * ny > 400) return;   // cinturón y tirantes
                     const modo = Math.pow(2, z);
                     canvas = document.createElement('canvas');
                     canvas.width = nx * TS; canvas.height = ny * TS;
@@ -3458,21 +3466,36 @@
             }
             const f = new Date(ficha.fecha);
             const prof = isFinite(ficha.profundidad) ? ` · ${Number(ficha.profundidad).toFixed(0)} km` : '';
+            const cabeza = ficha.tipo === 'ventana'
+                ? `${ficha.lugar} · M${Number(ficha.mag).toFixed(1)}+`
+                : `${ficha.lugar}<br>${fechaHora(f)} · M${Number(ficha.mag).toFixed(1)} ${ficha.magTipo || ''}${prof}`;
             $('libreriaFicha').innerHTML =
-                `<strong>${ficha.nombre}</strong><br>${ficha.lugar}<br>` +
-                `${fechaHora(f)} · M${Number(ficha.mag).toFixed(1)} ${ficha.magTipo || ''}${prof}<br><br>` +
-                `${ficha.resumen}`;
+                `<strong>${ficha.nombre}</strong><br>${cabeza}<br><br>${ficha.resumen}`;
             $('btnCargarBiblioteca').disabled = false;
         }
 
         function ponerTensor(T, ficha) {
-            tensoresEvento = T ? [T] : [];
-            $('grupoTensor').hidden = !T;
-            if (T) {
-                $('fichaTensor').innerHTML = describirTensor(T, ficha);
+            const lista = Array.isArray(T) ? T.filter(Boolean) : (T ? [T] : []);
+            tensoresEvento = lista;
+            $('grupoTensor').hidden = !lista.length;
+            if (lista.length) {
+                $('fichaTensor').innerHTML = lista.length === 1
+                    ? describirTensor(lista[0], ficha)
+                    : describirTensores(lista, ficha);
                 $('showTensor').checked = true;
             }
             rehacerTensores();
+        }
+
+        // Una ventana de catálogo trae decenas de mecanismos: se resume en vez de
+        // listarlos uno por uno.
+        function describirTensores(lista, ficha) {
+            const mayores = lista.slice().sort((a, b) => (b.mag || 0) - (a.mag || 0)).slice(0, 3);
+            const prof = lista.map(T => T.depth).filter(isFinite);
+            return `<strong>${lista.length} focal spheres</strong> — ${ficha.nombre}<br>` +
+                `Depths: ${Math.min(...prof).toFixed(0)}–${Math.max(...prof).toFixed(0)} km<br>` +
+                'Largest: ' + mayores.map(T => `M${(T.mag || 0).toFixed(1)} ${T.nombre || ''}`).join(' · ') + '<br>' +
+                'Source: USGS moment tensors, one per event that publishes one.';
         }
 
         function marcarOrigenDatos(texto, hayInstantanea) {
@@ -3500,6 +3523,11 @@
 
                 instantaneaCargada = snap;
                 aplicarEstiloEvento(ficha.estilo);
+
+                if (snap.tipo === 'ventana') {
+                    await cargarVentana(snap, ficha);
+                    return;
+                }
 
                 const pFondo = paramsDeConsulta(snap.contexto.consulta);
                 escribirConsultaFondo(snap.contexto.consulta);
@@ -3536,6 +3564,35 @@
             }
         }
 
+        // Ventana de catálogo: la ventana entera va a la capa de fondo y se dibujan
+        // todos los mecanismos focales. No hay "secuencia", así que la capa de evento
+        // especial se libera para que el usuario la use como quiera.
+        async function cargarVentana(snap, ficha) {
+            const p = paramsDeConsulta(snap.contexto.consulta);
+            escribirConsultaFondo(snap.contexto.consulta);
+            pintarRectangulo(bboxALatLngBounds(p.bbox));
+            aplicarResultado(
+                { eventos: filasAEventos(snap.contexto.filas), descartados: snap.contexto.descartados || 0 },
+                p, 'USGS (snapshot)', snap.contexto.total, [],
+                { fuenteId: snap.contexto.consulta.fuenteId, urlConsulta: snap.contexto.url,
+                  truncado: !!snap.contexto.truncado }
+            );
+            if (datosEvento) quitarCapaEvento();
+            // En una ventana la caja es enorme y hay decenas de esferas: al 100 %
+            // se tapan entre ellas, así que se entra con una escala menor.
+            const escalaTensor = (snap.tensores || []).length > 5 ? 25 : 100;
+            $('tensorEscalaSlider').value = escalaTensor;
+            $('tensorEscalaValue').textContent = escalaTensor + '%';
+            ponerTensor(snap.tensores || [], ficha);
+
+            const fechaSnap = new Date(snap.generado).toISOString().slice(0, 10);
+            marcarOrigenDatos(
+                `Catalog window from the snapshot of <strong>${fechaSnap}</strong>: ` +
+                `${snap.contexto.filas.length} events and ${(snap.tensores || []).length} moment tensors. ` +
+                'The special-event layer is free — you can load a sequence on top with the custom query.', true);
+            mensajeBiblioteca(`<strong>${ficha.nombre}</strong> loaded from its snapshot.`, 'ok');
+        }
+
         // Vuelve a preguntarle al catálogo, con los mismos parámetros de la ficha.
         async function cargarEnVivo(ficha, aviso) {
             const previo = instantaneaCargada;
@@ -3546,23 +3603,38 @@
             await consultar();
 
             aplicarEstiloEvento(ficha.estilo);
-            escribirConsultaEvento(ficha.consulta);
-            await consultarEvento();
-
-            let T = null;
-            try {
-                T = ficha.usgsId ? await traerTensorUSGS(ficha.usgsId) : null;
-            } catch (err) {
-                T = ficha.tensor || null;   // respaldo embebido si USGS no responde
+            if (ficha.consulta) {
+                escribirConsultaEvento(ficha.consulta);
+                await consultarEvento();
             }
-            ponerTensor(T, ficha);
 
-            const ahora = datosEvento ? datosEvento.eventos.length : 0;
-            const antes = previo ? previo.evento.filas.length : null;
+            if (ficha.tipo === 'ventana') {
+                // Bajar decenas de tensores desde el navegador sería lentísimo: los
+                // eventos se re-consultan, los mecanismos siguen siendo los de la
+                // instantánea (regenerarla es lo que los actualiza).
+                ponerTensor((previo && previo.tensores) || tensoresEvento, ficha);
+            } else {
+                let T = null;
+                try {
+                    T = ficha.usgsId ? await traerTensorUSGS(ficha.usgsId) : null;
+                } catch (err) {
+                    T = ficha.tensor || null;   // respaldo embebido si USGS no responde
+                }
+                ponerTensor(T, ficha);
+            }
+
+            const ventana = ficha.tipo === 'ventana';
+            const ahora = ventana
+                ? (datosFondo.eventos ? datosFondo.eventos.length : 0)
+                : (datosEvento ? datosEvento.eventos.length : 0);
+            const antes = previo
+                ? (ventana ? previo.contexto.filas.length : (previo.evento ? previo.evento.filas.length : null))
+                : null;
             const cambio = antes == null ? ''
                 : (ahora === antes
                     ? ' Same count as the snapshot.'
-                    : ` The sequence went from ${antes} to ${ahora} events since the snapshot.`);
+                    : ` It went from ${antes} to ${ahora} events since the snapshot` +
+                      (ventana ? ' (moment tensors are still the snapshot\'s).' : '.'));
             marcarOrigenDatos(
                 (aviso ? aviso + ' ' : '') +
                 `Live from USGS, queried just now.${cambio} ` +
