@@ -1,0 +1,65 @@
+{
+  "_comentario": [
+    "Biblioteca de eventos especiales del explorador.",
+    "Cada ficha describe un evento con nombre propio: el contexto regional que se",
+    "carga en la capa de fondo, la consulta de su propia secuencia (capa de evento),",
+    "su estilo y el id del evento en USGS (de ahí sale el tensor).",
+    "",
+    "Agregar un evento = agregar una ficha aquí y correr:  node tools/snapshot-eventos.mjs",
+    "Ese script deja la instantánea en eventos/<id>.json, que es lo que carga la página",
+    "por defecto; el botón 'Update from catalog' vuelve a consultar USGS en vivo.",
+    "",
+    "'fin': null significa 'hasta hoy' en la consulta en vivo. En la instantánea queda",
+    "congelada la fecha del día en que se generó."
+  ],
+  "eventos": [
+    {
+      "id": "choco-2026-08-10",
+      "nombre": "Chocó, Colombia — M7.4 (10 Aug 2026)",
+      "lugar": "2 km SE of San José del Palmar, Colombia",
+      "fecha": "2026-08-10T12:34:28Z",
+      "mag": 7.4,
+      "magTipo": "Mww",
+      "profundidad": 108.2,
+      "usgsId": "us6000tjl2",
+      "resumen": "Intermediate-depth earthquake inside the subducting Nazca slab. Loading it brings in the regional context (M4+ since 1900), the sequence around the mainshock, and the focal sphere from the USGS moment tensor.",
+      "contexto": {
+        "fuenteId": "usgs",
+        "bbox": { "n": 8, "s": 2.5, "o": -79, "e": -74 },
+        "inicio": "1900-01-01",
+        "fin": null,
+        "minmag": 4,
+        "limite": 2000
+      },
+      "consulta": {
+        "fuenteId": "usgs",
+        "bbox": { "n": 6.5, "s": 3.2, "o": -78, "e": -74.8 },
+        "inicio": "2026-08-10",
+        "fin": null,
+        "minmag": 2.5,
+        "limite": 2000
+      },
+      "estilo": {
+        "colorInicial": "#ffd166",
+        "colorFinal": "#9d0208",
+        "escala": 22,
+        "opacidad": 100
+      },
+      "tensor": {
+        "lat": 4.5854,
+        "lon": -76.1613,
+        "depth": 120.5,
+        "mag": 7.4,
+        "scalarMoment": 1.66e20,
+        "mrr": 4.887e19,
+        "mtt": -1.5429e20,
+        "mpp": 1.0541e20,
+        "mrt": -1.918e19,
+        "mrp": -9.009e19,
+        "mtp": -2.243e19,
+        "fuente": "us",
+        "planoA": { "strike": 123.99, "dip": 58.63, "rake": 158.52 }
+      }
+    }
+  ]
+}

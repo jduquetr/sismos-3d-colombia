@@ -671,6 +671,8 @@
                     </div>
                     <div class="info-box" id="libreriaFicha" style="margin-top:8px">Pick an event to see what loading it brings in.</div>
                     <button class="btn" id="btnCargarBiblioteca" style="margin-top:8px" disabled>Load event</button>
+                    <button class="btn secundario" id="btnActualizarBiblioteca" hidden>Update from catalog</button>
+                    <div class="nota" id="notaInstantanea" hidden></div>
                     <div class="msg" id="mensajeBiblioteca"></div>
                 </div>
 
@@ -2410,41 +2412,69 @@
         // evento), su estilo y su tensor. El tensor se baja de USGS por id de evento
         // (products['moment-tensor']), así que agregar otro evento es agregar otra
         // ficha; el tensor embebido solo sirve de respaldo si USGS no responde.
-        const LIBRERIA_EVENTOS = [
-            {
-                id: 'choco-2026-08-10',
-                nombre: 'Chocó, Colombia — M7.4 (10 Aug 2026)',
-                lugar: '2 km SE of San José del Palmar, Colombia',
-                fecha: '2026-08-10T12:34:28Z',
-                mag: 7.4, magTipo: 'Mww', profundidad: 108.2,
-                usgsId: 'us6000tjl2',
-                resumen: 'Intermediate-depth earthquake inside the subducting Nazca slab. ' +
-                    'Loading it brings in the regional context (M4+ since 1900), the sequence ' +
-                    'around the mainshock, and the focal sphere from the USGS moment tensor.',
-                contexto: {   // capa de fondo
-                    fuenteId: 'usgs',
-                    bbox: { n: 8, s: 2.5, o: -79, e: -74 },
-                    inicio: '1900-01-01', fin: null, minmag: 4, limite: 2000
-                },
-                consulta: {   // capa de evento especial
-                    fuenteId: 'usgs',
-                    bbox: { n: 6.5, s: 3.2, o: -78, e: -74.8 },
-                    inicio: '2026-08-10', fin: null, minmag: 2.5, limite: 2000
-                },
-                estilo: { colorInicial: '#ffd166', colorFinal: '#9d0208', escala: 22, opacidad: 100 },
-                tensor: {   // respaldo: USGS us6000tjl2, revisado
-                    lat: 4.5854, lon: -76.1613, depth: 120.5,   // centroide CMT, no el hipocentro
-                    mag: 7.4, scalarMoment: 1.66e20,
-                    mrr: 4.887e19, mtt: -1.5429e20, mpp: 1.0541e20,
-                    mrt: -1.918e19, mrp: -9.009e19, mtp: -2.243e19,
-                    fuente: 'us', planoA: { strike: 123.99, dip: 58.63, rake: 158.52 }
-                }
-            }
-        ];
+        // La biblioteca vive en eventos/libreria.json y cada ficha tiene su
+        // instantánea en eventos/<id>.json (la genera tools/snapshot-eventos.mjs).
+        // Se carga la instantánea por defecto: es el dato congelado y citable, y no
+        // depende de que USGS responda. "Update from catalog" vuelve a consultar en
+        // vivo, porque USGS revisa magnitudes y agrega réplicas con el tiempo.
+        const LIBRERIA_URL = 'eventos/libreria.json';
+        const INSTANTANEA_URL = (id) => `eventos/${id}.json`;
+        let LIBRERIA_EVENTOS = [];
 
         let tensoresEvento = [];        // tensores de la ficha cargada (0, 1 o varios)
         let eventoBiblioteca = null;    // ficha cargada
+        let instantaneaCargada = null;  // instantánea en uso (null si se consultó en vivo)
         const cacheTensores = {};
+        const cacheInstantaneas = {};
+
+        async function cargarLibreria() {
+            try {
+                const res = await fetch(LIBRERIA_URL);
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const j = await res.json();
+                LIBRERIA_EVENTOS = Array.isArray(j.eventos) ? j.eventos : [];
+            } catch (err) {
+                LIBRERIA_EVENTOS = [];
+                mensajeBiblioteca(`The event library could not be read (${err.message}). ` +
+                    'The custom query below still works.', 'aviso');
+            }
+            LIBRERIA_EVENTOS.forEach(f => {
+                const op = document.createElement('option');
+                op.value = f.id; op.textContent = f.nombre;
+                $('libreriaEvento').appendChild(op);
+            });
+        }
+
+        async function traerInstantanea(id) {
+            if (cacheInstantaneas[id] !== undefined) return cacheInstantaneas[id];
+            let dato = null;
+            try {
+                const res = await fetch(INSTANTANEA_URL(id));
+                if (res.ok) dato = await res.json();
+            } catch (err) { dato = null; }   // sin instantánea se consulta en vivo
+            cacheInstantaneas[id] = dato;
+            return dato;
+        }
+
+        // Las filas de la instantánea son compactas y su orden está en el propio
+        // archivo (campo "columnas"): id, tiempo, lat, lon, prof, mag, auth, region.
+        function filasAEventos(filas) {
+            const out = [];
+            (filas || []).forEach(f => {
+                const t = new Date(f[1]);
+                if (isNaN(t.getTime())) return;
+                out.push({ id: f[0], time: t, lat: f[2], lon: f[3], prof: f[4], mag: f[5], auth: f[6] || 'us', region: f[7] || '' });
+            });
+            return out;
+        }
+
+        function paramsDeConsulta(c) {
+            return {
+                modo: 'rect', bbox: c.bbox, circulo: null,
+                inicio: c.inicio, fin: c.fin, minmag: c.minmag, limite: c.limite,
+                minsig: 600
+            };
+        }
 
         function fichaPorId(id) {
             return LIBRERIA_EVENTOS.find(f => f.id === id) || null;
@@ -3397,8 +3427,24 @@
             $('btnCargarBiblioteca').disabled = false;
         }
 
+        function ponerTensor(T, ficha) {
+            tensoresEvento = T ? [T] : [];
+            $('grupoTensor').hidden = !T;
+            if (T) {
+                $('fichaTensor').innerHTML = describirTensor(T, ficha);
+                $('showTensor').checked = true;
+            }
+            rehacerTensores();
+        }
+
+        function marcarOrigenDatos(texto, hayInstantanea) {
+            $('notaInstantanea').hidden = false;
+            $('notaInstantanea').innerHTML = texto;
+            $('btnActualizarBiblioteca').hidden = !hayInstantanea;
+        }
+
         // Cargar una ficha = contexto regional (capa de fondo) + secuencia del evento
-        // (capa especial) + su estilo + su tensor. Cada paso avisa por su cuenta.
+        // (capa especial) + su estilo + su tensor, desde la instantánea del repo.
         async function cargarDeBiblioteca() {
             const ficha = fichaPorId($('libreriaEvento').value);
             if (!ficha) return;
@@ -3407,35 +3453,42 @@
             eventoBiblioteca = ficha;
 
             try {
-                escribirConsultaFondo(ficha.contexto);
-                pintarRectangulo(bboxALatLngBounds(ficha.contexto.bbox));
-                await consultar();
-
-                aplicarEstiloEvento(ficha.estilo);
-                escribirConsultaEvento(ficha.consulta);
-                await consultarEvento();
-
-                tensoresEvento = [];
-                $('grupoTensor').hidden = true;
-                if (ficha.usgsId) {
-                    let T = null;
-                    try {
-                        T = await traerTensorUSGS(ficha.usgsId);
-                    } catch (err) {
-                        // El respaldo embebido evita quedarse sin esfera focal si USGS falla.
-                        if (ficha.tensor) T = ficha.tensor;
-                        else mensajeBiblioteca(`Moment tensor unavailable: ${err.message}`, 'aviso');
-                    }
-                    if (T) {
-                        tensoresEvento = [T];
-                        $('grupoTensor').hidden = false;
-                        $('fichaTensor').innerHTML = describirTensor(T, ficha);
-                        $('showTensor').checked = true;
-                    }
+                const snap = await traerInstantanea(ficha.id);
+                if (!snap) {
+                    // Sin archivo: se consulta en vivo, que es el mismo camino del botón.
+                    await cargarEnVivo(ficha, 'No snapshot file for this event — queried live.');
+                    return;
                 }
-                rehacerTensores();
-                mensajeBiblioteca(`<strong>${ficha.nombre}</strong> loaded: regional context, sequence` +
-                    (tensoresEvento.length ? ' and moment tensor.' : '.'), 'ok');
+
+                instantaneaCargada = snap;
+                aplicarEstiloEvento(ficha.estilo);
+
+                const pFondo = paramsDeConsulta(snap.contexto.consulta);
+                escribirConsultaFondo(snap.contexto.consulta);
+                pintarRectangulo(bboxALatLngBounds(pFondo.bbox));
+                aplicarResultado(
+                    { eventos: filasAEventos(snap.contexto.filas), descartados: snap.contexto.descartados || 0 },
+                    pFondo, 'USGS (snapshot)', snap.contexto.total, [],
+                    { fuenteId: snap.contexto.consulta.fuenteId, urlConsulta: snap.contexto.url }
+                );
+
+                const pEv = paramsDeConsulta(snap.evento.consulta);
+                escribirConsultaEvento(snap.evento.consulta);
+                aplicarResultadoEvento(
+                    { eventos: filasAEventos(snap.evento.filas), descartados: snap.evento.descartados || 0 },
+                    pEv, 'USGS (snapshot)', snap.evento.total, [],
+                    { fuenteId: snap.evento.consulta.fuenteId, urlConsulta: snap.evento.url, origen: 'instantanea' }
+                );
+
+                ponerTensor(snap.tensor || ficha.tensor || null, ficha);
+
+                const fechaSnap = new Date(snap.generado);
+                marcarOrigenDatos(
+                    `Loaded from the snapshot of <strong>${fechaSnap.toISOString().slice(0, 10)}</strong> ` +
+                    `(${snap.contexto.filas.length} context · ${snap.evento.filas.length} sequence). ` +
+                    'Frozen data, so a figure made from it stays reproducible. ' +
+                    'USGS keeps revising magnitudes and adding aftershocks — use the button to re-query.', true);
+                mensajeBiblioteca(`<strong>${ficha.nombre}</strong> loaded from its snapshot.`, 'ok');
             } catch (err) {
                 mensajeBiblioteca(`Could not load the event: ${err.message}`, 'error');
             } finally {
@@ -3443,14 +3496,60 @@
             }
         }
 
+        // Vuelve a preguntarle al catálogo, con los mismos parámetros de la ficha.
+        async function cargarEnVivo(ficha, aviso) {
+            const previo = instantaneaCargada;
+            instantaneaCargada = null;
+
+            escribirConsultaFondo(ficha.contexto);
+            pintarRectangulo(bboxALatLngBounds(ficha.contexto.bbox));
+            await consultar();
+
+            aplicarEstiloEvento(ficha.estilo);
+            escribirConsultaEvento(ficha.consulta);
+            await consultarEvento();
+
+            let T = null;
+            try {
+                T = ficha.usgsId ? await traerTensorUSGS(ficha.usgsId) : null;
+            } catch (err) {
+                T = ficha.tensor || null;   // respaldo embebido si USGS no responde
+            }
+            ponerTensor(T, ficha);
+
+            const ahora = datosEvento ? datosEvento.eventos.length : 0;
+            const antes = previo ? previo.evento.filas.length : null;
+            const cambio = antes == null ? ''
+                : (ahora === antes
+                    ? ' Same count as the snapshot.'
+                    : ` The sequence went from ${antes} to ${ahora} events since the snapshot.`);
+            marcarOrigenDatos(
+                (aviso ? aviso + ' ' : '') +
+                `Live from USGS, queried just now.${cambio} ` +
+                'Re-run <code>node tools/snapshot-eventos.mjs ' + ficha.id + '</code> to freeze this into the repo.',
+                !!previo);
+            mensajeBiblioteca(`<strong>${ficha.nombre}</strong> re-queried from USGS.`, 'ok');
+        }
+
+        async function actualizarDesdeCatalogo() {
+            const ficha = eventoBiblioteca;
+            if (!ficha) return;
+            $('btnActualizarBiblioteca').disabled = true;
+            mensajeBiblioteca(`Re-querying ${ficha.nombre} from USGS…`, 'cargando');
+            try {
+                await cargarEnVivo(ficha, null);
+            } catch (err) {
+                mensajeBiblioteca(`Could not re-query the catalog: ${err.message}`, 'error');
+            } finally {
+                $('btnActualizarBiblioteca').disabled = false;
+            }
+        }
+
         function conectarControles() {
-            LIBRERIA_EVENTOS.forEach(f => {
-                const op = document.createElement('option');
-                op.value = f.id; op.textContent = f.nombre;
-                $('libreriaEvento').appendChild(op);
-            });
+            cargarLibreria();
             $('libreriaEvento').addEventListener('change', () => pintarFichaBiblioteca(fichaPorId($('libreriaEvento').value)));
             $('btnCargarBiblioteca').addEventListener('click', cargarDeBiblioteca);
+            $('btnActualizarBiblioteca').addEventListener('click', actualizarDesdeCatalogo);
 
             $('showTensor').addEventListener('change', rehacerTensores);
             $('tensorColorComp').addEventListener('change', rehacerTensores);
