@@ -51,6 +51,7 @@
             --scene-surface:#232322;
             --scene-label:#898781;
             --area-draw:#3987e5;
+            --slab:#6da7ec;              /* superficie de la placa (Slab2) */
             /* capa de fondo: <=35 km corteza (neutro) y rampa naranja 35 km -> máx., como cubo-v2 */
             --crust:#8a8a86;
             --o0:#fde0cc; --o1:#f7b389; --o2:#ef8348; --o3:#d95926; --o4:#a33f18;
@@ -238,6 +239,7 @@
             --msg-ok-bg:rgba(132,204,22,.1); --msg-ok-line:rgba(132,204,22,.3); --msg-ok-ink:#a3e635;
             --msg-load-bg:rgba(99,102,241,.12); --msg-load-line:rgba(129,140,248,.35); --msg-load-ink:#a5b4fc;
             --scene-bg:#0a0a0a; --scene-box:#71717a; --scene-surface:#1c1c1f; --scene-label:#a3a3a3; --area-draw:#818cf8;
+            --slab:#818cf8;
             --crust:#737373;
             --o0:#ecfccb; --o1:#bef264; --o2:#84cc16; --o3:#65a30d; --o4:#4d7c0f;
             --shadow:0 24px 70px rgba(24,24,40,.28);
@@ -255,6 +257,7 @@
             --msg-ok-bg:#f7fee7; --msg-ok-line:#d9f99d; --msg-ok-ink:#3f6212;
             --msg-load-bg:#eef2ff; --msg-load-line:#c7d2fe; --msg-load-ink:#4338ca;
             --scene-bg:#f7f7f8; --scene-box:#71717a; --scene-surface:#e4e4e7; --scene-label:#52525b; --area-draw:#4f46e5;
+            --slab:#4f46e5;
             --crust:#a1a1aa;
             --o0:#bef264; --o1:#84cc16; --o2:#65a30d; --o3:#4d7c0f; --o4:#365314;
             --shadow:0 18px 48px rgba(24,24,27,.08);
@@ -665,6 +668,11 @@
                         <input type="checkbox" id="showBeachball">
                         <label for="showBeachball">Moment tensor (M7.4 Chocó, us6000tjl2)</label>
                     </div>
+                    <div class="checkbox-item">
+                        <input type="checkbox" id="showSlab2">
+                        <label for="showSlab2">Subduction slab — Slab2 (USGS)</label>
+                    </div>
+                    <div class="nota">Modeled top of the subducting slab (Slab2, Hayes et al. 2018). On the 2D map it draws USGS's depth contours worldwide. In 3D it builds the slab over the queried area from those contours, clipped to the box's depth range — where the model has no data, there's a hole.</div>
                     <div class="nota">Real focal sphere computed from USGS's published moment tensor — red = compression, blue = dilatation. Shown at the CMT centroid depth (120.5 km), only visible once an area/query is loaded.</div>
                 </div>
 
@@ -755,6 +763,12 @@
         const USGS = 'https://earthquake.usgs.gov/fdsnws/event/1/';
         const PROXY_ISC = '/api/proxy-isc';
         const SGC_CAPARR = 'https://catalogosismico.sgc.gov.co/rest_cats/caparr';
+        // Slab2 (Hayes et al., 2018) servido por USGS como curvas de profundidad de la
+        // placa: /query da la geometría (para el 3D) y /export una imagen transparente
+        // (para el mapa 2D). Ambos con CORS abierto, verificado en vivo.
+        const SLAB2_QUERY = 'https://earthquake.usgs.gov/arcgis/rest/services/eq/slab2_depth/MapServer/0/query';
+        const SLAB2_EXPORT = 'https://earthquake.usgs.gov/arcgis/rest/services/eq/slab2_depth/MapServer/export';
+        const SLAB2_MAX_CONTORNOS = 80;   // tope de peticiones: el servicio da 1 contorno por petición
         const FECHA_CORTE_SGC = '2020-12-29'; // fecha real del evento más reciente confirmado en el catálogo
 
         const ANCHO_MUNDO = 34;     // unidades 3D del lado mayor del bbox
@@ -978,6 +992,22 @@
             // Placeholder: el imageOverlay real se agrega/quita dinámicamente
             // adentro de este layerGroup (ver Requisito 4 / actualizarCapaGeologica).
             capaGeologica = L.layerGroup();
+
+            // El servicio no es WMS ni tiene teselas propias: se pide una imagen por
+            // tesela con el bbox en 3857, que es lo que entiende /export.
+            const TeselasSlab2 = L.TileLayer.extend({
+                getTileUrl: function (coords) {
+                    const limites = this._tileCoordsToBounds(coords);
+                    const min = L.CRS.EPSG3857.project(limites.getSouthWest());
+                    const max = L.CRS.EPSG3857.project(limites.getNorthEast());
+                    return `${SLAB2_EXPORT}?bbox=${min.x},${min.y},${max.x},${max.y}` +
+                        '&bboxSR=3857&imageSR=3857&size=256,256&format=png32&transparent=true&dpi=96&f=image';
+                }
+            });
+            capaSlab2 = new TeselasSlab2('', {
+                opacity: 0.9, maxZoom: 12, pane: 'overlayPane',
+                attribution: 'Slab2 — Hayes et al. (2018), USGS'
+            });
 
             const capaInicial = document.documentElement.dataset.theme === 'light' ? capaCartoClaro : capaCartoOscuro;
             capaInicial.addTo(map);
@@ -2194,6 +2224,7 @@
                 superficie: v('--scene-surface', '#232322'),
                 etiqueta: v('--scene-label', '#898781'),
                 area: v('--area-draw', '#3987e5'),
+                slab: v('--slab', '#6da7ec'),
                 fuente: v('--font', 'system-ui,sans-serif')
             };
         }
@@ -2338,6 +2369,180 @@
             return esfera;
         }
 
+        // ============================================================
+        // Slab2: contornos de profundidad de la placa (USGS)
+        // ============================================================
+        let capaSlab2 = null, grupoSlab2 = null, slab2Token = 0;
+        let slab2Cache = { clave: null, lineas: null };
+
+        function claveBbox(b) {
+            return [b.n, b.s, b.e, b.o].map(v => Number(v).toFixed(3)).join(',');
+        }
+
+        // Los contornos llegan completos (cruzan todo el margen), así que se cortan
+        // en tramos dentro del área pedida en vez de dibujarlos enteros.
+        function recortarABbox(puntos, b) {
+            const dentro = (p) => p[0] >= b.o && p[0] <= b.e && p[1] >= b.s && p[1] <= b.n;
+            const tramos = [];
+            let actual = [];
+            puntos.forEach(p => {
+                if (dentro(p)) actual.push(p);
+                else { if (actual.length > 1) tramos.push(actual); actual = []; }
+            });
+            if (actual.length > 1) tramos.push(actual);
+            return tramos;
+        }
+
+        async function traerSlab2(b) {
+            const clave = claveBbox(b);
+            if (slab2Cache.clave === clave && slab2Cache.lineas) return slab2Cache.lineas;
+
+            const comun = `geometry=${b.o},${b.s},${b.e},${b.n}&geometryType=esriGeometryEnvelope` +
+                '&inSR=4326&outSR=4326&spatialRel=esriSpatialRelIntersects&where=1%3D1';
+            const resConteo = await fetch(`${SLAB2_QUERY}?${comun}&returnCountOnly=true&f=json`);
+            if (!resConteo.ok) throw new Error(`Slab2 responded with HTTP ${resConteo.status}.`);
+            const conteo = (await resConteo.json()).count || 0;
+            if (!conteo) { slab2Cache = { clave, lineas: [] }; return []; }
+
+            // maxAllowableOffset simplifica la geometría del lado del servidor: un
+            // contorno pasa de ~55 KB a ~1 KB sin que se note a esta escala.
+            const tolerancia = Math.max(0.005, (b.e - b.o) / 600);
+            const total = Math.min(conteo, SLAB2_MAX_CONTORNOS);
+            const lineas = [];
+            for (let inicio = 0; inicio < total; inicio += 8) {
+                const tanda = [];
+                for (let i = inicio; i < Math.min(inicio + 8, total); i++) {
+                    tanda.push(
+                        fetch(`${SLAB2_QUERY}?${comun}&outFields=depth,region&resultOffset=${i}` +
+                              `&resultRecordCount=1&maxAllowableOffset=${tolerancia}&f=geojson`)
+                            .then(r => r.ok ? r.json() : null)
+                            .catch(() => null)   // un contorno caído no tumba el resto
+                    );
+                }
+                (await Promise.all(tanda)).forEach(j => {
+                    ((j && j.features) || []).forEach(f => {
+                        const prof = Number(f.properties && f.properties.depth);
+                        if (!isFinite(prof)) return;
+                        const g = f.geometry || {};
+                        const partes = g.type === 'MultiLineString' ? g.coordinates
+                            : (g.type === 'LineString' ? [g.coordinates] : []);
+                        partes.forEach(pts => recortarABbox(pts, b).forEach(
+                            tramo => lineas.push({ prof: Math.abs(prof), pts: tramo })));
+                    });
+                });
+            }
+            slab2Cache = { clave, lineas };
+            return lineas;
+        }
+
+        // Superficie a partir de los contornos: malla regular sobre el área, con la
+        // profundidad interpolada por distancia inversa. Las celdas sin contornos
+        // cerca quedan vacías — preferible un hueco a inventar geometría.
+        function mallaSlab2(lineas, P) {
+            const b = datosFondo.bbox;
+            const muestras = [];
+            lineas.forEach(l => l.pts.forEach((p, i) => {
+                if (i % 2 === 0) muestras.push([p[0], p[1], l.prof]);
+            }));
+            if (muestras.length < 8) return null;
+
+            const N = 44;
+            const pasoLon = (b.e - b.o) / N, pasoLat = (b.n - b.s) / N;
+            const radio = Math.max(pasoLon, pasoLat) * 3, radio2 = radio * radio;
+            const tope = datosFondo.profTope, piso = datosFondo.profPiso;
+
+            const indice = new Int32Array((N + 1) * (N + 1)).fill(-1);
+            const vertices = [];
+            for (let j = 0; j <= N; j++) {
+                for (let i = 0; i <= N; i++) {
+                    const lon = b.o + i * pasoLon, lat = b.s + j * pasoLat;
+                    let num = 0, den = 0;
+                    for (const m of muestras) {
+                        const dx = m[0] - lon, dy = m[1] - lat;
+                        const d2 = dx * dx + dy * dy;
+                        if (d2 > radio2) continue;
+                        const w = 1 / (d2 + 1e-9);
+                        num += w * m[2]; den += w;
+                    }
+                    if (!den) continue;
+                    const prof = num / den;
+                    if (prof < tope || prof > piso) continue;   // fuera de la caja
+                    indice[j * (N + 1) + i] = vertices.length / 3;
+                    vertices.push(P.x(lon), P.y(lat), P.z(prof));
+                }
+            }
+            if (vertices.length < 9) return null;
+
+            const caras = [];
+            for (let j = 0; j < N; j++) {
+                for (let i = 0; i < N; i++) {
+                    const a = indice[j * (N + 1) + i], c = indice[j * (N + 1) + i + 1];
+                    const d = indice[(j + 1) * (N + 1) + i], e = indice[(j + 1) * (N + 1) + i + 1];
+                    if (a < 0 || c < 0 || d < 0 || e < 0) continue;
+                    caras.push(a, c, e, a, e, d);
+                }
+            }
+            if (!caras.length) return null;
+
+            const geo = new THREE.BufferGeometry();
+            geo.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+            geo.setIndex(caras);
+            geo.computeVertexNormals();
+            return new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
+                color: new THREE.Color(leerTema3D().slab),
+                transparent: true, opacity: 0.22, side: THREE.DoubleSide, depthWrite: false
+            }));
+        }
+
+        function construirGrupoSlab2(lineas, P) {
+            const g = new THREE.Group();
+            const material = new THREE.LineBasicMaterial({
+                color: new THREE.Color(leerTema3D().slab), transparent: true, opacity: 0.85
+            });
+            const tope = datosFondo.profTope, piso = datosFondo.profPiso;
+            lineas.forEach(l => {
+                if (l.prof < tope || l.prof > piso) return;
+                const geo = new THREE.BufferGeometry().setFromPoints(
+                    l.pts.map(p => new THREE.Vector3(P.x(p[0]), P.y(p[1]), P.z(l.prof))));
+                g.add(new THREE.Line(geo, material));
+            });
+            const superficie = mallaSlab2(lineas, P);
+            if (superficie) g.add(superficie);
+            return g.children.length ? g : null;
+        }
+
+        function quitarSlab2() {
+            if (!grupoSlab2) return;
+            if (grupo) grupo.remove(grupoSlab2);
+            grupoSlab2.traverse(o => {
+                if (o.geometry) o.geometry.dispose();
+                if (o.material) o.material.dispose();
+            });
+            grupoSlab2 = null;
+        }
+
+        async function actualizarSlab2() {
+            quitarSlab2();
+            if (!$('showSlab2').checked || !datosFondo.bbox || !grupo) return;
+            const miToken = ++slab2Token;
+            try {
+                const lineas = await traerSlab2(datosFondo.bbox);
+                if (miToken !== slab2Token || !grupo) return;   // llegó otra área antes
+                if (!lineas.length) {
+                    mensaje('Slab2 has no modeled slab in this area (it only covers subduction zones).', 'aviso');
+                    return;
+                }
+                const g = construirGrupoSlab2(lineas, proyector());
+                if (miToken !== slab2Token || !g) return;
+                grupoSlab2 = g;
+                grupo.add(g);
+            } catch (err) {
+                if (miToken === slab2Token) {
+                    mensaje(`The Slab2 service (USGS) could not be queried: ${err.message}`, 'error');
+                }
+            }
+        }
+
         function proyector() {
             const b = datosFondo.bbox;
             const centroLat = (b.n + b.s) / 2, centroLon = (b.e + b.o) / 2;
@@ -2427,6 +2632,9 @@
                 grupo.add(mallaBeachball);
             }
 
+            grupoSlab2 = null;      // limpiarEscena ya vació el grupo
+            actualizarSlab2();
+
             // Encuadre: distancia justa para que quepa la esfera que envuelve la caja.
             const radio = Math.hypot((x1 - x0) / 2, (y1 - y0) / 2, PROF_MUNDO / 2);
             distancia = Math.max(24, radio / Math.sin(55 / 2 * Math.PI / 180) * 0.82);
@@ -2492,6 +2700,7 @@
             const ev3d = $('showEvents').checked;
             if (renderFondo.malla) renderFondo.malla.visible = ev3d && $('showFondo').checked;
             if (renderEvento.malla) renderEvento.malla.visible = ev3d && $('showEventoCapa').checked;
+            if (grupoSlab2) grupoSlab2.visible = $('showSlab2').checked;
         }
 
         // Igual que arriba, pero para las 2 capas de marcadores 2D del mapa.
@@ -2943,6 +3152,12 @@
 
             $('showBeachball').addEventListener('change', () => {
                 if (datosFondo.bbox) construirEscena();
+            });
+
+            $('showSlab2').addEventListener('change', (e) => {
+                if (!map) return;
+                if (e.target.checked) capaSlab2.addTo(map); else map.removeLayer(capaSlab2);
+                actualizarSlab2();
             });
 
             $('mapaSuperiorSelector').addEventListener('change', () => {
