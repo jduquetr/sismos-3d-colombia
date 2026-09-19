@@ -708,8 +708,17 @@
                     <div class="group-title">Moment tensor</div>
                     <div class="checkbox-item">
                         <input type="checkbox" id="showTensor" checked>
-                        <label for="showTensor">Show focal sphere</label>
+                        <label for="showTensor">Show focal spheres</label>
                     </div>
+                    <div class="checkbox-item">
+                        <input type="checkbox" id="tensoresDeConsulta" checked>
+                        <label for="tensoresDeConsulta">Take them from the query too</label>
+                    </div>
+                    <div class="campo">
+                        <label for="tensorTope">How many at most</label>
+                        <input type="number" id="tensorTope" min="1" max="200" step="5" value="25">
+                    </div>
+                    <div class="nota">After each query, the events that publish a moment tensor are read from USGS — the largest ones first, up to this many, since it is one request per event.</div>
                     <div class="info-box" id="fichaTensor" style="margin-top:6px">—</div>
                     <div class="slider-group" style="margin-top:8px">
                         <div class="slider-label">
@@ -726,10 +735,10 @@
                         <input type="range" id="tensorOpacidadSlider" min="0" max="100" value="100">
                     </div>
                     <div class="bbox-grid" style="margin-top:6px">
-                        <div class="campo"><label for="tensorColorComp">Compression</label><input type="color" id="tensorColorComp" value="#d03b3b"></div>
-                        <div class="campo"><label for="tensorColorDil">Dilatation</label><input type="color" id="tensorColorDil" value="#3987e5"></div>
+                        <div class="campo"><label for="tensorColorComp">Compression</label><input type="color" id="tensorColorComp" value="#111111"></div>
+                        <div class="campo"><label for="tensorColorDil">Dilatation</label><input type="color" id="tensorColorDil" value="#ffffff"></div>
                     </div>
-                    <div class="nota">P-wave radiation pattern computed from the published moment tensor: compression on one side of the nodal planes, dilatation on the other. It is drawn at the CMT centroid, which is deeper than the hypocentre the catalog lists.</div>
+                    <div class="nota">P-wave radiation pattern computed from the published moment tensor, in the usual convention: <strong>black where the first motion is compressive</strong>, <strong>white where it is dilatational</strong>. The colors can be changed above. Each sphere sits at its CMT centroid, which is deeper than the hypocentre the catalog lists.</div>
                 </div>
 
                 <div class="control-group">
@@ -1966,7 +1975,10 @@
                 if (![lat, lon, prof, mag].every(isFinite) || !t || isNaN(t.getTime())) { descartados++; continue; }
                 out.push({
                     id: f.id, lat, lon, prof: Math.abs(prof), mag,
-                    time: t, auth: (p.net || 'us').toUpperCase(), region: p.place || ''
+                    time: t, auth: (p.net || 'us').toUpperCase(), region: p.place || '',
+                    // 'types' viene separado por comas; hay que comparar el tipo completo
+                    // porque 'internal-moment-tensor' no es público.
+                    tensor: String(p.types || '').split(',').includes('moment-tensor')
                 });
             }
             return { eventos: out, descartados };
@@ -2323,6 +2335,7 @@
             actualizarPanel();
             actualizarTimeline(parseFloat($('timelineSlider').value) / 100);
             actualizarBotonExportar();
+            tensoresDeLaConsulta();
         }
 
         // ============================================================
@@ -2705,9 +2718,11 @@
             const geo = new THREE.SphereGeometry(radio, 48, 36);
             const pos = geo.attributes.position;
             const colores = new Float32Array(pos.count * 3);
-            const rojo = new THREE.Color($('tensorColorComp').value);
-            const azul = new THREE.Color($('tensorColorDil').value);
-            const blanco = new THREE.Color(0xf2ede0);
+            const compresion = new THREE.Color($('tensorColorComp').value);
+            const dilatacion = new THREE.Color($('tensorColorDil').value);
+            // Tono intermedio para suavizar el borde de los planos nodales, sacado de
+            // los dos colores elegidos: con negro/blanco es el gris del medio.
+            const neutro = compresion.clone().lerp(dilatacion, 0.5);
 
             for (let i = 0; i < pos.count; i++) {
                 // Vértice de una esfera unitaria en el espacio local de la
@@ -2719,8 +2734,10 @@
                 const R = radiacionP(T, gr, gt, gp);
                 // Degradado suave hacia blanco cerca de los planos nodales
                 // (R≈0) en vez de un corte binario duro.
-                const c = rojo.clone().lerp(blanco, 1 - Math.min(1, Math.abs(R) * 3));
-                const color = R >= 0 ? c : blanco.clone().lerp(azul, Math.min(1, Math.abs(R) * 3));
+                const mezcla = Math.min(1, Math.abs(R) * 3);
+                const color = R >= 0
+                    ? neutro.clone().lerp(compresion, mezcla)
+                    : neutro.clone().lerp(dilatacion, mezcla);
                 colores[i * 3] = color.r; colores[i * 3 + 1] = color.g; colores[i * 3 + 2] = color.b;
             }
             geo.setAttribute('color', new THREE.BufferAttribute(colores, 3));
@@ -2733,6 +2750,18 @@
             const esfera = new THREE.Mesh(geo, mat);
             esfera.position.set(P.x(T.lon), P.y(T.lat), P.z(T.depth));
             esfera.name = 'tensor';
+
+            // Con la esfera en blanco y negro el borde se pierde contra el fondo del
+            // tema claro, así que se le pone un contorno del color de compresión.
+            const borde = new THREE.Mesh(
+                new THREE.SphereGeometry(radio * 1.03, 24, 18),
+                new THREE.MeshBasicMaterial({
+                    color: compresion, side: THREE.BackSide,
+                    transparent: opacidad < 1, opacity: opacidad
+                })
+            );
+            borde.name = 'tensor';
+            esfera.add(borde);
             return esfera;
         }
 
@@ -3605,6 +3634,53 @@
             $('btnCargarBiblioteca').disabled = false;
         }
 
+        // Tensores de los propios eventos consultados: USGS los publica por evento, así
+        // que se piden uno a uno y se acota a los mayores para no lanzar cientos de
+        // peticiones. Se juntan con el de la ficha, si la hay.
+        let tensoresConsultaToken = 0;
+        async function tensoresDeLaConsulta() {
+            if (!$('tensoresDeConsulta').checked) return;
+            const tope = Math.max(1, Math.min(200, parseInt($('tensorTope').value, 10) || 25));
+            const candidatos = [];
+            [datosFondo, datosEvento].forEach(capa => {
+                if (!capa || !capa.eventos) return;
+                capa.eventos.forEach(ev => { if (ev.tensor && ev.id) candidatos.push(ev); });
+            });
+            if (!candidatos.length) return;
+
+            const vistos = new Set();
+            const elegidos = candidatos
+                .sort((a, b) => b.mag - a.mag)
+                .filter(ev => (vistos.has(ev.id) ? false : vistos.add(ev.id)))
+                .slice(0, tope);
+
+            const miToken = ++tensoresConsultaToken;
+            // Los de la consulta anterior se descartan; el de la ficha cargada se queda.
+            const base = tensoresEvento.filter(T => !T.deConsulta);
+            const yaPuestos = new Set(base.map(T => T.usgsId).filter(Boolean));
+            const nuevos = [];
+            for (let i = 0; i < elegidos.length; i += 6) {
+                const tanda = elegidos.slice(i, i + 6).map(ev =>
+                    (yaPuestos.has(ev.id) ? Promise.resolve(null) : traerTensorUSGS(ev.id))
+                        .then(T => (T ? { ...T, usgsId: ev.id, nombre: ev.region || ev.id, deConsulta: true } : null))
+                        .catch(() => null));   // un evento sin tensor legible no detiene al resto
+                (await Promise.all(tanda)).forEach(T => { if (T) nuevos.push(T); });
+                if (miToken !== tensoresConsultaToken) return;   // llegó otra consulta
+            }
+            if (!nuevos.length) return;
+            // Varias esferas al 100 % se tapan entre ellas y con la sismicidad: si el
+            // usuario no ha tocado la escala, se entra en pequeño.
+            const total = base.length + nuevos.length;
+            if (total > 5 && $('tensorEscalaSlider').value === '100') {
+                $('tensorEscalaSlider').value = 25;
+                $('tensorEscalaValue').textContent = '25%';
+            }
+            ponerTensor(base.concat(nuevos), eventoBiblioteca || {
+                nombre: `${nuevos.length} event${nuevos.length === 1 ? '' : 's'} from the query`,
+                usgsId: null
+            });
+        }
+
         function ponerTensor(T, ficha) {
             const lista = Array.isArray(T) ? T.filter(Boolean) : (T ? [T] : []);
             tensoresEvento = lista;
@@ -3799,6 +3875,8 @@
             $('idUSGS').addEventListener('keydown', (e) => { if (e.key === 'Enter') cargarPorIdUSGS(); });
 
             $('showTensor').addEventListener('change', rehacerTensores);
+            $('tensoresDeConsulta').addEventListener('change', (e) => { if (e.target.checked) tensoresDeLaConsulta(); });
+            $('tensorTope').addEventListener('change', () => { if ($('tensoresDeConsulta').checked) tensoresDeLaConsulta(); });
             $('tensorColorComp').addEventListener('change', rehacerTensores);
             $('tensorColorDil').addEventListener('change', rehacerTensores);
             $('tensorEscalaSlider').addEventListener('input', (e) => {
