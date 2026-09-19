@@ -120,6 +120,11 @@ export function fichaDesdeDetalle(detalle, opciones = {}) {
     const semiSecuencia = Math.min(400, Math.max(50, 2 * L));
     const fecha = new Date(p.time);
     const desde = new Date(fecha.getTime() - 30 * 864e5).toISOString().slice(0, 10);
+    // La ventana termina un año después del sismo, no "hoy": para un evento de 1906
+    // "hasta hoy" serían 120 años de sismicidad, que no es una secuencia. Si el evento
+    // es reciente, el corte cae en el futuro y equivale a "hasta hoy".
+    const finVentana = new Date(fecha.getTime() + 365 * 864e5);
+    const hasta = finVentana > new Date() ? null : finVentana.toISOString().slice(0, 10);
     const nombreLugar = p.place || detalle.id;
 
     return {
@@ -134,7 +139,8 @@ export function fichaDesdeDetalle(detalle, opciones = {}) {
         resumen: opciones.resumen ||
             `Loaded from the USGS event feed. Area and time window are derived from the magnitude ` +
             `(rupture length ≈ ${L.toFixed(0)} km): sequence within ±${semiSecuencia.toFixed(0)} km of the ` +
-            `epicentre, regional context three times wider. Adjust the card if your case needs another framing.`,
+            `epicentre and up to ${hasta ? 'a year after the event' : 'today'}, regional context three times wider. ` +
+            'Adjust the card if your case needs another framing.',
         contexto: {
             fuenteId: 'usgs',
             bbox: cajaAlrededor(lat, lon, semiSecuencia * 3),
@@ -143,7 +149,7 @@ export function fichaDesdeDetalle(detalle, opciones = {}) {
         consulta: {
             fuenteId: 'usgs',
             bbox: cajaAlrededor(lat, lon, semiSecuencia),
-            inicio: desde, fin: null, minmag: 2.5, limite: 2000
+            inicio: desde, fin: hasta, minmag: 2.5, limite: 2000
         },
         estilo: { colorInicial: '#ffd166', colorFinal: '#9d0208', escala: 22, opacidad: 100 },
         tensor: tensorDesdeDetalle(detalle)

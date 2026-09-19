@@ -93,19 +93,22 @@ cualquier evento en vivo con la misma regla, sin guardarlo.
 
 ### Eventos significativos por año
 
-El panel trae también el catálogo de significativos de USGS navegable: se elige el año en una
-caja de selección y sale la lista de ese año, ordenada por magnitud y marcando cuáles tienen
-mecanismo focal. Al elegir uno se lee su feed de detalle y se carga con la sismicidad
-alrededor, igual que con un id escrito a mano.
+El panel replica el catálogo *Browse significant earthquakes* de USGS: se elige un año (1900
+hasta hoy, el mismo rango de su página) y **se consulta el catálogo en vivo**, con el mismo
+criterio, `sig > 600`. `sig` combina magnitud, reportes de sentido y nivel de alerta PAGER, así
+que no es un umbral de magnitud: en 2011 el primero de la lista es un M4.0 en Ohio.
 
-La lista sale de `eventos/significativos.json`, que se genera con
+La lista sale en orden cronológico inverso, como la de USGS, y marca cuáles eventos tienen
+mecanismo focal. Al elegir uno se lee su feed de detalle y se carga con la sismicidad
+alrededor.
+
+Si USGS no responde, se cae a una instantánea guardada en el repo y lo advierte. Esa
+instantánea es el catálogo completo (9292 eventos desde 1615, partido por décadas en
+`eventos/significativos/`) y se regenera con
 
 ```bash
-node tools/snapshot-eventos.mjs --indice --desde-anio 2000 [--minsig 600]
+node tools/snapshot-eventos.mjs --indice [--desde-anio 1600] [--minsig 600]
 ```
-
-`sig` es el criterio del propio USGS (pesa magnitud, reportes de sentido y daños), no un umbral
-de magnitud. El índice se descarga solo cuando se abre esa sección, no al cargar la página.
 
 ### Ventanas de catálogo
 
