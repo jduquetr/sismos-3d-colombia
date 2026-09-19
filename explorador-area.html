@@ -693,9 +693,8 @@
 
                 <div class="control-group">
                     <div class="group-title">Significant events by year</div>
-                    <div class="nota">USGS's own significance criterion — the <code>sig</code> field behind their significant earthquakes page, which weighs magnitude, felt reports and damage — not a magnitude cutoff. Open a year to see its events; picking one loads it with the seismicity around it.</div>
-                    <button class="btn secundario" id="btnAbrirIndice" style="margin-top:8px">Browse significant events</button>
-                    <div class="campo" id="campoAnio" hidden style="margin-top:8px">
+                    <div class="nota">The same listing as USGS's <em>Browse significant earthquakes</em>: any event whose significance (<code>sig</code>, which combines magnitude, felt reports and PAGER alert level) is above 600 — not a magnitude cutoff. Years 1900 to today, as on their page. Picking a year queries the USGS catalog live; picking an event loads it with the seismicity around it.</div>
+                    <div class="campo" style="margin-top:8px">
                         <label for="anioSignificativos">Year</label>
                         <select id="anioSignificativos">
                             <option value="">— pick a year —</option>
@@ -2499,53 +2498,90 @@
         // ============================================================
         // Índice de significativos por año (eventos/significativos.json)
         // ============================================================
-        const INDICE_URL = 'eventos/significativos.json';
-        let indiceAnios = null;
+        // Mismo catálogo y mismo criterio que la página "Browse significant earthquakes"
+        // de USGS: sig > 600 y años desde 1900. Al elegir un año se consulta el catálogo
+        // en vivo; si USGS no responde, se cae a la instantánea del repo
+        // (eventos/significativos/<década>.json), que no es lo mismo y se avisa.
+        const ANIO_MIN_SIGNIFICATIVOS = 1900;
+        const MINSIG = 600;
+        const DECADA_URL = (d) => `eventos/significativos/${d}.json`;
+        const cacheAnios = {};
+        const cacheDecadas = {};
 
-        async function abrirIndiceSignificativos() {
-            if (indiceAnios) return;             // ya está en memoria
-            $('btnAbrirIndice').disabled = true;
-            mensajeIndice('Reading the significant-events index…', 'cargando');
-            try {
-                const res = await fetch(INDICE_URL);
-                if (!res.ok) throw new Error(`HTTP ${res.status}`);
-                indiceAnios = await res.json();
-                pintarSelectorAnios(indiceAnios);
-                const total = Object.values(indiceAnios.anios).reduce((n, f) => n + f.length, 0);
-                mensajeIndice(`${total} significant events, ${indiceAnios.desde}–${indiceAnios.hasta} ` +
-                    `(sig ≥ ${indiceAnios.minsig}). Index frozen on ${indiceAnios.generado.slice(0, 10)}; ` +
-                    'each event is then read live from USGS.', 'ok');
-                $('btnAbrirIndice').hidden = true;
-            } catch (err) {
-                mensajeIndice(`The index could not be read: ${err.message}. ` +
-                    'Regenerate it with <code>node tools/snapshot-eventos.mjs --indice</code>.', 'error');
-            } finally {
-                $('btnAbrirIndice').disabled = false;
+        function llenarAniosSignificativos() {
+            const sel = $('anioSignificativos');
+            const actual = new Date().getUTCFullYear();
+            for (let a = actual; a >= ANIO_MIN_SIGNIFICATIVOS; a--) {
+                const op = document.createElement('option');
+                op.value = String(a);
+                op.textContent = String(a);
+                sel.appendChild(op);
             }
         }
 
-        // Un año se elige en la caja de selección y su lista se arma en ese momento:
-        // son miles de filas si se arman todas de golpe.
-        function pintarSelectorAnios(indice) {
-            const sel = $('anioSignificativos');
-            sel.innerHTML = '<option value="">— pick a year —</option>';
-            Object.keys(indice.anios).map(Number).sort((a, b) => b - a).forEach(anio => {
-                const op = document.createElement('option');
-                op.value = String(anio);
-                op.textContent = `${anio} — ${(indice.anios[anio] || []).length} events`;
-                sel.appendChild(op);
-            });
-            $('campoAnio').hidden = false;
+        // Una fila del índice: [id, tiempo, lat, lon, prof, mag, lugar, sig, tensor]
+        function filaSignificativa(f) {
+            const p = f.properties || {}, c = (f.geometry || {}).coordinates || [];
+            const mag = Number(p.mag), lat = Number(c[1]), lon = Number(c[0]), prof = Number(c[2]);
+            if (![mag, lat, lon].every(isFinite)) return null;
+            return [f.id, p.time, lat, lon, isFinite(prof) ? Math.abs(prof) : null, mag,
+                    p.place || '', Number(p.sig) || 0,
+                    String(p.types || '').split(',').includes('moment-tensor') ? 1 : 0];
         }
 
-        function pintarListaAnio(anio) {
+        async function significativosDeAnio(anio) {
+            if (cacheAnios[anio]) return cacheAnios[anio];
+            const url = `${USGS}query?format=geojson&orderby=time&minsig=${MINSIG}&limit=20000` +
+                `&starttime=${anio}-01-01&endtime=${anio}-12-31T23:59:59`;
+            const res = await fetch(url);
+            if (!res.ok) throw new Error(`USGS responded with HTTP ${res.status}.`);
+            const j = await res.json();
+            const filas = (j.features || []).map(filaSignificativa).filter(Boolean);
+            cacheAnios[anio] = { filas, envivo: true };
+            return cacheAnios[anio];
+        }
+
+        // Respaldo: la instantánea del repo, por si el catálogo no contesta.
+        async function significativosGuardados(anio) {
+            const decada = Math.floor(anio / 10) * 10;
+            if (!cacheDecadas[decada]) {
+                const res = await fetch(DECADA_URL(decada));
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                cacheDecadas[decada] = await res.json();
+            }
+            return { filas: (cacheDecadas[decada].anios || {})[anio] || [], envivo: false };
+        }
+
+        async function pintarListaAnio(anio) {
             const cont = $('listaAnio');
             cont.innerHTML = '';
-            const filas = (indiceAnios && indiceAnios.anios[anio]) || [];
+            if (!anio) { $('mensajeIndice').className = 'msg'; return; }
+
+            mensajeIndice(`Querying the USGS catalog for ${anio}…`, 'cargando');
+            let datos;
+            try {
+                datos = await significativosDeAnio(anio);
+            } catch (err) {
+                try {
+                    datos = await significativosGuardados(anio);
+                    mensajeIndice(`USGS did not answer (${err.message}) — showing the snapshot stored ` +
+                        'in this repo, which may be out of date.', 'aviso');
+                } catch (err2) {
+                    mensajeIndice(`Could not read ${anio}: ${err.message}`, 'error');
+                    return;
+                }
+            }
+            const filas = datos.filas;
+            if (datos.envivo) {
+                mensajeIndice(`<strong>${filas.length}</strong> significant events in ${anio} ` +
+                    `(sig &gt; ${MINSIG}), live from the USGS catalog.`, filas.length ? 'ok' : 'aviso');
+            }
             if (!filas.length) return;
+
+            // Orden cronologico inverso, como la pagina de USGS.
             const lista = document.createElement('div');
             lista.className = 'lista-anio';
-            filas.slice().sort((a, b) => b[5] - a[5]).forEach(f => {
+            filas.slice().sort((a, b) => b[1] - a[1]).forEach(f => {
                 const b = document.createElement('button');
                 b.type = 'button';
                 b.className = 'evento-fila';
@@ -3758,8 +3794,8 @@
             $('btnCargarBiblioteca').addEventListener('click', cargarDeBiblioteca);
             $('btnActualizarBiblioteca').addEventListener('click', actualizarDesdeCatalogo);
             $('btnCargarPorId').addEventListener('click', () => cargarPorIdUSGS());
-            $('btnAbrirIndice').addEventListener('click', abrirIndiceSignificativos);
-            $('anioSignificativos').addEventListener('change', (e) => pintarListaAnio(Number(e.target.value)));
+            llenarAniosSignificativos();
+            $('anioSignificativos').addEventListener('change', (e) => { pintarListaAnio(Number(e.target.value)); });
             $('idUSGS').addEventListener('keydown', (e) => { if (e.key === 'Enter') cargarPorIdUSGS(); });
 
             $('showTensor').addEventListener('change', rehacerTensores);

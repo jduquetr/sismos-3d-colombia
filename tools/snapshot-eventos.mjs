@@ -22,7 +22,7 @@
 //
 // Escribe eventos/<id>.json. Commitea el resultado.
 
-import { readFile, writeFile } from 'node:fs/promises';
+import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { URL_DETALLE, fichaDesdeDetalle, fichaVentana, tensorDesdeDetalle } from './derivar-ficha.mjs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -164,42 +164,69 @@ async function instantanea(ficha) {
     console.log(`  → eventos/${ficha.id}.json (${kb} KB)`);
 }
 
-// Índice de eventos significativos por año: lo que alimenta el acordeón del panel.
-// 'significativo' es el criterio del propio USGS (campo sig, el mismo de su página de
-// significant earthquakes); no es un umbral de magnitud.
+// Índice de eventos significativos: lo que alimenta el selector de año del panel.
+// 'significativo' es el criterio del propio USGS (campo sig, el que hay detrás de su
+// página de significant earthquakes); no es un umbral de magnitud.
+//
+// El catálogo completo arranca en 1615 y son ~9300 eventos: en un solo archivo casi
+// 1 MB. Se parte por DÉCADAS y se pide solo la década del año elegido; el manifiesto
+// (unos pocos KB) trae la cuenta por año y es lo único que se carga de entrada.
+// Las consultas también van por década: 42 peticiones en vez de 400.
+const COLUMNAS_INDICE = ['id', 'tiempo', 'lat', 'lon', 'prof', 'mag', 'lugar', 'sig', 'tensor'];
+
+function filaIndice(f) {
+    const p = f.properties || {}, c = (f.geometry || {}).coordinates || [];
+    const mag = Number(p.mag), lat = Number(c[1]), lon = Number(c[0]), prof = Number(c[2]);
+    if (![mag, lat, lon].every(Number.isFinite)) return null;
+    return [
+        f.id, p.time, +lat.toFixed(3), +lon.toFixed(3),
+        Number.isFinite(prof) ? +Math.abs(prof).toFixed(1) : null,
+        +mag.toFixed(1), p.place || '', Number(p.sig) || 0,
+        String(p.types || '').split(',').includes('moment-tensor') ? 1 : 0
+    ];
+}
+
 async function indiceSignificativos(desdeAnio, hastaAnio, minsig) {
-    const anios = {};
+    const carpeta = join(RAIZ, 'eventos', 'significativos');
+    await mkdir(carpeta, { recursive: true });
+    const cuentas = {};
     let total = 0;
-    for (let a = hastaAnio; a >= desdeAnio; a--) {
-        const url = `${USGS}query?format=geojson&orderby=time&starttime=${a}-01-01` +
-            `&endtime=${a}-12-31T23:59:59&minsig=${minsig}&limit=20000`;
+
+    const primeraDecada = Math.floor(desdeAnio / 10) * 10;
+    for (let d = Math.floor(hastaAnio / 10) * 10; d >= primeraDecada; d -= 10) {
+        const desde = `${String(Math.max(d, desdeAnio)).padStart(4, '0')}-01-01`;
+        const hasta = `${String(Math.min(d + 9, hastaAnio)).padStart(4, '0')}-12-31T23:59:59`;
+        const url = `${USGS}query?format=geojson&orderby=time&starttime=${desde}&endtime=${hasta}` +
+            `&minsig=${minsig}&limit=20000`;
         const j = await traer(url);
-        const filas = [];
+        const porAnio = {};
         for (const f of (j.features || [])) {
-            const p = f.properties || {}, c = (f.geometry || {}).coordinates || [];
-            const mag = Number(p.mag), lat = Number(c[1]), lon = Number(c[0]), prof = Number(c[2]);
-            if (![mag, lat, lon].every(Number.isFinite)) continue;
-            filas.push([
-                f.id, p.time, +lat.toFixed(3), +lon.toFixed(3),
-                Number.isFinite(prof) ? +Math.abs(prof).toFixed(1) : null,
-                +mag.toFixed(1), p.place || '', Number(p.sig) || 0,
-                String(p.types || '').split(',').includes('moment-tensor') ? 1 : 0
-            ]);
+            const fila = filaIndice(f);
+            if (!fila) continue;
+            const anio = new Date(fila[1]).getUTCFullYear();
+            (porAnio[anio] = porAnio[anio] || []).push(fila);
         }
-        anios[a] = filas;
-        total += filas.length;
-        process.stdout.write(`  ${a}: ${filas.length}${String.fromCharCode(10)}`);
+        const n = Object.values(porAnio).reduce((a, v) => a + v.length, 0);
+        total += n;
+        Object.keys(porAnio).forEach(a => { cuentas[a] = porAnio[a].length; });
+        if (n) {
+            await writeFile(join(carpeta, `${d}.json`),
+                JSON.stringify({ decada: d, columnas: COLUMNAS_INDICE, anios: porAnio }), 'utf8');
+        }
+        console.log(`  ${d}s: ${n}`);
     }
-    const salida = {
+
+    const manifiesto = {
         generado: new Date().toISOString(),
         fuente: 'USGS FDSN event query, minsig',
-        minsig, desde: desdeAnio, hasta: hastaAnio,
-        nota: 'Índice para navegar por año. Al elegir un evento la página lee su feed de detalle y lo carga en vivo.',
-        columnas: ['id', 'tiempo', 'lat', 'lon', 'prof', 'mag', 'lugar', 'sig', 'tensor'],
-        anios
+        minsig, desde: desdeAnio, hasta: hastaAnio, total,
+        nota: 'Cuenta por año; las filas están en eventos/significativos/<década>.json. ' +
+              'Al elegir un evento la página lee su feed de detalle y lo carga en vivo.',
+        columnas: COLUMNAS_INDICE,
+        cuentas
     };
-    await writeFile(join(RAIZ, 'eventos', 'significativos.json'), JSON.stringify(salida), 'utf8');
-    console.log(`→ eventos/significativos.json (${(JSON.stringify(salida).length / 1024).toFixed(0)} KB, ${total} eventos)`);
+    await writeFile(join(RAIZ, 'eventos', 'significativos.json'), JSON.stringify(manifiesto), 'utf8');
+    console.log(`→ eventos/significativos.json (manifiesto, ${(JSON.stringify(manifiesto).length / 1024).toFixed(0)} KB) · ${total} eventos en ${Object.keys(cuentas).length} años`);
 }
 
 const rutaLibreria = join(RAIZ, 'eventos', 'libreria.json');
@@ -230,7 +257,7 @@ if (args[0] === '--add') {
     console.log('Listo. Commitea eventos/libreria.json y eventos/<id>.json.');
 } else if (args[0] === '--indice') {
     const opt = (n, d) => { const i = args.indexOf(n); return i >= 0 ? args[i + 1] : d; };
-    const desde = Number(opt('--desde-anio', 2000));
+    const desde = Number(opt('--desde-anio', 1600));   // el catálogo arranca en 1615
     const hasta = Number(opt('--hasta-anio', new Date().getUTCFullYear()));
     const minsig = Number(opt('--minsig', 600));
     console.log(`Índice de significativos ${desde}–${hasta} (sig ≥ ${minsig})`);
