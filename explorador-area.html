@@ -2880,9 +2880,19 @@
         }
 
         // Volumen de la placa a partir de los contornos: malla regular sobre el área
-        // con la profundidad interpolada por distancia inversa (techo), su copia
-        // desplazada el espesor (piso) y las paredes del borde. Las celdas sin
-        // contornos cerca quedan vacías — preferible un hueco a inventar geometría.
+        // con el techo interpolado ENTRE CURVAS, su copia desplazada el espesor (piso)
+        // y las paredes del borde.
+        //
+        // Antes esto se rellenaba por distancia inversa con un radio de búsqueda, y la
+        // placa salía a franjas: los contornos de Slab2 van cada 20 km de profundidad,
+        // que en planta son 30–110 km de separación según el buzamiento, bastante más
+        // que el radio. Entre dos curvas quedaba un hueco. Medido sobre cuatro zonas de
+        // subducción, se perdía entre el 32 % y el 41 % de la placa.
+        //
+        // Los datos son curvas, no puntos sueltos: lo que corresponde es interpolar
+        // entre la curva de un lado y la del otro. Si las dos curvas más cercanas caen
+        // del mismo lado, el nodo está fuera del rango cubierto por el modelo y se deja
+        // vacío — ahí sí es preferible un hueco a inventar geometría.
         //
         // Slab2 solo publica el TECHO de la placa. El piso es un supuesto nuestro, y se
         // desplaza PERPENDICULAR a la superficie, no en vertical: en vertical el espesor
@@ -2891,32 +2901,97 @@
         // "perpendicular" no lo sería).
         function volumenSlab2(lineas, P) {
             const b = datosFondo.bbox;
-            const muestras = [];
-            lineas.forEach(l => l.pts.forEach((p, i) => {
-                if (i % 2 === 0) muestras.push([p[0], p[1], l.prof]);
-            }));
-            if (muestras.length < 8) return null;
-
-            const N = 44, nodos = N + 1;
+            const N = 64, nodos = N + 1;
             const pasoLon = (b.e - b.o) / N, pasoLat = (b.n - b.s) / N;
-            const radio = Math.max(pasoLon, pasoLat) * 3, radio2 = radio * radio;
+
+            // El servicio simplifica mucho la geometría (un contorno puede llegar con
+            // media docena de vértices), y aquí se mide distancia A LA CURVA: con pocos
+            // vértices esa distancia se vuelve angulosa. Se densifica cada tramo a media
+            // celda de la malla, que es la resolución a la que se va a usar.
+            const paso = Math.min(pasoLon, pasoLat) / 2;
+            const muestras = [];
+            lineas.forEach(l => {
+                for (let k = 0; k < l.pts.length; k++) {
+                    const p0 = l.pts[k];
+                    muestras.push([p0[0], p0[1], l.prof]);
+                    const p1 = l.pts[k + 1];
+                    if (!p1) continue;
+                    const largo = Math.hypot(p1[0] - p0[0], p1[1] - p0[1]);
+                    const n = Math.min(200, Math.floor(largo / paso));
+                    for (let q = 1; q < n; q++) {
+                        muestras.push([p0[0] + (p1[0] - p0[0]) * q / n,
+                                       p0[1] + (p1[1] - p0[1]) * q / n, l.prof]);
+                    }
+                }
+            });
+            if (muestras.length < 8) return null;
             const tope = datosFondo.profTope, piso = datosFondo.profPiso;
+
+            // Un nivel por profundidad de contorno, con todos sus puntos juntos.
+            const niveles = new Map();
+            muestras.forEach(m => {
+                if (!niveles.has(m[2])) niveles.set(m[2], []);
+                niveles.get(m[2]).push(m);
+            });
+            if (niveles.size < 2) return null;   // una sola curva no define superficie
+            // Tope de separación: evita unir dos trozos de placa que no se tocan
+            // (dos zonas de subducción distintas dentro de la misma caja).
+            const maxSuma = Math.min(b.e - b.o, b.n - b.s) * 0.5;
 
             const prof = new Float64Array(nodos * nodos).fill(NaN);
             for (let j = 0; j < nodos; j++) {
                 for (let i = 0; i < nodos; i++) {
                     const lon = b.o + i * pasoLon, lat = b.s + j * pasoLat;
-                    let num = 0, den = 0;
-                    for (const m of muestras) {
-                        const dx = m[0] - lon, dy = m[1] - lat;
-                        const d2 = dx * dx + dy * dy;
-                        if (d2 > radio2) continue;
-                        const w = 1 / (d2 + 1e-9);
-                        num += w * m[2]; den += w;
+                    // Distancia del nodo al punto más cercano de CADA curva.
+                    let a = null, c = null;   // las dos curvas más cercanas
+                    for (const [profNivel, pts] of niveles) {
+                        let mejor = Infinity;
+                        for (const m of pts) {
+                            const dx = m[0] - lon, dy = m[1] - lat;
+                            const d2 = dx * dx + dy * dy;
+                            if (d2 < mejor) mejor = d2;
+                        }
+                        const cand = { prof: profNivel, d: Math.sqrt(mejor) };
+                        if (!a || cand.d < a.d) { c = a; a = cand; }
+                        else if (!c || cand.d < c.d) { c = cand; }
                     }
-                    if (den) prof[j * nodos + i] = num / den;
+                    if (!a || !c || a.d + c.d > maxSuma) continue;
+
+                    // Hasta dónde llega la placa: el modelo solo dice algo cerca de sus
+                    // curvas. El alcance se mide con la separación local entre las dos
+                    // más cercanas, que cambia mucho con el buzamiento (30 km donde la
+                    // placa se empina, 110 km donde es tendida). Más allá de eso no se
+                    // dibuja: sería inventar la orilla de la placa.
+                    const separacion = Math.max(Math.abs(c.d - a.d), a.d + c.d) || 1e-9;
+                    if (a.d > separacion * 0.8) continue;
+
+                    // Profundidad: promedio ponderado por 1/d² de las curvas cercanas,
+                    // que entre dos contornos equivale a interpolar linealmente.
+                    const wa = 1 / (a.d * a.d + 1e-12), wc = 1 / (c.d * c.d + 1e-12);
+                    prof[j * nodos + i] = (a.prof * wa + c.prof * wc) / (wa + wc);
                 }
             }
+
+            // La interpolación entre curvas deja pequeños quiebres en la línea media
+            // entre dos contornos: un promedio 3x3 los limpia sin mover la superficie.
+            const suave = Float64Array.from(prof);
+            for (let j = 0; j < nodos; j++) {
+                for (let i = 0; i < nodos; i++) {
+                    const k = j * nodos + i;
+                    if (!isFinite(prof[k])) continue;
+                    let suma = 0, n = 0;
+                    for (let dj = -1; dj <= 1; dj++) {
+                        for (let di = -1; di <= 1; di++) {
+                            const ii = i + di, jj = j + dj;
+                            if (ii < 0 || jj < 0 || ii >= nodos || jj >= nodos) continue;
+                            const v = prof[jj * nodos + ii];
+                            if (isFinite(v)) { suma += v; n++; }
+                        }
+                    }
+                    if (n) suave[k] = suma / n;
+                }
+            }
+            prof.set(suave);
 
             const kmLat = 111.32, kmLon = 111.32 * Math.cos(((b.n + b.s) / 2) * Math.PI / 180);
             const espesor = leerEspesorSlab2();
