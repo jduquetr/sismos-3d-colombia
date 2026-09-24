@@ -38,6 +38,8 @@ Solo una de las dos bases de datos históricas se muestra a la vez (selector des
 ## Archivos
 
 - `explorador-area.html` — explorador por área: se dibuja un bbox en el mapa y consulta en vivo el catálogo de EMSC (con respaldo automático a USGS), reproyecta la escena 3D al área pedida y exporta GeoJSON
+- `api/proxy-sgc.js` — proxy serverless (Vercel) al catálogo actual de la Red Sismológica Nacional del SGC (`apicatalogador.sgc.gov.co`, 1993–hoy). Esa API solo acepta peticiones con Origin de sgc.gov.co, por eso no se llama desde el navegador; el proxy pagina de a 500 eventos (tope 10,000 por consulta) y recorta el modo círculo
+- `api/proxy-isc.js` — proxy serverless al Boletín ISC (sin CORS)
 - `cubo-v2.html` — versión 2 del visor (demo en vivo): misma base de datos, revisión de la experiencia de uso y de las gráficas, con pestaña de análisis sismológico
 - `index.html` — redirige a `explorador-area.html` (vista por defecto)
 - `subduccion-puntos.json` — dataset USGS 1960–2026 (subducción Nazca), formato compacto `[lon, lat, depth, mag]`
@@ -54,7 +56,9 @@ Solo una de las dos bases de datos históricas se muestra a la vez (selector des
 python -m http.server 8000
 ```
 
-Luego abre `http://localhost:8000/explorador-area.html`
+Luego abre `http://localhost:8000/explorador-area.html`
+
+Las fuentes que pasan por proxy (SGC RSNC e ISC) necesitan las funciones de `api/`, que `python -m http.server` no ejecuta: para probarlas en local usa `vercel dev`.
 
 ## Eventos especiales
 

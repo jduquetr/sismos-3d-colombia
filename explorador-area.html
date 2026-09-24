@@ -476,6 +476,11 @@
                             <div class="nota">The most complete research catalog in the world (aggregates hundreds of local seismological networks). Very recent events can take time to consolidate. It can be slower than the other sources. It's the general bulletin — not the curated ISC-GEM catalog, which isn't available through this API.</div>
                         </label>
                         <label class="fuente-opcion">
+                            <input type="radio" name="fuente" value="sgc_rsnc">
+                            <span class="fuente-nombre">SGC (Colombian National Seismological Network)</span>
+                            <div class="nota">Current catalog of the Servicio Geológico Colombiano — the same one behind sgc.gov.co/sismos. Covers Colombia and its surroundings <strong>from 1993 to today</strong>, including small local earthquakes (down to ~M1) that global catalogs don't record. Recent events may still be automatic solutions pending review.</div>
+                        </label>
+                        <label class="fuente-opcion">
                             <input type="radio" name="fuente" value="sgc">
                             <span class="fuente-nombre">SGC Historical (Colombia/Central America)</span>
                             <div class="nota">Integrated historical catalog of Colombia and the border with Central America (SGC + ISC + NEIC + other networks), from 1610 <strong>through late 2020</strong>. The best source for historical research in this region, but it doesn't include recent or current seismicity.</div>
@@ -800,6 +805,11 @@
                                 <span class="fuente-nombre">ISC Bulletin</span>
                             </label>
                             <label class="fuente-opcion">
+                                <input type="radio" name="fuenteEvento" value="sgc_rsnc">
+                                <span class="fuente-nombre">SGC (RSNC)</span>
+                                <div class="nota">Colombia and surroundings, 1993 to today.</div>
+                            </label>
+                            <label class="fuente-opcion">
                                 <input type="radio" name="fuenteEvento" value="sgc">
                                 <span class="fuente-nombre">SGC Historical</span>
                                 <div class="nota">Not useful for recent events (no data after 2020).</div>
@@ -879,6 +889,10 @@
         const USGS = 'https://earthquake.usgs.gov/fdsnws/event/1/';
         const PROXY_ISC = '/api/proxy-isc';
         const SGC_CAPARR = 'https://catalogosismico.sgc.gov.co/rest_cats/caparr';
+        // Catálogo actual de la RSNC: su API exige Origin de sgc.gov.co, así que
+        // va por el proxy serverless /api/proxy-sgc (ver comentario en ese archivo).
+        const PROXY_SGC = '/api/proxy-sgc';
+        const INICIO_RSNC = '1993-01-01'; // la RSNC opera desde 1993: no hay eventos antes
         // Slab2 (Hayes et al., 2018) servido por USGS como curvas de profundidad de la
         // placa: /query da la geometría (para el 3D) y /export una imagen transparente
         // (para el mapa 2D). Ambos con CORS abierto, verificado en vivo.
@@ -894,7 +908,7 @@
         const CLAVE_LS = 'explorador-area-sismos';
 
 
-        // Las 4 fuentes ofrecidas — límite real de extracción verificado con
+        // Las 5 fuentes ofrecidas — límite real de extracción verificado con
         // pruebas en vivo contra cada servidor (ver documentación del proyecto).
         // maxLimite=null significa "esta fuente no admite parámetro de límite".
         const FUENTES = {
@@ -913,6 +927,12 @@
                 // Sin tope confirmado del lado del servidor: autolimitado desde el cliente.
                 maxLimite: 10000, limiteConfigurable: true, defaultLimite: 500,
                 fechaDesdeDefault: '1900-01-01'
+            },
+            sgc_rsnc: {
+                id: 'sgc_rsnc', label: 'SGC (RSNC)',
+                // La API pagina de a 500; el proxy junta páginas hasta este tope.
+                maxLimite: 10000, limiteConfigurable: true, defaultLimite: 500,
+                fechaDesdeDefault: INICIO_RSNC
             },
             sgc: {
                 id: 'sgc', label: 'SGC Historical',
@@ -1842,7 +1862,9 @@
             if (!campoLimite.value || parseInt(campoLimite.value, 10) > F.maxLimite) {
                 campoLimite.value = Math.min(F.defaultLimite, F.maxLimite);
             }
-            if (fuenteId === 'isc') {
+            if (fuenteId === 'sgc_rsnc') {
+                nota.textContent = `The SGC serves 500 events per page; this interface gathers pages up to ${F.maxLimite.toLocaleString('en')} events per query (most recent first).`;
+            } else if (fuenteId === 'isc') {
                 nota.textContent = `ISC doesn't enforce a fixed cap, but this interface self-limits it to ${F.maxLimite.toLocaleString('en')} events per query to avoid disproportionate responses.`;
             } else {
                 nota.textContent = `Hard server cap: ${F.maxLimite.toLocaleString('en')} events per query.`;
@@ -1895,7 +1917,7 @@
             if (!campoLimite.value || parseInt(campoLimite.value, 10) > F.maxLimite) {
                 campoLimite.value = Math.min(F.defaultLimite, F.maxLimite);
             }
-            nota.textContent = fuenteId === 'isc'
+            nota.textContent = fuenteId === 'isc' || fuenteId === 'sgc_rsnc'
                 ? `Self-limited to ${F.maxLimite.toLocaleString('en')} events per query.`
                 : `Hard server cap: ${F.maxLimite.toLocaleString('en')} events per query.`;
         }
@@ -1958,6 +1980,20 @@
             }
             const b = p.bbox;
             return `${SGC_CAPARR}/${b.s}/${b.n}/${b.o}/${b.e}/${profMin}/${profMax}/${p.minmag}/${magMax}/${fechaIniMs}/${fechaFinMs}`;
+        }
+
+        // SGC RSNC: el proxy recibe los mismos nombres FDSN que USGS (radio en km)
+        // y se encarga de paginar y de recortar el círculo, que la API no soporta.
+        function urlSGCRsnc(p) {
+            let geo;
+            if (p.modo === 'circulo') {
+                const c = p.circulo;
+                geo = `&latitude=${c.lat}&longitude=${c.lon}&maxradiuskm=${c.radioKm}`;
+            } else {
+                const b = p.bbox;
+                geo = `&minlatitude=${b.s}&maxlatitude=${b.n}&minlongitude=${b.o}&maxlongitude=${b.e}`;
+            }
+            return `${PROXY_SGC}?starttime=${p.inicio}&endtime=${p.fin}&minmagnitude=${p.minmag}&limit=${p.limite}${geo}`;
         }
 
         // USGS: profundidad positiva en geometry.coordinates[2], time en epoch ms.
@@ -2026,6 +2062,20 @@
             return { eventos: out, descartados };
         }
 
+        // SGC RSNC: el proxy ya entrega el shape casi interno; solo se valida y
+        // se convierte la fecha (ISO UTC).
+        function normalizarSGCRsnc(eventos) {
+            const out = [];
+            let descartados = 0;
+            for (const e of eventos) {
+                const lat = Number(e.lat), lon = Number(e.lon), prof = Number(e.prof), mag = Number(e.mag);
+                const t = e.time ? new Date(e.time) : null;
+                if (![lat, lon, prof, mag].every(isFinite) || !t || isNaN(t.getTime())) { descartados++; continue; }
+                out.push({ id: e.id, lat, lon, prof: Math.abs(prof), mag, time: t, auth: 'SGC', region: e.place || '' });
+            }
+            return { eventos: out, descartados };
+        }
+
         // Pide el total disponible sin traerse los eventos. Si falla, no pasa nada.
         // Solo existe /count verificado en USGS — ISC no tiene ese endpoint (404
         // confirmado) y SGC no tiene noción de "total" (no pagina ni limita).
@@ -2067,6 +2117,16 @@
                 }
                 const texto = await res.text();
                 crudos = { tipo: 'isc', texto };
+            } else if (fuenteId === 'sgc_rsnc') {
+                const res = await fetch(urlSGCRsnc(p));
+                let j = null;
+                try { j = await res.json(); } catch (e) { /* sin cuerpo JSON */ }
+                if (!res.ok) throw new Error(`SGC responded with HTTP ${res.status} (via proxy). ${(j && j.error) || ''}`);
+                if (!j || !Array.isArray(j.eventos)) throw new Error('SGC returned an unexpected response.');
+                crudos = { tipo: 'sgc_rsnc', eventos: j.eventos, total: j.total };
+                if (p.inicio < INICIO_RSNC) {
+                    notas.push('The SGC network catalog starts in 1993; for older seismicity use SGC Historical.');
+                }
             } else if (fuenteId === 'sgc') {
                 const res = await fetch(urlSGC(p));
                 if (!res.ok) throw new Error('SGC responded with HTTP ' + res.status);
@@ -2086,6 +2146,7 @@
             let norm;
             if (crudos.tipo === 'usgs') norm = normalizarUSGS(crudos.features);
             else if (crudos.tipo === 'isc') norm = normalizarISC(crudos.texto);
+            else if (crudos.tipo === 'sgc_rsnc') norm = normalizarSGCRsnc(crudos.eventos);
             else norm = normalizarSGC(crudos.features);
 
             norm.eventos.sort((a, b) => a.time - b.time);
@@ -2093,6 +2154,8 @@
             let total = null;
             if (fuenteId === 'usgs' || fuenteId === 'usgs_sig') {
                 total = await pedirTotal(urlUSGS(p, 'count', fuenteId === 'usgs_sig' ? p.minsig : null));
+            } else if (crudos.tipo === 'sgc_rsnc') {
+                total = crudos.total;   // conteo del servidor (null en modo círculo)
             }
 
             // Truncamiento: para fuentes con tope (USGS/USGS Sig/ISC), si el
@@ -2101,6 +2164,7 @@
 
             const urlUsada = fuenteId === 'usgs' || fuenteId === 'usgs_sig' ? urlUSGS(p, 'query', fuenteId === 'usgs_sig' ? p.minsig : null)
                 : fuenteId === 'isc' ? urlISC(p, 'query')
+                : fuenteId === 'sgc_rsnc' ? urlSGCRsnc(p)
                 : urlSGC(p);
 
             return { norm, total, notas, truncado, fuenteId, fuenteLabel: F.label, urlUsada };

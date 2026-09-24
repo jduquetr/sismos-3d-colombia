@@ -1,4 +1,7 @@
 {
   "buildCommand": "echo Build complete",
-  "outputDirectory": "./"
+  "outputDirectory": "./",
+  "functions": {
+    "api/proxy-sgc.js": { "maxDuration": 30 }
+  }
 }
