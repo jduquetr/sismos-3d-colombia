@@ -97,6 +97,7 @@
         #pantallaArea, #pantallaVisor { position: absolute; inset: 0; }
         #map { width: 100%; height: 100%; }
         #map.dibujando { cursor: crosshair; }
+        #map.mapa-plano { background: var(--axis); }
         #map.dibujando .leaflet-grab { cursor: crosshair; }
         #canvas3d { width: 100%; height: 100%; position: relative; overflow: hidden; }
 
@@ -448,6 +449,11 @@
                         </div>
                     </div>
 
+                    <div class="campo" style="margin-top:8px">
+                        <label for="mapaBaseSelector">Base map</label>
+                        <select id="mapaBaseSelector"></select>
+                    </div>
+
                     <button class="btn secundario" id="btnDibujar">Draw on map</button>
                     <button class="btn secundario" id="btnLimpiarArea" type="button">Clear area</button>
                     <div class="nota" id="notaArea">Drag on the map to define the area, or enter the coordinates.</div>
@@ -540,6 +546,10 @@
                         <label for="mapaSuperiorSelector">Top-face map</label>
                         <select id="mapaSuperiorSelector">
                             <option value="osm" selected>OpenStreetMap</option>
+                            <option value="satelite">Satellite (Esri)</option>
+                            <option value="topoEsri">Topographic (Esri)</option>
+                            <option value="relieve">Shaded relief (Esri)</option>
+                            <option value="calles">Roads (Esri)</option>
                             <option value="hot">OSM Humanitarian</option>
                             <option value="topo">OpenTopoMap</option>
                             <option value="claro">Light Gray (Esri)</option>
@@ -1103,6 +1113,7 @@
         // Capas base — las 5 de teselas ya verificadas en vivo + la geológica
         // del SGC, que es un caso especial (imageOverlay dinámico, no teselas).
         let capaOSM, capaHOT, capaTopo, capaCartoClaro, capaCartoOscuro, capaGeologica;
+        let capaPlana, MAPAS_BASE;
         let capaBaseActual = null, capaBaseAnterior = null, capaGeologicaActiva = false;
         let imagenGeologica = null, geoAbortController = null;
 
@@ -1137,6 +1148,24 @@
             capaCartoOscuro = L.tileLayer('https://services.arcgisonline.com/arcgis/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
                 attribution: 'Esri, HERE, Garmin, © OpenStreetMap contributors', maxZoom: 16
             });
+            // Esri sirve con CORS abierto (verificado): sirven también para la cara 3D.
+            // El relieve solo tiene teselas hasta z13; más cerca se amplían.
+            const esri = (servicio, opciones) => L.tileLayer(
+                `https://services.arcgisonline.com/arcgis/rest/services/${servicio}/MapServer/tile/{z}/{y}/{x}`, opciones);
+            const ATRIB_ESRI_IMG = 'Esri, Maxar, Earthstar Geographics';
+            const ATRIB_ESRI = 'Esri, HERE, Garmin, USGS, © OpenStreetMap contributors';
+            const capaSatelite = esri('World_Imagery', { attribution: ATRIB_ESRI_IMG, maxZoom: 19 });
+            const capaHibrido = L.layerGroup([
+                esri('World_Imagery', { attribution: ATRIB_ESRI_IMG, maxZoom: 19 }),
+                esri('Reference/World_Transportation', { maxZoom: 19 }),
+                esri('Reference/World_Boundaries_and_Places', { maxZoom: 19 })
+            ]);
+            const capaTopoEsri = esri('World_Topo_Map', { attribution: ATRIB_ESRI, maxZoom: 19 });
+            const capaRelieve = esri('World_Shaded_Relief', { attribution: 'Esri, USGS', maxZoom: 19, maxNativeZoom: 13 });
+            const capaCalles = esri('World_Street_Map', { attribution: ATRIB_ESRI, maxZoom: 19 });
+            // Sin teselas: el fondo gris lo pone la clase mapa-plano del contenedor.
+            capaPlana = L.layerGroup();
+
             // Placeholder: el imageOverlay real se agrega/quita dinámicamente
             // adentro de este layerGroup (ver Requisito 4 / actualizarCapaGeologica).
             capaGeologica = L.layerGroup();
@@ -1164,21 +1193,50 @@
             capaBaseActual = capaInicial;
             capaBaseAnterior = capaInicial;
 
-            const capasBase = {
-                'OpenStreetMap': capaOSM,
-                'OSM Humanitarian (HOT)': capaHOT,
-                'OpenTopoMap': capaTopo,
-                'Light Gray (Esri)': capaCartoClaro,
-                'Dark Gray (Esri)': capaCartoOscuro,
-                'Geological Map of Colombia (SGC)': capaGeologica
-            };
+            // Un solo registro alimenta el control de capas del mapa y el selector
+            // "Base map" de la pestaña Área; los dos quedan sincronizados vía baselayerchange.
+            MAPAS_BASE = [
+                ['satelite', 'Satellite (Esri)', capaSatelite],
+                ['hibrido', 'Satellite + labels (Esri)', capaHibrido],
+                ['topoEsri', 'Topographic (Esri)', capaTopoEsri],
+                ['topo', 'OpenTopoMap', capaTopo],
+                ['relieve', 'Shaded relief (Esri)', capaRelieve],
+                ['calles', 'Roads (Esri)', capaCalles],
+                ['osm', 'OpenStreetMap', capaOSM],
+                ['hot', 'OSM Humanitarian (HOT)', capaHOT],
+                ['claro', 'Light Gray (Esri)', capaCartoClaro],
+                ['oscuro', 'Dark Gray (Esri)', capaCartoOscuro],
+                ['plano', 'Flat gray (no map)', capaPlana],
+                ['geologico', 'Geological Map of Colombia (SGC)', capaGeologica]
+            ];
+            const capasBase = {};
+            const selectorBase = $('mapaBaseSelector');
+            for (const [id, label, capa] of MAPAS_BASE) {
+                capasBase[label] = capa;
+                selectorBase.add(new Option(label, id));
+            }
             L.control.layers(capasBase, null, { position: 'topright' }).addTo(map);
+
+            const sincronizarSelectorBase = (capa) => {
+                const fila = MAPAS_BASE.find(([, , c]) => c === capa);
+                if (fila) selectorBase.value = fila[0];
+                $('map').classList.toggle('mapa-plano', capa === capaPlana);
+            };
+            sincronizarSelectorBase(capaInicial);
 
             map.on('baselayerchange', (e) => {
                 capaBaseAnterior = capaBaseActual;
                 capaBaseActual = e.layer;
                 capaGeologicaActiva = (e.layer === capaGeologica);
+                sincronizarSelectorBase(e.layer);
                 if (capaGeologicaActiva) actualizarCapaGeologica();
+            });
+
+            selectorBase.addEventListener('change', () => {
+                const fila = MAPAS_BASE.find(([id]) => id === selectorBase.value);
+                if (!fila || fila[2] === capaBaseActual) return;
+                map.removeLayer(capaBaseActual);
+                fila[2].addTo(map);   // dispara baselayerchange: actualiza estado y control de capas
             });
 
             capaMarcadores = L.layerGroup().addTo(map);
@@ -1417,7 +1475,11 @@
             hot:    (x, y, z) => `https://a.tile.openstreetmap.fr/hot/${z}/${x}/${y}.png`,
             topo:   (x, y, z) => `https://tile.opentopomap.org/${z}/${x}/${y}.png`,
             claro:  (x, y, z) => `https://services.arcgisonline.com/arcgis/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/${z}/${y}/${x}`,
-            oscuro: (x, y, z) => `https://services.arcgisonline.com/arcgis/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/${z}/${y}/${x}`
+            oscuro: (x, y, z) => `https://services.arcgisonline.com/arcgis/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/${z}/${y}/${x}`,
+            satelite: (x, y, z) => `https://services.arcgisonline.com/arcgis/rest/services/World_Imagery/MapServer/tile/${z}/${y}/${x}`,
+            topoEsri: (x, y, z) => `https://services.arcgisonline.com/arcgis/rest/services/World_Topo_Map/MapServer/tile/${z}/${y}/${x}`,
+            relieve:  (x, y, z) => `https://services.arcgisonline.com/arcgis/rest/services/World_Shaded_Relief/MapServer/tile/${z}/${y}/${x}`,
+            calles:   (x, y, z) => `https://services.arcgisonline.com/arcgis/rest/services/World_Street_Map/MapServer/tile/${z}/${y}/${x}`
         };
 
         function lon2xTile(lon, z) { return (lon + 180) / 360 * Math.pow(2, z); }
@@ -1478,7 +1540,9 @@
                     // bucle de teselas de más abajo nunca termina (la página se congela).
                     b = { n: Math.min(b.n, LAT_MERCATOR), s: Math.max(b.s, -LAT_MERCATOR), e: b.e, o: b.o };
                     const lonSpan = Math.max(b.e - b.o, 0.001);
-                    let z = Math.max(1, Math.min(16, Math.round(Math.log2(360 / lonSpan * 9))));
+                    // El relieve de Esri no tiene teselas reales más allá de z13 (sirve un relleno).
+                    const zTope = tipo === 'relieve' ? 13 : 16;
+                    let z = Math.max(1, Math.min(zTope, Math.round(Math.log2(360 / lonSpan * 9))));
                     let x0, x1, y0, y1;
                     do {
                         x0 = Math.floor(lon2xTile(b.o, z)); x1 = Math.floor(lon2xTile(b.e, z));
