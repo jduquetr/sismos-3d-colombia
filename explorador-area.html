@@ -102,6 +102,17 @@
 
         .hud { position: absolute; background: var(--overlay); border: 1px solid var(--line); border-radius: 8px; backdrop-filter: blur(6px); z-index: 900; }
         #credit { left: 12px; bottom: 12px; padding: 6px 10px; font-size: 10.5px; color: var(--ink-3); }
+        /* Contador de la reproducción: cuántos sismos han ocurrido hasta el instante
+           que muestra la línea de tiempo. */
+        #contador { left: 12px; top: 12px; padding: 10px 14px; min-width: 150px; }
+        /* En el mapa la esquina superior izquierda es del control de zoom de Leaflet,
+           así que ahí el contador se corre al centro. */
+        #contador.en-mapa { left: 50%; transform: translateX(-50%); }
+        #contador .n { font-size: 26px; font-weight: 650; color: var(--ink); font-variant-numeric: tabular-nums; line-height: 1.05; }
+        #contador .de { font-size: 11px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+        #contador .cuando { font-size: 11.5px; color: var(--ink-2); font-variant-numeric: tabular-nums; margin-top: 5px; }
+        #contador .capa { display: flex; align-items: center; gap: 6px; font-size: 10.5px; color: var(--ink-3); margin-top: 3px; }
+        #contador .punto { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
         #credit b { color: var(--ink-2); font-weight: 600; }
         #credit a { color: inherit; text-decoration: none; }
         #credit a:hover { color: var(--ink-2); text-decoration: underline; }
@@ -371,6 +382,12 @@
                     <div class="canvas-vacio" id="canvasVacio">Define an area and query the catalog to see the earthquakes in 3D</div>
                 </div>
             </div>
+            <div class="hud" id="contador" hidden>
+                <div class="n" id="contadorN">0</div>
+                <div class="de">of <span id="contadorTotal">0</span> events</div>
+                <div class="cuando" id="contadorFecha">—</div>
+                <div id="contadorCapas"></div>
+            </div>
             <div class="hud" id="credit">Data <a href="https://earthquake.usgs.gov/fdsnws/event/1/" target="_blank" rel="noopener">USGS</a> · <a href="https://www.isc.ac.uk/iscbulletin/" target="_blank" rel="noopener">ISC</a> · <a href="https://www2.sgc.gov.co/sgc/sismos/Paginas/catalogo-sismico.aspx" target="_blank" rel="noopener">SGC</a> · <b>SWTectonics</b> — EAFIT University</div>
         </div>
 
@@ -474,6 +491,11 @@
                             <input type="radio" name="fuente" value="isc">
                             <span class="fuente-nombre">ISC Bulletin</span>
                             <div class="nota">The most complete research catalog in the world (aggregates hundreds of local seismological networks). Very recent events can take time to consolidate. It can be slower than the other sources. It's the general bulletin — not the curated ISC-GEM catalog, which isn't available through this API.</div>
+                        </label>
+                        <label class="fuente-opcion">
+                            <input type="radio" name="fuente" value="sgc_rsnc">
+                            <span class="fuente-nombre">SGC · RSNC (Colombia, 2018 → today)</span>
+                            <div class="nota">The live catalog of Colombia's national seismological network, reviewed by SGC analysts — the one behind their expert-query page. It has no API, so the query goes through this site's own proxy. Its server is slow with wide windows: a year over the whole country takes about 20 s, and it is the best source for small and recent Colombian earthquakes, which the global catalogs never record.</div>
                         </label>
                         <label class="fuente-opcion">
                             <input type="radio" name="fuente" value="sgc">
@@ -800,6 +822,10 @@
                                 <span class="fuente-nombre">ISC Bulletin</span>
                             </label>
                             <label class="fuente-opcion">
+                                <input type="radio" name="fuenteEvento" value="sgc_rsnc">
+                                <span class="fuente-nombre">SGC · RSNC (2018 → today)</span>
+                            </label>
+                            <label class="fuente-opcion">
                                 <input type="radio" name="fuenteEvento" value="sgc">
                                 <span class="fuente-nombre">SGC Historical</span>
                                 <div class="nota">Not useful for recent events (no data after 2020).</div>
@@ -878,6 +904,10 @@
 
         const USGS = 'https://earthquake.usgs.gov/fdsnws/event/1/';
         const PROXY_ISC = '/api/proxy-isc';
+        // El catálogo vivo del SGC no es una API sino un formulario, y su servidor no
+        // manda CORS: la extracción (POST → id → KML → filas) la hace api/proxy-sgc.js.
+        const PROXY_SGC = '/api/proxy-sgc';
+        const FECHA_INICIO_RSNC = '2018-03-01';   // desde aquí el SGC procesa con SeisComP
         const SGC_CAPARR = 'https://catalogosismico.sgc.gov.co/rest_cats/caparr';
         // Slab2 (Hayes et al., 2018) servido por USGS como curvas de profundidad de la
         // placa: /query da la geometría (para el 3D) y /export una imagen transparente
@@ -913,6 +943,13 @@
                 // Sin tope confirmado del lado del servidor: autolimitado desde el cliente.
                 maxLimite: 10000, limiteConfigurable: true, defaultLimite: 500,
                 fechaDesdeDefault: '1900-01-01'
+            },
+            sgc_rsnc: {
+                id: 'sgc_rsnc', label: 'SGC · RSNC (2018 → today)',
+                // El formulario no tiene tope de registros; el límite real es el tiempo
+                // que aguanta su servidor, así que no se ofrece un campo de límite.
+                maxLimite: null, limiteConfigurable: false, defaultLimite: null,
+                fechaDesdeDefault: FECHA_INICIO_RSNC
             },
             sgc: {
                 id: 'sgc', label: 'SGC Historical',
@@ -1945,6 +1982,15 @@
                 (metodo === 'query' ? `&limit=${p.limite}` : '');
         }
 
+        // SGC vivo (RSNC): todo va al proxy, que hace la consulta al formulario del SGC
+        // y devuelve filas ya parseadas. Su búsqueda por área es un cuadrante, así que
+        // en modo círculo se manda el bbox circunscrito y se recorta después.
+        function urlSGCRSNC(p) {
+            const b = p.bbox;
+            return `${PROXY_SGC}?n=${b.n}&s=${b.s}&e=${b.e}&o=${b.o}` +
+                `&desde=${p.inicio}&hasta=${p.fin}&magmin=${p.minmag}&magmax=9&profmin=0&profmax=700`;
+        }
+
         // SGC: ruta posicional (no query params), orden fijo ya verificado con curl.
         // Bbox: latMin/latMax/lonMin/lonMax/profMin/profMax/magMin/magMax/fechaIniMs/fechaFinMs
         // Radial: latCentro/lonCentro/radioKm/profMin/profMax/magMin/magMax/fechaIniMs/fechaFinMs
@@ -2008,6 +2054,19 @@
             return { eventos: out, descartados };
         }
 
+        // Filas del proxy del SGC: [id, tiempo, lat, lon, prof, mag, region].
+        function normalizarSGCRSNC(filas) {
+            const out = [];
+            let descartados = 0;
+            (filas || []).forEach(f => {
+                const t = new Date(f[1]);
+                const lat = Number(f[2]), lon = Number(f[3]), prof = Number(f[4]), mag = Number(f[5]);
+                if (![lat, lon, prof, mag].every(isFinite) || isNaN(t.getTime())) { descartados++; return; }
+                out.push({ id: f[0], lat, lon, prof: Math.abs(prof), mag, time: t, auth: 'SGC', region: f[6] || '' });
+            });
+            return { eventos: out, descartados };
+        }
+
         // SGC: GeoJSON confirmado, pero con nombres de campo propios (ESP_*).
         function normalizarSGC(features) {
             const out = [];
@@ -2067,6 +2126,19 @@
                 }
                 const texto = await res.text();
                 crudos = { tipo: 'isc', texto };
+            } else if (fuenteId === 'sgc_rsnc') {
+                const res = await fetch(urlSGCRSNC(p));
+                let j = null;
+                try { j = await res.json(); } catch (e) { /* respuesta ilegible */ }
+                if (!res.ok) {
+                    throw new Error((j && j.error) || `SGC responded with HTTP ${res.status}.`);
+                }
+                crudos = { tipo: 'sgc_rsnc', filas: (j && j.filas) || [] };
+                if (p.inicio < FECHA_INICIO_RSNC) {
+                    notas.push(`This catalog starts on ${FECHA_INICIO_RSNC}, when the SGC moved to SeisComP. ` +
+                        'For anything earlier use SGC Historical.');
+                }
+                if (j && j.descartados) notas.push(`${j.descartados} events discarded for incomplete data.`);
             } else if (fuenteId === 'sgc') {
                 const res = await fetch(urlSGC(p));
                 if (!res.ok) throw new Error('SGC responded with HTTP ' + res.status);
@@ -2086,6 +2158,7 @@
             let norm;
             if (crudos.tipo === 'usgs') norm = normalizarUSGS(crudos.features);
             else if (crudos.tipo === 'isc') norm = normalizarISC(crudos.texto);
+            else if (crudos.tipo === 'sgc_rsnc') norm = normalizarSGCRSNC(crudos.filas);
             else norm = normalizarSGC(crudos.features);
 
             norm.eventos.sort((a, b) => a.time - b.time);
@@ -2101,6 +2174,7 @@
 
             const urlUsada = fuenteId === 'usgs' || fuenteId === 'usgs_sig' ? urlUSGS(p, 'query', fuenteId === 'usgs_sig' ? p.minsig : null)
                 : fuenteId === 'isc' ? urlISC(p, 'query')
+                : fuenteId === 'sgc_rsnc' ? urlSGCRSNC(p)
                 : urlSGC(p);
 
             return { norm, total, notas, truncado, fuenteId, fuenteLabel: F.label, urlUsada };
@@ -3326,6 +3400,36 @@
         // Los eventos de cada capa están ordenados por fecha: basta contar
         // cuántos caen antes o igual al corte absoluto (mismo corte para
         // ambas capas, así avanzan sincronizadas cronológicamente).
+        // Cuántos sismos van ocurridos en el instante que marca la línea de tiempo.
+        // Es la cuenta acumulada, que es lo que se quiere ver corriendo mientras la
+        // reproducción avanza; las capas se desglosan si hay dos cargadas.
+        function actualizarContador(corte, fraccion) {
+            const caja = $('contador');
+            const hayFondo = datosFondo.eventos.length > 0;
+            const hayEvento = datosEvento && datosEvento.eventos.length > 0;
+            if (!hayFondo && !hayEvento) { caja.hidden = true; return; }
+            caja.hidden = false;
+
+            const vistos = renderFondo.visibles + renderEvento.visibles;
+            const total = (hayFondo ? datosFondo.eventos.length : 0) +
+                          (hayEvento ? datosEvento.eventos.length : 0);
+            $('contadorN').textContent = vistos.toLocaleString();
+            $('contadorTotal').textContent = total.toLocaleString();
+            $('contadorFecha').textContent = fraccion >= 1 ? 'complete series' : fechaHora(corte);
+
+            // Con dos capas, el desglose; con una sola no hace falta.
+            const capas = $('contadorCapas');
+            if (hayFondo && hayEvento) {
+                capas.innerHTML =
+                    `<div class="capa"><span class="punto" style="background:${leerTema3D().corteza}"></span>` +
+                    `${renderFondo.visibles.toLocaleString()} background</div>` +
+                    `<div class="capa"><span class="punto" style="background:${datosEvento.colorFinal}"></span>` +
+                    `${renderEvento.visibles.toLocaleString()} special event</div>`;
+            } else {
+                capas.innerHTML = '';
+            }
+        }
+
         function contarHasta(capa, corte, fraccion) {
             if (!capa || !capa.eventos.length) return 0;
             if (fraccion >= 1) return capa.eventos.length;
@@ -3354,6 +3458,7 @@
             $('timeStart').textContent = fechaHora(min);
             $('timeEnd').textContent = fechaHora(max);
             $('timeValue').textContent = fraccion >= 1 ? 'All' : fechaHora(corte);
+            actualizarContador(corte, fraccion);
             actualizarVisibles();
         }
 
@@ -3615,6 +3720,7 @@
             $('pantallaVisor').hidden = nombre !== 'visor';
             $('btnVistaArea').setAttribute('aria-pressed', String(nombre === 'area'));
             $('btnVistaVisor').setAttribute('aria-pressed', String(nombre === 'visor'));
+            $('contador').classList.toggle('en-mapa', nombre === 'area');
             if (nombre === 'area' && map) {
                 setTimeout(() => map.invalidateSize(), 50);
             } else if (nombre === 'visor') {
