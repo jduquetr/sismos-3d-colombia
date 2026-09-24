@@ -102,6 +102,17 @@
 
         .hud { position: absolute; background: var(--overlay); border: 1px solid var(--line); border-radius: 8px; backdrop-filter: blur(6px); z-index: 900; }
         #credit { left: 12px; bottom: 12px; padding: 6px 10px; font-size: 10.5px; color: var(--ink-3); }
+        /* Contador de la reproducción: cuántos sismos han ocurrido hasta el instante
+           que muestra la línea de tiempo. */
+        #contador { left: 12px; top: 12px; padding: 10px 14px; min-width: 150px; }
+        /* En el mapa la esquina superior izquierda es del control de zoom de Leaflet,
+           así que ahí el contador se corre al centro. */
+        #contador.en-mapa { left: 50%; transform: translateX(-50%); }
+        #contador .n { font-size: 26px; font-weight: 650; color: var(--ink); font-variant-numeric: tabular-nums; line-height: 1.05; }
+        #contador .de { font-size: 11px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+        #contador .cuando { font-size: 11.5px; color: var(--ink-2); font-variant-numeric: tabular-nums; margin-top: 5px; }
+        #contador .capa { display: flex; align-items: center; gap: 6px; font-size: 10.5px; color: var(--ink-3); margin-top: 3px; }
+        #contador .punto { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
         #credit b { color: var(--ink-2); font-weight: 600; }
         #credit a { color: inherit; text-decoration: none; }
         #credit a:hover { color: var(--ink-2); text-decoration: underline; }
@@ -370,6 +381,12 @@
                     <div class="canvas-hint">Drag to rotate · scroll to zoom</div>
                     <div class="canvas-vacio" id="canvasVacio">Define an area and query the catalog to see the earthquakes in 3D</div>
                 </div>
+            </div>
+            <div class="hud" id="contador" hidden>
+                <div class="n" id="contadorN">0</div>
+                <div class="de">of <span id="contadorTotal">0</span> events</div>
+                <div class="cuando" id="contadorFecha">—</div>
+                <div id="contadorCapas"></div>
             </div>
             <div class="hud" id="credit">Data <a href="https://earthquake.usgs.gov/fdsnws/event/1/" target="_blank" rel="noopener">USGS</a> · <a href="https://www.isc.ac.uk/iscbulletin/" target="_blank" rel="noopener">ISC</a> · <a href="https://www2.sgc.gov.co/sgc/sismos/Paginas/catalogo-sismico.aspx" target="_blank" rel="noopener">SGC</a> · <b>SWTectonics</b> — EAFIT University</div>
         </div>
@@ -3390,6 +3407,36 @@
         // Los eventos de cada capa están ordenados por fecha: basta contar
         // cuántos caen antes o igual al corte absoluto (mismo corte para
         // ambas capas, así avanzan sincronizadas cronológicamente).
+        // Cuántos sismos van ocurridos en el instante que marca la línea de tiempo.
+        // Es la cuenta acumulada, que es lo que se quiere ver corriendo mientras la
+        // reproducción avanza; las capas se desglosan si hay dos cargadas.
+        function actualizarContador(corte, fraccion) {
+            const caja = $('contador');
+            const hayFondo = datosFondo.eventos.length > 0;
+            const hayEvento = datosEvento && datosEvento.eventos.length > 0;
+            if (!hayFondo && !hayEvento) { caja.hidden = true; return; }
+            caja.hidden = false;
+
+            const vistos = renderFondo.visibles + renderEvento.visibles;
+            const total = (hayFondo ? datosFondo.eventos.length : 0) +
+                          (hayEvento ? datosEvento.eventos.length : 0);
+            $('contadorN').textContent = vistos.toLocaleString();
+            $('contadorTotal').textContent = total.toLocaleString();
+            $('contadorFecha').textContent = fraccion >= 1 ? 'complete series' : fechaHora(corte);
+
+            // Con dos capas, el desglose; con una sola no hace falta.
+            const capas = $('contadorCapas');
+            if (hayFondo && hayEvento) {
+                capas.innerHTML =
+                    `<div class="capa"><span class="punto" style="background:${leerTema3D().corteza}"></span>` +
+                    `${renderFondo.visibles.toLocaleString()} background</div>` +
+                    `<div class="capa"><span class="punto" style="background:${datosEvento.colorFinal}"></span>` +
+                    `${renderEvento.visibles.toLocaleString()} special event</div>`;
+            } else {
+                capas.innerHTML = '';
+            }
+        }
+
         function contarHasta(capa, corte, fraccion) {
             if (!capa || !capa.eventos.length) return 0;
             if (fraccion >= 1) return capa.eventos.length;
@@ -3418,6 +3465,7 @@
             $('timeStart').textContent = fechaHora(min);
             $('timeEnd').textContent = fechaHora(max);
             $('timeValue').textContent = fraccion >= 1 ? 'All' : fechaHora(corte);
+            actualizarContador(corte, fraccion);
             actualizarVisibles();
         }
 
@@ -3679,6 +3727,7 @@
             $('pantallaVisor').hidden = nombre !== 'visor';
             $('btnVistaArea').setAttribute('aria-pressed', String(nombre === 'area'));
             $('btnVistaVisor').setAttribute('aria-pressed', String(nombre === 'visor'));
+            $('contador').classList.toggle('en-mapa', nombre === 'area');
             if (nombre === 'area' && map) {
                 setTimeout(() => map.invalidateSize(), 50);
             } else if (nombre === 'visor') {
