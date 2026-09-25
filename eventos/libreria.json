@@ -171,6 +171,38 @@
         "opacidad": 100
       },
       "tensor": null
+    },
+    {
+      "id": "prueba-endpoint-borrar",
+      "nombre": "Prueba del endpoint scriptalert(1)/script",
+      "lugar": "Prueba",
+      "fecha": "2026-08-10T12:34:27Z",
+      "mag": 4.2,
+      "magTipo": "",
+      "profundidad": null,
+      "usgsId": null,
+      "resumen": "Ficha de prueba para verificar la publicación. Se borra enseguida.",
+      "contexto": {
+        "fuenteId": "usgs",
+        "bbox": {
+          "n": 6,
+          "s": 4,
+          "o": -77.5,
+          "e": -75.5
+        },
+        "inicio": "2026-08-10",
+        "fin": "2026-08-11",
+        "minmag": 2.5,
+        "limite": 100
+      },
+      "consulta": null,
+      "estilo": {
+        "colorInicial": "#ffd166",
+        "colorFinal": "#9d0208",
+        "escala": 22,
+        "opacidad": 100
+      },
+      "tensor": null
     }
   ]
 }
