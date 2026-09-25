@@ -1383,6 +1383,10 @@
         // mapa y vista mundial. No borra los datos ya consultados ni las otras
         // preferencias (fuente, fechas, magnitud, límite).
         function limpiarArea() {
+            // Tras consultar, la escena pasa al 3D. Si se limpia el área desde ahí, el
+            // mapa queda listo pero invisible: había que recargar la página para volver
+            // a dibujar. Se vuelve al mapa, que es donde se dibuja la nueva área.
+            mostrarPantalla('area');
             if (modoDibujo) modoDibujo3(false);
             ['bboxN', 'bboxS', 'bboxE', 'bboxO', 'circLat', 'circLon'].forEach(id => { $(id).value = ''; });
             quitarMarcadoresEsquina();
@@ -1626,6 +1630,9 @@
 
         // Activa/desactiva el modo dibujo (nombre corto para no chocar con la variable)
         function modoDibujo3(activar) {
+            // Dibujar es una acción sobre el mapa: si se pide desde la vista 3D, el
+            // arrastre se lo llevaba la escena y no pasaba nada.
+            if (activar && pantallaActual !== 'area') mostrarPantalla('area');
             modoDibujo = activar;
             $('btnDibujar').classList.toggle('activo', activar);
             $('btnDibujar').textContent = activar ? 'Drawing… (click and drag)' : 'Draw on map';
