@@ -710,18 +710,9 @@
 
                 <div class="control-group" id="zonaRestringida">
                     <div class="group-title">Restricted tools</div>
-                    <div id="candadoCerrado">
-                        <div class="nota">Two tools that change what the scene claims: fitting a fault surface to the seismicity, and publishing a search into the shared event library. They sit behind a passcode.</div>
-                        <div class="nota"><strong>This passcode is a latch, not security.</strong> Everything here runs in your browser, so the code — and the passcode with it — is readable by anyone who opens the page. It keeps these tools out of the way, nothing more.</div>
-                        <div class="candado">
-                            <input type="password" id="claveRestringida" placeholder="Passcode" autocomplete="off">
-                            <button class="btn" id="btnAbrirCandado" type="button">Unlock</button>
-                        </div>
-                        <div class="msg" id="mensajeCandado"></div>
-                    </div>
 
-                    <div id="candadoAbierto" hidden>
-                        <!-- ---------- ajuste de falla ---------- -->
+                    <!-- El ajuste no escribe nada, así que no hay nada que proteger. -->
+                    <div>
                         <div class="group-title" style="margin-top:4px">Fault fit (least squares)</div>
                         <div class="nota">Finds the densest cluster of plotted earthquakes and fits, by least squares, the plane and the line that best pass through it. The fit runs in real kilometres, so strike and dip are true — the scene's vertical exaggeration does not touch them.</div>
                         <div class="bbox-grid" style="margin-top:8px">
@@ -752,15 +743,24 @@
                         <button class="btn secundario" id="btnQuitarFalla" type="button" disabled>Remove the fit</button>
                         <div class="msg" id="mensajeFalla"></div>
                         <div class="info-box ficha-ajuste" id="fichaFalla" hidden></div>
+                    </div>
 
-                        <!-- ---------- guardar la búsqueda ---------- -->
+                    <!-- ---------- guardar y publicar ---------- -->
+                    <div>
                         <div class="group-title" style="margin-top:16px">Save this search as a special event</div>
                         <div class="nota">Takes the search on screen — area, dates, source, magnitude and the events themselves — and turns it into a library card with its snapshot, the same shape the curated events use.</div>
                         <div class="campo" style="margin-top:8px">
                             <label for="nombreGuardado">Name</label>
                             <input type="text" id="nombreGuardado" placeholder="e.g. Chocó swarm, August 2026" spellcheck="false">
                         </div>
-                        <button class="btn" id="btnGuardarBusqueda" type="button" style="margin-top:8px">Save to the library</button>
+                        <button class="btn secundario" id="btnGuardarBusqueda" type="button" style="margin-top:8px">Save in this browser</button>
+
+                        <div class="group-title" style="margin-top:14px">Publish it for everyone</div>
+                        <div class="nota">Publishing commits the event to the repository, so it appears in the library for every visitor. The passcode is checked <strong>on the server</strong>: it is not in this page and this page never learns it. Anything published becomes public.</div>
+                        <div class="candado">
+                            <input type="password" id="claveRestringida" placeholder="Passcode" autocomplete="off">
+                            <button class="btn" id="btnPublicarBusqueda" type="button">Publish</button>
+                        </div>
                         <div class="msg" id="mensajeGuardado"></div>
                     </div>
                 </div>
@@ -2849,7 +2849,7 @@
                 const b = document.createElement('button');
                 b.type = 'button';
                 b.className = 'evento-fila';
-                b.innerHTML = `<span class="m">M${f[5].toFixed(1)}</span> ${f[6]}` +
+                b.innerHTML = `<span class="m">M${f[5].toFixed(1)}</span> ${escaparHTML(f[6])}` +
                     (f[8] ? ' <span class="mt">· tensor</span>' : '') +
                     `<br><span class="f">${new Date(f[1]).toISOString().slice(0, 10)}` +
                     (isFinite(f[4]) ? ` · ${f[4].toFixed(0)} km` : '') + '</span>';
@@ -2910,6 +2910,16 @@
                 inicio: c.inicio, fin: c.fin, minmag: c.minmag, limite: c.limite,
                 minsig: 600
             };
+        }
+
+        // Los nombres y resúmenes de las fichas vienen de la biblioteca compartida, que
+        // ahora puede alimentar cualquiera que tenga la clave: si se inyectaran como
+        // HTML, una ficha con una etiqueta dentro correría código en el navegador de
+        // todos los visitantes.
+        function escaparHTML(v) {
+            return String(v == null ? '' : v)
+                .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
         }
 
         function fichaPorId(id) {
@@ -3047,11 +3057,11 @@
                 ? `Nodal plane: ${T.planoA.strike.toFixed(0)}° strike / ${T.planoA.dip.toFixed(0)}° dip / ${T.planoA.rake.toFixed(0)}° rake<br>`
                 : '';
             const dc = isFinite(T.dobleParejaPct) ? `Double couple: ${T.dobleParejaPct.toFixed(0)}%<br>` : '';
-            return `<strong>${ficha.nombre}</strong><br>` +
+            return `<strong>${escaparHTML(ficha.nombre)}</strong><br>` +
                 `Centroid: ${T.lat.toFixed(3)}°, ${T.lon.toFixed(3)}° · ${T.depth.toFixed(1)} km<br>` +
                 `M${(T.mag || ficha.mag).toFixed(1)} · scalar moment ${T.scalarMoment.toExponential(2)} N·m<br>` +
                 plano + dc +
-                `Source: USGS ${T.fuente || ''} ${T.revision ? '(' + T.revision + ')' : ''} · ${ficha.usgsId}`;
+                `Source: USGS ${escaparHTML(T.fuente || '')} ${T.revision ? '(' + escaparHTML(T.revision) + ')' : ''} · ${escaparHTML(ficha.usgsId)}`;
         }
 
         // ============================================================
@@ -4126,10 +4136,10 @@
             const f = new Date(ficha.fecha);
             const prof = isFinite(ficha.profundidad) ? ` · ${Number(ficha.profundidad).toFixed(0)} km` : '';
             const cabeza = ficha.tipo === 'ventana'
-                ? `${ficha.lugar} · M${Number(ficha.mag).toFixed(1)}+`
-                : `${ficha.lugar}<br>${fechaHora(f)} · M${Number(ficha.mag).toFixed(1)} ${ficha.magTipo || ''}${prof}`;
+                ? `${escaparHTML(ficha.lugar)} · M${Number(ficha.mag).toFixed(1)}+`
+                : `${escaparHTML(ficha.lugar)}<br>${fechaHora(f)} · M${Number(ficha.mag).toFixed(1)} ${escaparHTML(ficha.magTipo || '')}${prof}`;
             $('libreriaFicha').innerHTML =
-                `<strong>${ficha.nombre}</strong><br>${cabeza}<br><br>${ficha.resumen}`;
+                `<strong>${escaparHTML(ficha.nombre)}</strong><br>${cabeza}<br><br>${escaparHTML(ficha.resumen)}`;
             $('btnCargarBiblioteca').disabled = false;
         }
 
@@ -4198,9 +4208,9 @@
         function describirTensores(lista, ficha) {
             const mayores = lista.slice().sort((a, b) => (b.mag || 0) - (a.mag || 0)).slice(0, 3);
             const prof = lista.map(T => T.depth).filter(isFinite);
-            return `<strong>${lista.length} focal spheres</strong> — ${ficha.nombre}<br>` +
+            return `<strong>${lista.length} focal spheres</strong> — ${escaparHTML(ficha.nombre)}<br>` +
                 `Depths: ${Math.min(...prof).toFixed(0)}–${Math.max(...prof).toFixed(0)} km<br>` +
-                'Largest: ' + mayores.map(T => `M${(T.mag || 0).toFixed(1)} ${T.nombre || ''}`).join(' · ') + '<br>' +
+                'Largest: ' + mayores.map(T => `M${(T.mag || 0).toFixed(1)} ${escaparHTML(T.nombre || '')}`).join(' · ') + '<br>' +
                 'Source: USGS moment tensors, one per event that publishes one.';
         }
 
@@ -4425,15 +4435,13 @@
                                       +ev.prof.toFixed(1), +ev.mag.toFixed(1), ev.auth || '', ev.region || '']);
         }
 
-        function guardarBusquedaComoEvento() {
+        // Arma la ficha y su instantánea con lo que hay en pantalla. Lo usan las dos
+        // salidas: guardar en este navegador y publicar para todos.
+        function armarEventoGuardado() {
             const nombre = $('nombreGuardado').value.trim();
-            const el = $('mensajeGuardado');
-            const aviso = (t, tipo) => { el.className = 'msg visible ' + tipo; el.innerHTML = t; };
-
-            if (!nombre) { aviso('Give the search a name first.', 'aviso'); return; }
+            if (!nombre) return { error: 'Give the search a name first.' };
             if (!datosFondo.bbox || !datosFondo.eventos.length) {
-                aviso('There is no search on screen to save.', 'aviso');
-                return;
+                return { error: 'There is no search on screen to save.' };
             }
 
             const p = datosFondo.params || {};
@@ -4491,6 +4499,16 @@
                 } : null,
                 tensores: tensoresEvento.slice()
             };
+            return { ficha, instantanea };
+        }
+
+        function guardarBusquedaComoEvento() {
+            const el = $('mensajeGuardado');
+            const aviso = (t, tipo) => { el.className = 'msg visible ' + tipo; el.innerHTML = t; };
+            const armado = armarEventoGuardado();
+            if (armado.error) { aviso(escaparHTML(armado.error), 'aviso'); return; }
+            const { ficha, instantanea } = armado;
+            const nombre = ficha.nombre, id = ficha.id;
 
             // 1. en este navegador, para usarla ya
             const guardadas = eventosGuardados().filter(f => f.id !== id);
@@ -4860,39 +4878,54 @@
         }
 
         // ============================================================
-        // Zona restringida
+        // Publicar en la biblioteca compartida
         // ============================================================
-        // La clave vive en el cliente: cualquiera que abra el código la ve. No es una
-        // medida de seguridad y el panel lo dice; es un pestillo para que estas dos
-        // herramientas no se usen sin querer.
-        const CLAVE_RESTRINGIDA = '98671118';
+        // La clave NO está en esta página. Va a api/guardar-evento.js, que la compara
+        // contra una variable de entorno del servidor y es quien commitea. Quien abra el
+        // código solo encuentra esta llamada; y aunque fuerce la interfaz, sin la clave
+        // el servidor no escribe nada.
+        const API_GUARDAR = '/api/guardar-evento';
 
-        function abrirRestringido(silencioso) {
-            $('candadoCerrado').hidden = true;
-            $('candadoAbierto').hidden = false;
-            try { sessionStorage.setItem('explorador-restringido', '1'); } catch (e) { /* sin storage */ }
-            if (!silencioso) mensajeCandado('Unlocked for this browser tab.', 'ok');
+        async function pedirAlServidor(cuerpo) {
+            const res = await fetch(API_GUARDAR, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(cuerpo)
+            });
+            let j = null;
+            try { j = await res.json(); } catch (e) { /* respuesta ilegible */ }
+            if (!res.ok) throw new Error((j && j.error) || `El servidor respondió ${res.status}.`);
+            return j;
         }
 
-        function mensajeCandado(texto, tipo) {
-            const el = $('mensajeCandado');
-            el.className = 'msg visible ' + tipo;
-            el.textContent = texto;
+        async function publicarBusqueda() {
+            const el = $('mensajeGuardado');
+            const aviso = (t, tipo) => { el.className = 'msg visible ' + tipo; el.innerHTML = t; };
+            const clave = $('claveRestringida').value;
+            if (!clave) { aviso('Type the passcode to publish.', 'aviso'); return; }
+
+            const armado = armarEventoGuardado();
+            if (armado.error) { aviso(escaparHTML(armado.error), 'aviso'); return; }
+
+            $('btnPublicarBusqueda').disabled = true;
+            aviso('<span class="spinner"></span>Publishing…', 'cargando');
+            try {
+                const r = await pedirAlServidor({
+                    accion: 'publicar', clave,
+                    ficha: armado.ficha, instantanea: armado.instantanea
+                });
+                $('claveRestringida').value = '';
+                aviso(`<strong>${escaparHTML(armado.ficha.nombre)}</strong> is now in the shared library ` +
+                    `(commit <code>${escaparHTML(String(r.commit || '').slice(0, 7))}</code>). ` +
+                    'It appears for everyone once the site redeploys, in about a minute.', 'ok');
+            } catch (err) {
+                aviso(escaparHTML(err.message), 'error');
+            } finally {
+                $('btnPublicarBusqueda').disabled = false;
+            }
         }
 
         function conectarRestringido() {
-            let abierto = false;
-            try { abierto = sessionStorage.getItem('explorador-restringido') === '1'; } catch (e) { /* nada */ }
-            if (abierto) abrirRestringido(true);
-
-            const intentar = () => {
-                if ($('claveRestringida').value.trim() === CLAVE_RESTRINGIDA) abrirRestringido(false);
-                else mensajeCandado('That passcode does not match.', 'error');
-                $('claveRestringida').value = '';
-            };
-            $('btnAbrirCandado').addEventListener('click', intentar);
-            $('claveRestringida').addEventListener('keydown', (e) => { if (e.key === 'Enter') intentar(); });
-
             $('btnAjustarFalla').addEventListener('click', ajustarFalla);
             $('btnQuitarFalla').addEventListener('click', () => { quitarFalla(); limpiarMensajeFalla(); });
             $('fallaColor').addEventListener('change', () => { if (ajusteActual) pintarFalla(ajusteActual); });
@@ -4908,6 +4941,8 @@
                 aplicarOpacidadFalla();
             });
             $('btnGuardarBusqueda').addEventListener('click', guardarBusquedaComoEvento);
+            $('btnPublicarBusqueda').addEventListener('click', publicarBusqueda);
+            $('claveRestringida').addEventListener('keydown', (e) => { if (e.key === 'Enter') publicarBusqueda(); });
         }
 
         function conectarControles() {
