@@ -739,6 +739,15 @@
                     <div id="listaAnio" style="margin-top:8px"></div>
                 </div>
 
+                <div class="control-group">
+                    <div class="group-title">How it is added</div>
+                    <div class="checkbox-item">
+                        <input type="checkbox" id="sumarAlActual" checked>
+                        <label for="sumarAlActual">Add on top of what is already plotted</label>
+                    </div>
+                    <div class="nota" id="notaSumar">With this on, loading a special event leaves the current plot untouched and draws the new earthquakes over it, clipped to the area of the search already on screen — anything outside that area is left out, since the scene is built for it. With it off, the event brings its own regional context and replaces what is plotted.</div>
+                </div>
+
                 <div class="control-group" id="grupoTensor" hidden>
                     <div class="group-title">Moment tensor</div>
                     <div class="checkbox-item">
@@ -2369,8 +2378,37 @@
             $('btnConsultarEvento').disabled = false;
         }
 
+        // ¿Se está sumando a lo que ya hay? Solo tiene sentido si hay una capa de fondo
+        // con área: es esa área la que define la caja de la escena.
+        function sumandoAlActual() {
+            return $('sumarAlActual').checked && !!datosFondo.bbox && datosFondo.eventos.length > 0;
+        }
+
+        // Los eventos fuera del área de la primera búsqueda caerían fuera de la caja 3D,
+        // así que se dejan afuera y se dice cuántos fueron.
+        function recortarAlFondo(eventos) {
+            const b = datosFondo.bbox;
+            if (!b) return { dentro: eventos, fuera: 0 };
+            const dentro = eventos.filter(ev =>
+                ev.lat >= b.s && ev.lat <= b.n && ev.lon >= b.o && ev.lon <= b.e);
+            return { dentro, fuera: eventos.length - dentro.length };
+        }
+
         function aplicarResultadoEvento(norm, p, fuente, total, notas, opciones) {
             opciones = opciones || {};
+            notas = notas ? notas.slice() : [];
+
+            if (sumandoAlActual()) {
+                const { dentro, fuera } = recortarAlFondo(norm.eventos);
+                norm = { eventos: dentro, descartados: norm.descartados };
+                if (fuera) {
+                    notas.push(`${fuera} of them fall outside the area already plotted and are not drawn. ` +
+                        'Turn off "Add on top" to load this event with its own area.');
+                }
+                // La capa especial se dibuja dentro de la caja del fondo: el área que
+                // manda es la de la primera búsqueda.
+                p = p ? { ...p, bbox: datosFondo.bbox, modo: datosFondo.modo || 'rect', circulo: datosFondo.circulo || null } : p;
+            }
             norm.eventos.sort((a, b) => a.time - b.time);
             const prof = norm.eventos.length ? extremos(norm.eventos, e => e.prof) : { min: 0, max: 0 };
 
@@ -3973,6 +4011,26 @@
                     return;
                 }
 
+                // Sumando a lo que ya hay: se salta el contexto de la ficha y solo entra
+                // la secuencia, recortada al área que está en pantalla.
+                if (sumandoAlActual() && snap.evento) {
+                    const pEvSuma = paramsDeConsulta({ ...snap.evento.consulta, bbox: datosFondo.bbox });
+                    escribirConsultaEvento({ ...snap.evento.consulta, bbox: datosFondo.bbox });
+                    aplicarResultadoEvento(
+                        { eventos: filasAEventos(snap.evento.filas), descartados: snap.evento.descartados || 0 },
+                        pEvSuma, 'USGS (snapshot)', snap.evento.total, [],
+                        { fuenteId: snap.evento.consulta.fuenteId, urlConsulta: snap.evento.url,
+                          origen: 'instantanea', truncado: !!snap.evento.truncado }
+                    );
+                    ponerTensor(snap.tensor || ficha.tensor || null, ficha);
+                    marcarOrigenDatos(
+                        `Added over the current plot, from the snapshot of ` +
+                        `<strong>${new Date(snap.generado).toISOString().slice(0, 10)}</strong>. ` +
+                        'The background layer was left as it was.', true);
+                    mensajeBiblioteca(`<strong>${ficha.nombre}</strong> added over the current plot.`, 'ok');
+                    return;
+                }
+
                 const pFondo = paramsDeConsulta(snap.contexto.consulta);
                 escribirConsultaFondo(snap.contexto.consulta);
                 pintarRectangulo(bboxALatLngBounds(pFondo.bbox));
@@ -4042,13 +4100,18 @@
             const previo = instantaneaCargada;
             instantaneaCargada = null;
 
-            escribirConsultaFondo(ficha.contexto);
-            pintarRectangulo(bboxALatLngBounds(ficha.contexto.bbox));
-            await consultar();
+            // Sumando: no se toca la capa de fondo ya dibujada; el evento entra encima.
+            const sumar = sumandoAlActual() && ficha.consulta;
+            if (!sumar) {
+                escribirConsultaFondo(ficha.contexto);
+                pintarRectangulo(bboxALatLngBounds(ficha.contexto.bbox));
+                await consultar();
+            }
 
             aplicarEstiloEvento(ficha.estilo);
             if (ficha.consulta) {
-                escribirConsultaEvento(ficha.consulta);
+                // Al sumar, la consulta del evento se acota al área que ya está en pantalla.
+                escribirConsultaEvento(sumar ? { ...ficha.consulta, bbox: datosFondo.bbox } : ficha.consulta);
                 await consultarEvento();
             }
 
