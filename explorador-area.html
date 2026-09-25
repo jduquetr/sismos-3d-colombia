@@ -195,6 +195,10 @@
         .legend-item { display: flex; align-items: center; gap: 6px; font-size: 10px; margin-bottom: 4px; color: var(--ink-2); }
         .legend-color { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
         .legend-count { margin-left: auto; color: var(--ink-3); }
+        .escala-mag { display: flex; align-items: flex-end; justify-content: space-around; gap: 10px; margin-top: 10px; padding: 8px 4px 4px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); }
+        .escala-mag figure { display: flex; flex-direction: column; align-items: center; gap: 5px; margin: 0; }
+        .escala-mag .bola { border-radius: 50%; background: var(--ink-3); box-shadow: 0 0 0 1px var(--surface); }
+        .escala-mag figcaption { font-size: 10px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
 
         .nota { font-size: 10px; color: var(--ink-3); line-height: 1.5; margin-top: 6px; }
 
@@ -627,14 +631,23 @@
                 </div>
 
                 <div class="control-group">
-                    <div class="group-title">Size — background spheres</div>
+                    <div class="group-title">Size by magnitude</div>
                     <div class="slider-group">
                         <div class="slider-label">
-                            <span>Scale</span>
+                            <span>Scale — background spheres</span>
                             <span class="slider-value" id="sizeValue">15%</span>
                         </div>
                         <input type="range" id="sizeSlider" min="0" max="50" value="15">
                     </div>
+                    <div class="slider-group">
+                        <div class="slider-label">
+                            <span>Magnitude contrast</span>
+                            <span class="slider-value" id="magEscalaValue">60%</span>
+                        </div>
+                        <input type="range" id="magEscalaSlider" min="0" max="100" value="60">
+                    </div>
+                    <div class="escala-mag" id="escalaMag"></div>
+                    <div class="nota">Each sphere's radius follows the earthquake's instrumental magnitude. At 100% the radius is proportional to the expected rupture length (10<sup>0.5M</sup>), so an M7 is about 30 times an M4 — true to the physics, but it swamps the scene when there are many events. At 0% every sphere is the same size. This applies to both layers and to the 2D map; each layer keeps its own overall scale.</div>
                 </div>
 
                 <div class="control-group">
@@ -1620,13 +1633,22 @@
             const grupoCapa = capaId === 'fondo' ? capaMarcadores : capaMarcadoresEvento;
             if (!capa) { grupoCapa.clearLayers(); render.marcadores = []; return; }
 
+            // Si cambió la ley de tamaños, los marcadores ya dibujados tienen el radio
+            // viejo: se rehacen en vez de reaprovecharlos.
+            const firmaTamano = `${$('magEscalaSlider').value}`;
+            if (render.firmaTamano !== firmaTamano) {
+                grupoCapa.clearLayers();
+                render.marcadores = [];
+                render.firmaTamano = firmaTamano;
+            }
+
             while (render.marcadores.length > render.visibles) {
                 grupoCapa.removeLayer(render.marcadores.pop());
             }
             while (render.marcadores.length < render.visibles) {
                 const ev = capa.eventos[render.marcadores.length];
                 const m = L.circleMarker([ev.lat, ev.lon], {
-                    radius: 3 + Math.max(0, ev.mag - 1) * 1.4,
+                    radius: Math.min(22, Math.max(1.5, 3 * factorMagnitud(ev.mag))),
                     fillColor: colorParaCapa(capaId, ev),
                     color: '#fff', weight: 1, opacity: 0.8, fillOpacity: 0.8
                 });
@@ -3299,6 +3321,33 @@
             aplicarVisibilidad3D();
         }
 
+        // Radio según la magnitud instrumental. La magnitud es logarítmica, así que un
+        // radio lineal en M (lo que había antes: 0.28 + 0.13·M) apenas distingue un M2 de
+        // un M7 — 2,2 veces de diferencia en cinco unidades de magnitud.
+        //
+        // Aquí el radio crece como 10^(0.5·k·(M − 4)): con k = 1 es proporcional a la
+        // longitud de ruptura esperada, que es la escala física; con k = 0 todas las
+        // esferas quedan iguales. El deslizador mueve k, y el tope evita que un evento
+        // grande tape la escena entera o que uno pequeño desaparezca.
+        const MAG_REFERENCIA = 4;
+        function factorMagnitud(mag) {
+            const k = (parseFloat(($('magEscalaSlider') || {}).value) || 0) / 100;
+            const m = isFinite(mag) ? mag : MAG_REFERENCIA;
+            return Math.min(15, Math.max(0.15, Math.pow(10, 0.5 * k * (m - MAG_REFERENCIA))));
+        }
+
+        // Tres bolas de referencia, para poder leer el tamaño en la escena.
+        function pintarEscalaMagnitud() {
+            const cont = $('escalaMag');
+            if (!cont) return;
+            const escala = parseFloat($('sizeSlider').value) / 15;   // relativo al valor por defecto
+            cont.innerHTML = [3, 5, 7].map(m => {
+                const d = Math.max(4, Math.min(46, 13 * factorMagnitud(m) * escala));
+                return `<figure><span class="bola" style="width:${d.toFixed(1)}px;height:${d.toFixed(1)}px"></span>` +
+                       `<figcaption>M${m}</figcaption></figure>`;
+            }).join('');
+        }
+
         function colocarInstanciasCapa(capaId, P) {
             const render = capaId === 'fondo' ? renderFondo : renderEvento;
             if (!render.malla) return;
@@ -3313,7 +3362,7 @@
             const esc = new THREE.Vector3();
 
             render.indices.forEach((ev, i) => {
-                const r = escalaUsuario * (0.28 + Math.max(0, ev.mag) * 0.13);
+                const r = escalaUsuario * 0.8 * factorMagnitud(ev.mag);
                 pos.set(P.x(ev.lon), P.y(ev.lat), P.z(ev.prof));
                 esc.set(r, r, r);
                 m.compose(pos, q, esc);
@@ -4086,6 +4135,7 @@
 
             $('escalaEventoSlider').addEventListener('input', (e) => {
                 $('escalaEventoValue').textContent = e.target.value + '%';
+                pintarEscalaMagnitud();
                 if (datosFondo.bbox) colocarInstanciasCapa('evento', proyector());
             });
             $('opacidadEventoSlider').addEventListener('input', (e) => {
@@ -4211,8 +4261,16 @@
                 aplicarOpacidad();
             });
 
+            $('magEscalaSlider').addEventListener('input', (e) => {
+                $('magEscalaValue').textContent = e.target.value + '%';
+                pintarEscalaMagnitud();
+                if (datosFondo.bbox) colocarInstancias();
+                actualizarVisibles();      // los marcadores 2D se rehacen con el radio nuevo
+            });
+
             $('sizeSlider').addEventListener('input', () => {
                 $('sizeValue').textContent = $('sizeSlider').value + '%';
+                pintarEscalaMagnitud();
                 colocarInstancias();
             });
 
@@ -4400,6 +4458,7 @@
             actualizarLimiteUIEvento();
             actualizarBotonExportar();
             aplicarVisibilidad2D();
+            pintarEscalaMagnitud();
             actualizarPanel();
             setTimeout(() => {
                 map.invalidateSize();
