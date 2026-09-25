@@ -593,6 +593,11 @@
                         <label for="showEventoCapa">Special event layer</label>
                     </div>
                     <div class="checkbox-item">
+                        <input type="checkbox" id="cortezaGris">
+                        <label for="cortezaGris">Grayscale crust (0–35 km)</label>
+                    </div>
+                    <div class="nota">Inside the crust, colour by depth instead of one flat tone: white at the surface, black at 35 km. Below 35 km the depth ramp takes over as usual. On the light theme the shallowest spheres come out almost white against the background — the shading still shows them, but the dark theme reads better for this.</div>
+                    <div class="checkbox-item">
                         <input type="checkbox" id="showSlab2">
                         <label for="showSlab2">Subduction slab — Slab2 (USGS)</label>
                     </div>
@@ -1110,8 +1115,19 @@
             return '#' + new THREE.Color(r[i]).lerp(new THREE.Color(r[i + 1]), x - i).getHexString();
         }
 
+        // Dentro de la corteza, blanco en superficie y negro a 35 km. Es una escala
+        // aparte de la rampa de profundidad: la corteza es otra población sísmica, no
+        // la continuación de la placa, y con un solo tono plano no se distinguía un
+        // evento superficial de uno a 30 km.
+        const PROF_CORTEZA = 35;
+        function colorCorteza(depth) {
+            const t = Math.max(0, Math.min(1, depth / PROF_CORTEZA));
+            const v = Math.round(255 * (1 - t));
+            return `rgb(${v},${v},${v})`;
+        }
+
         function colorFondo(depth, maxDepth) {
-            if (depth <= 35) return leerTema3D().corteza;
+            if (depth <= 35) return $('cortezaGris').checked ? colorCorteza(depth) : leerTema3D().corteza;
             if (maxDepth <= 35) return colorRampa(1);        // caso borde: todo el dataset es cortical salvo un outlier
             return colorRampa((depth - 35) / (maxDepth - 35));
         }
@@ -3720,10 +3736,13 @@
         }
 
         function leyendaFondoHTML(maxDepth) {
+            const gris = $('cortezaGris').checked;
             return `
                 <div class="legend-item">
-                    <div class="legend-color" style="background-color:${leerTema3D().corteza}"></div>
-                    <span>0–35 km · crust</span>
+                    <div class="legend-color" style="${gris
+                        ? 'background:linear-gradient(90deg,#fff,#000); border-radius:2px; width:24px; box-shadow:0 0 0 1px var(--line)'
+                        : `background-color:${leerTema3D().corteza}`}"></div>
+                    <span>0–35 km · crust${gris ? ' (white → black)' : ''}</span>
                 </div>
                 <div class="legend-item">
                     <div class="legend-color" style="background:linear-gradient(90deg,${leerTema3D().rampa.join(',')}); border-radius:2px; width:24px;"></div>
@@ -4417,6 +4436,12 @@
 
             $('showCaja').addEventListener('change', (e) => {
                 if (refs) refs.visible = e.target.checked;
+            });
+
+            $('cortezaGris').addEventListener('change', () => {
+                // El color va horneado en las instancias y en los marcadores: hay que
+                // rehacerlos, no basta con redibujar.
+                if (datosFondo.bbox) refrescarTrasCambioDeCapas();
             });
 
             $('showSlab2').addEventListener('change', (e) => {
