@@ -198,6 +198,13 @@
         .legend-item { display: flex; align-items: center; gap: 6px; font-size: 10px; margin-bottom: 4px; color: var(--ink-2); }
         .legend-color { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
         .legend-count { margin-left: auto; color: var(--ink-3); }
+        #zonaRestringida { border: 1px dashed var(--axis); border-radius: 12px; padding: 12px; margin-top: 4px; }
+        #zonaRestringida .group-title { margin-bottom: 6px; }
+        .candado { display: flex; gap: 6px; align-items: center; margin-top: 8px; }
+        .candado input { flex: 1; }
+        .candado .btn { width: auto; padding: 7px 14px; margin-top: 0; }
+        .ficha-ajuste { font-family: var(--font-mono, monospace); font-size: 11px; line-height: 1.7; }
+        .ficha-ajuste b { font-family: var(--font); }
         .escala-mag { display: flex; align-items: flex-end; justify-content: space-around; gap: 10px; margin-top: 10px; padding: 8px 4px 4px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); }
         .escala-mag figure { display: flex; flex-direction: column; align-items: center; gap: 5px; margin: 0; }
         .escala-mag .bola { border-radius: 50%; background: var(--ink-3); box-shadow: 0 0 0 1px var(--surface); }
@@ -698,6 +705,63 @@
                     <div class="legend" id="legendEvento" hidden>
                         <div class="legend-title">Depth scale — Special event</div>
                         <div id="leyendaEvento"></div>
+                    </div>
+                </div>
+
+                <div class="control-group" id="zonaRestringida">
+                    <div class="group-title">Restricted tools</div>
+                    <div id="candadoCerrado">
+                        <div class="nota">Two tools that change what the scene claims: fitting a fault surface to the seismicity, and publishing a search into the shared event library. They sit behind a passcode.</div>
+                        <div class="nota"><strong>This passcode is a latch, not security.</strong> Everything here runs in your browser, so the code — and the passcode with it — is readable by anyone who opens the page. It keeps these tools out of the way, nothing more.</div>
+                        <div class="candado">
+                            <input type="password" id="claveRestringida" placeholder="Passcode" autocomplete="off">
+                            <button class="btn" id="btnAbrirCandado" type="button">Unlock</button>
+                        </div>
+                        <div class="msg" id="mensajeCandado"></div>
+                    </div>
+
+                    <div id="candadoAbierto" hidden>
+                        <!-- ---------- ajuste de falla ---------- -->
+                        <div class="group-title" style="margin-top:4px">Fault fit (least squares)</div>
+                        <div class="nota">Finds the densest cluster of plotted earthquakes and fits, by least squares, the plane and the line that best pass through it. The fit runs in real kilometres, so strike and dip are true — the scene's vertical exaggeration does not touch them.</div>
+                        <div class="bbox-grid" style="margin-top:8px">
+                            <div class="campo">
+                                <label for="fallaRadio">Neighbour radius (km)</label>
+                                <input type="number" id="fallaRadio" min="2" max="100" step="1" value="15">
+                            </div>
+                            <div class="campo">
+                                <label for="fallaMinimo">Min. events</label>
+                                <input type="number" id="fallaMinimo" min="6" max="500" step="1" value="12">
+                            </div>
+                        </div>
+                        <div class="bbox-grid" style="margin-top:6px">
+                            <div class="campo"><label for="fallaColor">Colour</label><input type="color" id="fallaColor" value="#e8590c"></div>
+                            <div class="campo">
+                                <label for="fallaOpacidadValor">Opacity</label>
+                                <input type="number" id="fallaOpacidadValor" min="0" max="100" step="5" value="35">
+                            </div>
+                        </div>
+                        <div class="slider-group" style="margin-top:6px">
+                            <div class="slider-label">
+                                <span>Opacity</span>
+                                <span class="slider-value" id="fallaOpacidadTexto">35%</span>
+                            </div>
+                            <input type="range" id="fallaOpacidad" min="0" max="100" value="35">
+                        </div>
+                        <button class="btn" id="btnAjustarFalla" type="button" style="margin-top:8px">Fit the densest cluster</button>
+                        <button class="btn secundario" id="btnQuitarFalla" type="button" disabled>Remove the fit</button>
+                        <div class="msg" id="mensajeFalla"></div>
+                        <div class="info-box ficha-ajuste" id="fichaFalla" hidden></div>
+
+                        <!-- ---------- guardar la búsqueda ---------- -->
+                        <div class="group-title" style="margin-top:16px">Save this search as a special event</div>
+                        <div class="nota">Takes the search on screen — area, dates, source, magnitude and the events themselves — and turns it into a library card with its snapshot, the same shape the curated events use.</div>
+                        <div class="campo" style="margin-top:8px">
+                            <label for="nombreGuardado">Name</label>
+                            <input type="text" id="nombreGuardado" placeholder="e.g. Chocó swarm, August 2026" spellcheck="false">
+                        </div>
+                        <button class="btn" id="btnGuardarBusqueda" type="button" style="margin-top:8px">Save to the library</button>
+                        <div class="msg" id="mensajeGuardado"></div>
                     </div>
                 </div>
 
@@ -2684,6 +2748,7 @@
                 op.value = f.id; op.textContent = f.nombre;
                 $('libreriaEvento').appendChild(op);
             });
+            cargarEventosGuardados();
         }
 
         // La regla para derivar una ficha desde un id vive en tools/derivar-ficha.mjs
@@ -4323,7 +4388,530 @@
             }
         }
 
+        // ============================================================
+        // Guardar la búsqueda activa como evento especial
+        // ============================================================
+        // La biblioteca pública vive en el repo (eventos/libreria.json + su instantánea),
+        // y una página no puede escribir ahí. Así que esto hace las dos mitades:
+        //
+        //   - la guarda en este navegador, para que aparezca en el selector de una vez,
+        //     marcada como local;
+        //   - y ofrece los dos archivos exactos que hay que commitear para que quede en
+        //     la biblioteca pública, con el mismo formato que las fichas curadas.
+        const CLAVE_LOCALES = 'explorador-eventos-guardados';
+
+        function eventosGuardados() {
+            try { return JSON.parse(localStorage.getItem(CLAVE_LOCALES) || '[]'); }
+            catch (e) { return []; }
+        }
+
+        function idDesdeNombre(nombre) {
+            return nombre.trim().toLowerCase()
+                .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+                .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+                .slice(0, 60) || `busqueda-${Date.now()}`;
+        }
+
+        function descargarJSON(nombreArchivo, objeto) {
+            const url = URL.createObjectURL(new Blob([JSON.stringify(objeto)], { type: 'application/json' }));
+            const a = document.createElement('a');
+            a.href = url; a.download = nombreArchivo;
+            document.body.appendChild(a); a.click(); a.remove();
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
+        }
+
+        function filasDesdeEventos(eventos) {
+            return eventos.map(ev => [ev.id || null, ev.time.getTime(), +ev.lat.toFixed(4), +ev.lon.toFixed(4),
+                                      +ev.prof.toFixed(1), +ev.mag.toFixed(1), ev.auth || '', ev.region || '']);
+        }
+
+        function guardarBusquedaComoEvento() {
+            const nombre = $('nombreGuardado').value.trim();
+            const el = $('mensajeGuardado');
+            const aviso = (t, tipo) => { el.className = 'msg visible ' + tipo; el.innerHTML = t; };
+
+            if (!nombre) { aviso('Give the search a name first.', 'aviso'); return; }
+            if (!datosFondo.bbox || !datosFondo.eventos.length) {
+                aviso('There is no search on screen to save.', 'aviso');
+                return;
+            }
+
+            const p = datosFondo.params || {};
+            const id = idDesdeNombre(nombre);
+            const consulta = {
+                fuenteId: datosFondo.fuenteId || 'usgs',
+                bbox: datosFondo.bbox,
+                inicio: p.inicio || null, fin: p.fin || null,
+                minmag: p.minmag != null ? p.minmag : 0,
+                limite: p.limite || datosFondo.eventos.length
+            };
+            const ficha = {
+                id,
+                nombre,
+                lugar: datosFondo.eventos[0].region || 'Saved search',
+                fecha: new Date(datosFondo.minTime).toISOString().replace('.000', ''),
+                mag: Math.max(...datosFondo.eventos.map(e => e.mag)),
+                magTipo: '',
+                profundidad: null,
+                usgsId: null,
+                resumen: `Saved search: ${datosFondo.eventos.length} events from ${datosFondo.fuente || 'the catalog'}, ` +
+                    `${consulta.inicio || '?'} to ${consulta.fin || '?'}, M${consulta.minmag}+ inside ` +
+                    `${consulta.bbox.s}…${consulta.bbox.n}° lat, ${consulta.bbox.o}…${consulta.bbox.e}° lon.`,
+                contexto: consulta,
+                consulta: datosEvento && datosEvento.eventos.length
+                    ? { ...consulta, bbox: datosEvento.bbox || consulta.bbox }
+                    : null,
+                estilo: {
+                    colorInicial: $('colorInicialEvento').value,
+                    colorFinal: $('colorFinalEvento').value,
+                    escala: parseInt($('escalaEventoSlider').value, 10),
+                    opacidad: parseInt($('opacidadEventoSlider').value, 10)
+                },
+                tensor: (tensoresEvento.find(T => !T.deConsulta)) || null,
+                guardadoEn: new Date().toISOString()
+            };
+            const instantanea = {
+                id, nombre,
+                generado: new Date().toISOString(),
+                fuente: datosFondo.fuente || 'catalog',
+                nota: 'Instantánea de una búsqueda guardada desde el visor.',
+                columnas: ['id', 'tiempo', 'lat', 'lon', 'prof', 'mag', 'auth', 'region'],
+                contexto: {
+                    consulta, url: datosFondo.urlConsulta || null,
+                    total: datosFondo.total || datosFondo.eventos.length,
+                    descartados: datosFondo.descartados || 0,
+                    truncado: !!datosFondo.truncado,
+                    filas: filasDesdeEventos(datosFondo.eventos)
+                },
+                evento: datosEvento && datosEvento.eventos.length ? {
+                    consulta: ficha.consulta, url: datosEvento.urlConsulta || null,
+                    total: datosEvento.total || datosEvento.eventos.length,
+                    descartados: datosEvento.descartados || 0,
+                    filas: filasDesdeEventos(datosEvento.eventos)
+                } : null,
+                tensores: tensoresEvento.slice()
+            };
+
+            // 1. en este navegador, para usarla ya
+            const guardadas = eventosGuardados().filter(f => f.id !== id);
+            guardadas.push({ ficha, instantanea });
+            let cabe = true;
+            try { localStorage.setItem(CLAVE_LOCALES, JSON.stringify(guardadas)); }
+            catch (e) { cabe = false; }
+
+            // 2. en el selector de la biblioteca, marcada como local
+            LIBRERIA_EVENTOS = LIBRERIA_EVENTOS.filter(f => f.id !== id).concat([ficha]);
+            cacheInstantaneas[id] = instantanea;
+            const sel = $('libreriaEvento');
+            [...sel.options].forEach(o => { if (o.value === id) o.remove(); });
+            const op = document.createElement('option');
+            op.value = id; op.textContent = `${nombre} · saved here`;
+            sel.appendChild(op);
+            sel.value = id;
+            pintarFichaBiblioteca(ficha);
+
+            // 3. los archivos para publicarla
+            descargarJSON(`${id}.json`, instantanea);
+            descargarJSON(`${id}-ficha.json`, ficha);
+
+            aviso(`<strong>${nombre}</strong> is in the library of this browser, ready to load ` +
+                `(${datosFondo.eventos.length} events` +
+                (instantanea.evento ? ` + ${instantanea.evento.filas.length} in the special layer` : '') + ').' +
+                (cabe ? '' : '<br>It did not fit in this browser\'s storage, so it will be gone on reload.') +
+                '<br><br>Two files were downloaded. To put it in the <strong>shared</strong> library, ' +
+                `commit <code>${id}.json</code> into <code>eventos/</code> and paste the contents of ` +
+                `<code>${id}-ficha.json</code> into the <code>eventos</code> list of ` +
+                '<code>eventos/libreria.json</code>. A browser cannot write to the repo, so that step is manual.',
+                'ok');
+        }
+
+        // Las guardadas en este navegador vuelven al selector al abrir la página.
+        function cargarEventosGuardados() {
+            const guardadas = eventosGuardados();
+            if (!guardadas.length) return;
+            guardadas.forEach(({ ficha, instantanea }) => {
+                LIBRERIA_EVENTOS = LIBRERIA_EVENTOS.filter(f => f.id !== ficha.id).concat([ficha]);
+                cacheInstantaneas[ficha.id] = instantanea;
+                const op = document.createElement('option');
+                op.value = ficha.id;
+                op.textContent = `${ficha.nombre} · saved here`;
+                $('libreriaEvento').appendChild(op);
+            });
+        }
+
+        // ============================================================
+        // Ajuste de una zona de fallamiento por mínimos cuadrados
+        // ============================================================
+        // Dos cosas, en este orden:
+        //
+        //   1. Encontrar dónde hay de verdad un grupo denso. No tiene sentido ajustar un
+        //      plano a una nube dispersa: saldría un plano, sí, pero no significaría nada.
+        //      Se cuenta, para cada sismo, cuántos vecinos tiene dentro de un radio; los
+        //      que superan el umbral se agrupan por cercanía y se toma el grupo mayor.
+        //
+        //   2. Ajustar. El plano y la línea de mínimos cuadrados de una nube de puntos
+        //      son sus componentes principales: se centra la nube, se arma la matriz de
+        //      covarianza y se saca su base propia. El autovector menor es la normal del
+        //      plano (minimiza la distancia perpendicular, que es lo que se quiere aquí,
+        //      no la distancia vertical), y el mayor es la dirección de la línea.
+        //
+        // Todo el cálculo va en KILÓMETROS REALES, no en unidades de escena: la escena
+        // tiene exageración vertical y ahí un buzamiento no sería un buzamiento.
+        let grupoFalla = null, ajusteActual = null;
+
+        function kmPorGrado(latMedia) {
+            return { lat: 111.32, lon: 111.32 * Math.cos(latMedia * Math.PI / 180) };
+        }
+
+        // Autovalores y autovectores de una simétrica 3x3, por rotaciones de Jacobi.
+        function jacobi3(A) {
+            const a = [A[0].slice(), A[1].slice(), A[2].slice()];
+            let V = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
+            for (let barrido = 0; barrido < 24; barrido++) {
+                let fuera = Math.abs(a[0][1]) + Math.abs(a[0][2]) + Math.abs(a[1][2]);
+                if (fuera < 1e-12) break;
+                for (const [p1, q] of [[0, 1], [0, 2], [1, 2]]) {
+                    if (Math.abs(a[p1][q]) < 1e-14) continue;
+                    const theta = (a[q][q] - a[p1][p1]) / (2 * a[p1][q]);
+                    const t = Math.sign(theta || 1) / (Math.abs(theta) + Math.sqrt(theta * theta + 1));
+                    const c = 1 / Math.sqrt(t * t + 1), sN = t * c;
+                    for (let k = 0; k < 3; k++) {
+                        const akp = a[k][p1], akq = a[k][q];
+                        a[k][p1] = c * akp - sN * akq;
+                        a[k][q] = sN * akp + c * akq;
+                    }
+                    for (let k = 0; k < 3; k++) {
+                        const apk = a[p1][k], aqk = a[q][k];
+                        a[p1][k] = c * apk - sN * aqk;
+                        a[q][k] = sN * apk + c * aqk;
+                    }
+                    for (let k = 0; k < 3; k++) {
+                        const vkp = V[k][p1], vkq = V[k][q];
+                        V[k][p1] = c * vkp - sN * vkq;
+                        V[k][q] = sN * vkp + c * vkq;
+                    }
+                }
+            }
+            const vals = [a[0][0], a[1][1], a[2][2]];
+            const orden = [0, 1, 2].sort((i, j) => vals[j] - vals[i]);   // de mayor a menor
+            return {
+                valores: orden.map(i => vals[i]),
+                vectores: orden.map(i => [V[0][i], V[1][i], V[2][i]])
+            };
+        }
+
+        // Grupo más denso: vecinos dentro de un radio y unión de los que se tocan.
+        function grupoMasDenso(puntos, radioKm, minimo) {
+            const n = puntos.length;
+            if (n < minimo) return null;
+            const r2 = radioKm * radioKm;
+            const vecinos = new Array(n);
+            for (let i = 0; i < n; i++) vecinos[i] = [];
+            for (let i = 0; i < n; i++) {
+                for (let j = i + 1; j < n; j++) {
+                    const dx = puntos[i].x - puntos[j].x, dy = puntos[i].y - puntos[j].y, dz = puntos[i].z - puntos[j].z;
+                    if (dx * dx + dy * dy + dz * dz <= r2) { vecinos[i].push(j); vecinos[j].push(i); }
+                }
+            }
+            // Denso = con al menos un tercio del mínimo pedido dentro del radio.
+            const umbral = Math.max(2, Math.round(minimo / 3));
+            const denso = vecinos.map(v => v.length >= umbral);
+            const visto = new Array(n).fill(false);
+            let mejor = null;
+            for (let i = 0; i < n; i++) {
+                if (!denso[i] || visto[i]) continue;
+                const pila = [i], grupo = [];
+                visto[i] = true;
+                while (pila.length) {
+                    const k = pila.pop();
+                    grupo.push(k);
+                    vecinos[k].forEach(j => { if (denso[j] && !visto[j]) { visto[j] = true; pila.push(j); } });
+                }
+                if (!mejor || grupo.length > mejor.length) mejor = grupo;
+            }
+            return mejor && mejor.length >= minimo ? mejor.map(i => puntos[i]) : null;
+        }
+
+        function ajustePorMinimosCuadrados(nube) {
+            const n = nube.length;
+            const c = nube.reduce((a, p) => ({ x: a.x + p.x / n, y: a.y + p.y / n, z: a.z + p.z / n }), { x: 0, y: 0, z: 0 });
+            const M = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
+            nube.forEach(p => {
+                const d = [p.x - c.x, p.y - c.y, p.z - c.z];
+                for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) M[i][j] += d[i] * d[j] / n;
+            });
+            const { valores, vectores } = jacobi3(M);
+            const eje = vectores[0];            // dirección de la línea
+            const enPlano = vectores[1];
+            const normal = vectores[2];         // normal del plano
+
+            // Residuos: distancia perpendicular de cada punto al plano y a la línea.
+            let sPlano = 0, sLinea = 0, extA = 0, extB = 0;
+            nube.forEach(p => {
+                const d = [p.x - c.x, p.y - c.y, p.z - c.z];
+                const dn = d[0] * normal[0] + d[1] * normal[1] + d[2] * normal[2];
+                const da = d[0] * eje[0] + d[1] * eje[1] + d[2] * eje[2];
+                const db = d[0] * enPlano[0] + d[1] * enPlano[1] + d[2] * enPlano[2];
+                sPlano += dn * dn;
+                sLinea += (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]) - da * da;
+                extA = Math.max(extA, Math.abs(da));
+                extB = Math.max(extB, Math.abs(db));
+            });
+
+            // Rumbo y buzamiento del plano, en la convención de la regla de la mano
+            // derecha. La normal se pone hacia arriba para que el buzamiento salga en
+            // 0–90°.
+            const nz = normal[2] >= 0 ? normal : normal.map(v => -v);
+            const buzamiento = Math.acos(Math.min(1, Math.abs(nz[2]))) * 180 / Math.PI;
+            let rumbo = (Math.atan2(nz[0], nz[1]) * 180 / Math.PI) + 90;   // x=este, y=norte
+            rumbo = ((rumbo % 360) + 360) % 360;
+            // Dirección e inclinación de la línea.
+            const ejeAbajo = eje[2] <= 0 ? eje : eje.map(v => -v);
+            const horizontal = Math.hypot(ejeAbajo[0], ejeAbajo[1]);
+            let direccion = Math.atan2(ejeAbajo[0], ejeAbajo[1]) * 180 / Math.PI;
+            direccion = ((direccion % 360) + 360) % 360;
+            const inclinacion = Math.atan2(-ejeAbajo[2], horizontal) * 180 / Math.PI;
+
+            return {
+                n, centro: c, eje, enPlano, normal, valores,
+                rmsPlano: Math.sqrt(sPlano / n),
+                rmsLinea: Math.sqrt(sLinea / n),
+                extA, extB, rumbo, buzamiento, direccion, inclinacion,
+                // Qué tan plana y qué tan lineal es la nube (0 a 1).
+                planaridad: valores[0] ? (valores[1] - valores[2]) / valores[0] : 0,
+                linealidad: valores[0] ? (valores[0] - valores[1]) / valores[0] : 0
+            };
+        }
+
+        function quitarFalla() {
+            if (grupoFalla && grupo) {
+                grupo.remove(grupoFalla);
+                grupoFalla.traverse(o => {
+                    if (o.geometry) o.geometry.dispose();
+                    if (o.material) o.material.dispose();
+                });
+            }
+            grupoFalla = null;
+            ajusteActual = null;
+            $('btnQuitarFalla').disabled = true;
+            $('fichaFalla').hidden = true;
+        }
+
+        function limpiarMensajeFalla() {
+            $('mensajeFalla').className = 'msg';
+            $('mensajeFalla').innerHTML = '';
+        }
+
+        function mensajeFalla(texto, tipo) {
+            const el = $('mensajeFalla');
+            el.className = 'msg visible ' + tipo;
+            el.innerHTML = texto;
+        }
+
+        function aplicarOpacidadFalla() {
+            if (!grupoFalla) return;
+            const v = parseFloat($('fallaOpacidad').value) / 100;
+            grupoFalla.traverse(o => {
+                if (!o.material) return;
+                o.material.opacity = o.name === 'fallaLinea' ? Math.min(1, v + 0.35) : v;
+                o.material.transparent = true;
+                o.visible = v > 0 || o.name === 'fallaLinea';
+            });
+        }
+
+        // Dibuja el plano (un rectángulo del tamaño de la nube) y la línea.
+        function pintarFalla(aj) {
+            quitarFallaSoloEscena();
+            if (!datosFondo.bbox || !grupo) return;
+            const P = proyector();
+            const b = datosFondo.bbox;
+            const km = kmPorGrado((b.n + b.s) / 2);
+            const aEscena = (pt) => new THREE.Vector3(
+                P.x(b.o + (pt[0] / km.lon)),
+                P.y(b.s + (pt[1] / km.lat)),
+                P.z(-pt[2])
+            );
+            const c = [aj.centro.x, aj.centro.y, aj.centro.z];
+            const suma = (base, v, k) => [base[0] + v[0] * k, base[1] + v[1] * k, base[2] + v[2] * k];
+
+            const g = new THREE.Group();
+            const color = new THREE.Color($('fallaColor').value);
+            const opacidad = parseFloat($('fallaOpacidad').value) / 100;
+
+            // Plano: rectángulo centrado, con los semiejes de la propia nube. Se encoge
+            // si se sale de la caja: un plano atravesando la tapa se lee como un error
+            // de dibujo, no como la extensión del ajuste.
+            const dentroDeLaCaja = (pt) => {
+                const lon = b.o + pt[0] / km.lon, lat = b.s + pt[1] / km.lat, prof = -pt[2];
+                return lon >= b.o && lon <= b.e && lat >= b.s && lat <= b.n &&
+                       prof >= datosFondo.profTope && prof <= datosFondo.profPiso;
+            };
+            let a1 = Math.max(aj.extA, 1), a2 = Math.max(aj.extB, 1);
+            for (let intento = 0; intento < 14; intento++) {
+                const prueba = [
+                    suma(suma(c, aj.eje, a1), aj.enPlano, a2),
+                    suma(suma(c, aj.eje, -a1), aj.enPlano, a2),
+                    suma(suma(c, aj.eje, -a1), aj.enPlano, -a2),
+                    suma(suma(c, aj.eje, a1), aj.enPlano, -a2)
+                ];
+                if (prueba.every(dentroDeLaCaja)) break;
+                a1 *= 0.88; a2 *= 0.88;
+            }
+            const esquinas = [
+                suma(suma(c, aj.eje, a1), aj.enPlano, a2),
+                suma(suma(c, aj.eje, -a1), aj.enPlano, a2),
+                suma(suma(c, aj.eje, -a1), aj.enPlano, -a2),
+                suma(suma(c, aj.eje, a1), aj.enPlano, -a2)
+            ].map(aEscena);
+            const geo = new THREE.BufferGeometry();
+            geo.setAttribute('position', new THREE.Float32BufferAttribute(
+                esquinas.flatMap(v => [v.x, v.y, v.z]), 3));
+            geo.setIndex([0, 1, 2, 0, 2, 3]);
+            geo.computeVertexNormals();
+            const plano = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
+                color, transparent: true, opacity: opacidad, side: THREE.DoubleSide, depthWrite: false
+            }));
+            plano.name = 'fallaPlano';
+            g.add(plano);
+
+            // Borde del plano, para que se lea su orientación aunque esté muy translúcido.
+            const borde = new THREE.LineLoop(
+                new THREE.BufferGeometry().setFromPoints(esquinas),
+                new THREE.LineBasicMaterial({ color, transparent: true, opacity: Math.min(1, opacidad + 0.35) })
+            );
+            borde.name = 'fallaLinea';
+            g.add(borde);
+
+            // Línea de mínimos cuadrados.
+            const linea = new THREE.Line(
+                new THREE.BufferGeometry().setFromPoints([
+                    aEscena(suma(c, aj.eje, -a1)), aEscena(suma(c, aj.eje, a1))
+                ]),
+                new THREE.LineBasicMaterial({ color, transparent: true, opacity: 1, linewidth: 2 })
+            );
+            linea.name = 'fallaLinea';
+            g.add(linea);
+
+            grupoFalla = g;
+            grupo.add(g);
+            aplicarOpacidadFalla();
+        }
+
+        function quitarFallaSoloEscena() {
+            if (grupoFalla && grupo) {
+                grupo.remove(grupoFalla);
+                grupoFalla.traverse(o => {
+                    if (o.geometry) o.geometry.dispose();
+                    if (o.material) o.material.dispose();
+                });
+            }
+            grupoFalla = null;
+        }
+
+        function ajustarFalla() {
+            const eventos = [].concat(
+                datosFondo.eventos || [],
+                (datosEvento && datosEvento.eventos) || []
+            );
+            if (!datosFondo.bbox || eventos.length < 6) {
+                mensajeFalla('Query a catalog first: there is nothing to fit.', 'aviso');
+                return;
+            }
+            const b = datosFondo.bbox;
+            const km = kmPorGrado((b.n + b.s) / 2);
+            const puntos = eventos.map(ev => ({
+                x: (ev.lon - b.o) * km.lon,
+                y: (ev.lat - b.s) * km.lat,
+                z: -ev.prof,
+                ev
+            }));
+
+            const radio = Math.max(2, Math.min(100, parseFloat($('fallaRadio').value) || 15));
+            const minimo = Math.max(6, Math.min(500, parseInt($('fallaMinimo').value, 10) || 12));
+            const nube = grupoMasDenso(puntos, radio, minimo);
+            if (!nube) {
+                mensajeFalla(`No cluster reaches ${minimo} events within ${radio} km of each other. ` +
+                    'Widen the radius, lower the minimum, or query an area with a denser swarm — ' +
+                    'fitting a plane to a scattered cloud would draw a surface that means nothing.', 'aviso');
+                return;
+            }
+
+            const aj = ajustePorMinimosCuadrados(nube);
+            ajusteActual = aj;
+            pintarFalla(aj);
+            $('btnQuitarFalla').disabled = false;
+
+            const prof = nube.map(p => -p.z);
+            $('fichaFalla').hidden = false;
+            $('fichaFalla').innerHTML =
+                `<b>Cluster:</b> ${aj.n} of ${eventos.length} events · depth ${Math.min(...prof).toFixed(0)}–${Math.max(...prof).toFixed(0)} km<br>` +
+                `<b>Plane:</b> strike ${aj.rumbo.toFixed(0)}° · dip ${aj.buzamiento.toFixed(0)}°<br>` +
+                `<b>Line:</b> trend ${aj.direccion.toFixed(0)}° · plunge ${aj.inclinacion.toFixed(0)}°<br>` +
+                `<b>Scatter:</b> ${aj.rmsPlano.toFixed(1)} km rms to the plane · ${aj.rmsLinea.toFixed(1)} km to the line<br>` +
+                `<b>Shape:</b> planarity ${(aj.planaridad * 100).toFixed(0)}% · linearity ${(aj.linealidad * 100).toFixed(0)}%<br>` +
+                `<b>Size:</b> ${(2 * aj.extA).toFixed(0)} × ${(2 * aj.extB).toFixed(0)} km`;
+
+            const juicio = aj.planaridad > 0.5
+                ? 'The cluster is genuinely tabular: the plane is worth reading.'
+                : (aj.linealidad > 0.6
+                    ? 'The cluster is more linear than planar — the line describes it better than the plane.'
+                    : 'The cluster is neither tabular nor linear; both fits are weak descriptions of it.');
+            mensajeFalla(`<strong>${aj.n} events fitted.</strong> ${juicio}`, aj.planaridad > 0.5 || aj.linealidad > 0.6 ? 'ok' : 'aviso');
+        }
+
+        // ============================================================
+        // Zona restringida
+        // ============================================================
+        // La clave vive en el cliente: cualquiera que abra el código la ve. No es una
+        // medida de seguridad y el panel lo dice; es un pestillo para que estas dos
+        // herramientas no se usen sin querer.
+        const CLAVE_RESTRINGIDA = '98671118';
+
+        function abrirRestringido(silencioso) {
+            $('candadoCerrado').hidden = true;
+            $('candadoAbierto').hidden = false;
+            try { sessionStorage.setItem('explorador-restringido', '1'); } catch (e) { /* sin storage */ }
+            if (!silencioso) mensajeCandado('Unlocked for this browser tab.', 'ok');
+        }
+
+        function mensajeCandado(texto, tipo) {
+            const el = $('mensajeCandado');
+            el.className = 'msg visible ' + tipo;
+            el.textContent = texto;
+        }
+
+        function conectarRestringido() {
+            let abierto = false;
+            try { abierto = sessionStorage.getItem('explorador-restringido') === '1'; } catch (e) { /* nada */ }
+            if (abierto) abrirRestringido(true);
+
+            const intentar = () => {
+                if ($('claveRestringida').value.trim() === CLAVE_RESTRINGIDA) abrirRestringido(false);
+                else mensajeCandado('That passcode does not match.', 'error');
+                $('claveRestringida').value = '';
+            };
+            $('btnAbrirCandado').addEventListener('click', intentar);
+            $('claveRestringida').addEventListener('keydown', (e) => { if (e.key === 'Enter') intentar(); });
+
+            $('btnAjustarFalla').addEventListener('click', ajustarFalla);
+            $('btnQuitarFalla').addEventListener('click', () => { quitarFalla(); limpiarMensajeFalla(); });
+            $('fallaColor').addEventListener('change', () => { if (ajusteActual) pintarFalla(ajusteActual); });
+            $('fallaOpacidad').addEventListener('input', (e) => {
+                $('fallaOpacidadTexto').textContent = e.target.value + '%';
+                $('fallaOpacidadValor').value = e.target.value;
+                aplicarOpacidadFalla();
+            });
+            $('fallaOpacidadValor').addEventListener('change', (e) => {
+                const v = Math.max(0, Math.min(100, parseInt(e.target.value, 10) || 0));
+                $('fallaOpacidad').value = v;
+                $('fallaOpacidadTexto').textContent = v + '%';
+                aplicarOpacidadFalla();
+            });
+            $('btnGuardarBusqueda').addEventListener('click', guardarBusquedaComoEvento);
+        }
+
         function conectarControles() {
+            conectarRestringido();
             cargarLibreria();
             $('libreriaEvento').addEventListener('change', () => pintarFichaBiblioteca(fichaPorId($('libreriaEvento').value)));
             $('btnCargarBiblioteca').addEventListener('click', cargarDeBiblioteca);
