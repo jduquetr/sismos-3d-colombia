@@ -1394,7 +1394,22 @@
             if (circuloDibujo) { map.removeLayer(circuloDibujo); circuloDibujo = null; }
             refrescarCapaGeologicaSiActiva();
             map.fitWorld();
+
+            // Además del área, se borra lo graficado: queda la escena vacía, lista para
+            // una búsqueda nueva. Los tensores y la placa dependen del área, así que se
+            // van con ella.
+            datosFondo = nuevaCapaFondo();
+            datosEvento = null;
+            $('btnQuitarEvento').disabled = true;
+            tensoresEvento = [];
+            $('grupoTensor').hidden = true;
+            instantaneaCargada = null;
+            eventoBiblioteca = null;
+            $('notaInstantanea').hidden = true;
+            $('btnActualizarBiblioteca').hidden = true;
             limpiarMensaje();
+            limpiarMensajeEvento();
+            refrescarTrasCambioDeCapas();
         }
 
         function setModoArea(modo) {
@@ -3547,6 +3562,7 @@
                 $('timeValue').textContent = '—';
                 renderFondo.visibles = 0;
                 renderEvento.visibles = 0;
+                actualizarContador(null, 0);   // sin datos el contador se esconde
                 actualizarVisibles();
                 return;
             }
