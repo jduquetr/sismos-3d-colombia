@@ -44,6 +44,7 @@ Solo una de las dos bases de datos históricas se muestra a la vez (selector des
 - `index.html` — redirige a `explorador-area.html` (vista por defecto)
 - `subduccion-puntos.json` — dataset USGS 1960–2026 (subducción Nazca), formato compacto `[lon, lat, depth, mag]`
 - `historico-1900-puntos.json` — dataset USGS 1900–2026 (Colombia completa), mismo formato
+- `fallas-colombia.json` — fallas activas de Colombia y alrededores (532 trazas), recorte de GEM Global Active Faults (Styron & Pagani, 2020), que para Colombia se basa en París et al. (2000). Datos bajo licencia CC BY-SA 4.0. Se regenera con `node tools/extraer-fallas.mjs`
 - `swtectonics-logo.png` — branding
 - `eventos/libreria.json` — biblioteca de eventos especiales: una ficha por evento (contexto regional, consulta de la secuencia, estilo, id de USGS y tensor de respaldo)
 - `eventos/<id>.json` — instantánea congelada de cada ficha: es lo que carga la página por defecto
