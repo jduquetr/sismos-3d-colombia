@@ -862,6 +862,12 @@
                 </div>
 
                 <div class="control-group">
+                    <div class="group-title">Felt earthquakes — SPAlert</div>
+                    <button class="btn" id="btnSPAlert" type="button">Sismos sentidos (SPAlert)</button>
+                    <div class="nota">Loads the earthquakes detected by sismos-alerta (Medellín) as the special event layer. It reads them live from sismos-alerta's local server (<code>127.0.0.1:8765</code>), so it only works on the computer where sismos-alerta is running.</div>
+                </div>
+
+                <div class="control-group">
                     <div class="group-title">Custom query</div>
                     <div class="nota">Second data layer, independent from the background layer — same scene, its own colors, size and opacity. The library fills this in for you; you can also build it by hand.</div>
                 </div>
@@ -2457,6 +2463,80 @@
         // ============================================================
         // 6b. Capa de evento especial: consulta por catálogo o carga por archivo
         // ============================================================
+
+        // Carga una FeatureCollection ya parseada como capa de evento especial.
+        // La usan el archivo propio y el botón de SPAlert.
+        function cargarColeccionEvento(fc, fuente, notas, opciones) {
+            if (!fc || fc.type !== 'FeatureCollection' || !Array.isArray(fc.features)) {
+                mensajeEvento(
+                    `This doesn't look like a valid point GeoJSON — expected ` +
+                    `<code>type: "FeatureCollection"</code> with a <code>features</code> array; ` +
+                    `found <code>type: "${fc && fc.type}"</code>.`,
+                    'error'
+                );
+                return;
+            }
+            const norm = normalizarGeoJSONPropio(fc);
+            if (!norm.eventos.length) {
+                mensajeEvento(
+                    `Could not extract any valid event ` +
+                    `(${norm.descartados} of ${fc.features.length} features discarded for missing ` +
+                    `recognizable lat/lon/depth/magnitude/date).` +
+                    (notas.length ? '<br>' + notas.join(' ') : ''),
+                    'error'
+                );
+                return;
+            }
+            aplicarResultadoEvento(norm, null, fuente, null, notas, Object.assign({
+                fuenteId: null, urlConsulta: null, truncado: false
+            }, opciones));
+        }
+
+        // sismos-alerta (proyecto aparte) guarda sus detecciones en
+        // datos/sismos-detectados.geojson y las sirve desde su servidor local,
+        // con CORS solo para este visor. Una página web no puede leer el archivo
+        // del disco, así que esto solo funciona donde corre sismos-alerta.
+        const SPALERT_URL = 'http://127.0.0.1:8765/sismos-detectados.geojson';
+
+        async function cargarSPAlert() {
+            $('btnSPAlert').disabled = true;
+            mensajeEvento('Loading SPAlert detections…', 'cargando');
+            let fc;
+            try {
+                const res = await fetch(SPALERT_URL, { cache: 'no-store' });
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                fc = await res.json();
+            } catch (err) {
+                mensajeEvento(
+                    '<strong>Could not reach sismos-alerta.</strong><br>' +
+                    'Start it on this computer (<code>iniciar.bat</code>) and try again. If the browser asks ' +
+                    'for permission to access devices on your local network, allow it.' +
+                    `<br><small>${err.message}</small>`,
+                    'error'
+                );
+                $('btnSPAlert').disabled = false;
+                return;
+            }
+            $('btnSPAlert').disabled = false;
+
+            const features = (fc && fc.features) || [];
+            if (!features.length) {
+                mensajeEvento('sismos-alerta has not saved any real detection yet.', 'aviso');
+                return;
+            }
+            // Mientras ningún catálogo publique el sismo, la detección no tiene ubicación.
+            const conUbicacion = features.filter(f => f.geometry);
+            if (!conUbicacion.length) {
+                mensajeEvento(`sismos-alerta has ${features.length} detections, but no catalog has located any of them yet.`, 'aviso');
+                return;
+            }
+            const notas = conUbicacion.length < features.length
+                ? [`${features.length - conUbicacion.length} detections without a catalog location yet were skipped.`]
+                : [];
+            cargarColeccionEvento(Object.assign({}, fc, { features: conUbicacion }),
+                'SPAlert (sismos-alerta)', notas,
+                { origen: 'spalert', nombreArchivo: 'sismos-detectados.geojson', urlConsulta: SPALERT_URL });
+        }
 
         async function consultarEvento() {
             const problemaArea = revisarAreaEvento();
@@ -5203,33 +5283,15 @@
                     let fc;
                     try { fc = JSON.parse(reader.result); }
                     catch (err) { mensajeEvento('The file is not valid JSON.', 'error'); return; }
-                    if (!fc || fc.type !== 'FeatureCollection' || !Array.isArray(fc.features)) {
-                        mensajeEvento(
-                            `The file doesn't look like a valid point GeoJSON — expected ` +
-                            `<code>type: "FeatureCollection"</code> with a <code>features</code> array; ` +
-                            `found <code>type: "${fc && fc.type}"</code>.`,
-                            'error'
-                        );
-                        return;
-                    }
-                    const norm = normalizarGeoJSONPropio(fc);
-                    if (!norm.eventos.length) {
-                        mensajeEvento(
-                            `Could not extract any valid event from the file ` +
-                            `(${norm.descartados} of ${fc.features.length} features discarded for missing ` +
-                            `recognizable lat/lon/depth/magnitude/date).`,
-                            'error'
-                        );
-                        return;
-                    }
-                    aplicarResultadoEvento(norm, null, `Own file (${file.name})`, null, [], {
-                        fuenteId: null, urlConsulta: null, truncado: false,
+                    cargarColeccionEvento(fc, `Own file (${file.name})`, [], {
                         origen: 'archivo', nombreArchivo: file.name
                     });
                 };
                 reader.onerror = () => mensajeEvento('Could not read the file.', 'error');
                 reader.readAsText(file);
             });
+
+            $('btnSPAlert').addEventListener('click', cargarSPAlert);
 
             $('colorInicialEvento').addEventListener('input', actualizarColoresEvento);
             $('colorFinalEvento').addEventListener('input', actualizarColoresEvento);
