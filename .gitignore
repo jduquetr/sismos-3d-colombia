@@ -1,1 +1,4 @@
 tools/.cache-slab/
+dist/
+node_modules/
+.wrangler/
