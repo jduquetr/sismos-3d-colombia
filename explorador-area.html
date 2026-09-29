@@ -161,11 +161,11 @@
         .campo { display: flex; flex-direction: column; gap: 3px; }
         .campo label { font-size: 10px; color: var(--ink-3); text-transform: uppercase; letter-spacing: .04em; }
 
-        input[type="number"], input[type="date"], select {
+        input[type="number"], input[type="date"], input[type="url"], select {
             background: var(--surface-2); border: 1px solid var(--line); border-radius: 6px; color: var(--ink);
             padding: 6px 7px; font-size: 11px; font-family: inherit; width: 100%;
         }
-        input[type="number"]:focus, input[type="date"]:focus, select:focus { outline: none; border-color: var(--accent); }
+        input[type="number"]:focus, input[type="date"]:focus, input[type="url"]:focus, select:focus { outline: none; border-color: var(--accent); }
         input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(0.7); cursor: pointer; }
         input[type="color"] { width: 100%; height: 30px; padding: 2px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-2); cursor: pointer; }
 
@@ -863,8 +863,13 @@
 
                 <div class="control-group">
                     <div class="group-title">Felt earthquakes — SPAlert</div>
+                    <div class="campo" style="margin-bottom: 6px;">
+                        <label for="spalertServidor">sismos-alerta server</label>
+                        <input type="url" id="spalertServidor" value="http://127.0.0.1:8765" spellcheck="false"
+                               placeholder="http://127.0.0.1:8765 or https://your-mac.tailXXXX.ts.net">
+                    </div>
                     <button class="btn" id="btnSPAlert" type="button">Sismos sentidos (SPAlert)</button>
-                    <div class="nota">Loads the earthquakes detected by sismos-alerta (Medellín) as the special event layer. It reads them live from sismos-alerta's local server (<code>127.0.0.1:8765</code>), so it only works on the computer where sismos-alerta is running.</div>
+                    <div class="nota">Loads the earthquakes detected by sismos-alerta (Medellín) as the special event layer, live from its server. Use <code>http://127.0.0.1:8765</code> on the computer where it runs, or its Tailscale address (<code>https://….ts.net</code>) from anywhere else on your tailnet. If the server can't be reached, it falls back to the last snapshot published at <code>sismo-alert-blue.vercel.app</code> and says how old it is.</div>
                 </div>
 
                 <div class="control-group">
@@ -2492,30 +2497,50 @@
             }, opciones));
         }
 
-        // sismos-alerta (proyecto aparte) guarda sus detecciones en
-        // datos/sismos-detectados.geojson y las sirve desde su servidor local,
-        // con CORS solo para este visor. Una página web no puede leer el archivo
-        // del disco, así que esto solo funciona donde corre sismos-alerta.
-        const SPALERT_URL = 'http://127.0.0.1:8765/sismos-detectados.geojson';
+        // sismos-alerta (proyecto aparte, github.com/jduquetr/SismoAlert) guarda sus
+        // detecciones en datos/sismos-detectados.geojson y las sirve desde su servidor,
+        // con CORS solo para este visor. La dirección se puede cambiar: 127.0.0.1 en el
+        // equipo donde corre, o su dirección de Tailscale (https://….ts.net) desde afuera.
+        // Si no responde, se usa la última copia publicada en Vercel.
+        const SPALERT_SERVIDOR_KEY = 'spalert-servidor';
+        const SPALERT_ARCHIVO = '/sismos-detectados.geojson';
+        const SPALERT_PUBLICO = 'https://sismo-alert-blue.vercel.app/sismos-detectados.geojson';
+
+        function spalertServidor() {
+            const txt = ($('spalertServidor').value || '').trim().replace(/\/+$/, '');
+            return txt || 'http://127.0.0.1:8765';
+        }
+
+        async function leerSPAlert(url) {
+            const res = await fetch(url, { cache: 'no-store' });
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            return res.json();
+        }
 
         async function cargarSPAlert() {
             $('btnSPAlert').disabled = true;
             mensajeEvento('Loading SPAlert detections…', 'cargando');
-            let fc;
+            const servidor = spalertServidor();
+            try { localStorage.setItem(SPALERT_SERVIDOR_KEY, servidor); } catch (e) { /* sin almacenamiento */ }
+            let fc, url = servidor + SPALERT_ARCHIVO, respaldo = false;
             try {
-                const res = await fetch(SPALERT_URL, { cache: 'no-store' });
-                if (!res.ok) throw new Error(`HTTP ${res.status}`);
-                fc = await res.json();
-            } catch (err) {
-                mensajeEvento(
-                    '<strong>Could not reach sismos-alerta.</strong><br>' +
-                    'Start it on this computer (<code>iniciar.bat</code>) and try again. If the browser asks ' +
-                    'for permission to access devices on your local network, allow it.' +
-                    `<br><small>${err.message}</small>`,
-                    'error'
-                );
-                $('btnSPAlert').disabled = false;
-                return;
+                fc = await leerSPAlert(url);
+            } catch (errServidor) {
+                try {
+                    url = SPALERT_PUBLICO;
+                    fc = await leerSPAlert(url);
+                    respaldo = true;
+                } catch (errPublico) {
+                    mensajeEvento(
+                        `<strong>Could not reach sismos-alerta at <code>${servidor}</code>.</strong><br>` +
+                        'Check that it is running there (or that Tailscale is connected), then try again. If ' +
+                        'the browser asks for permission to access devices on your local network, allow it.' +
+                        `<br><small>${errServidor.message}; published snapshot: ${errPublico.message}</small>`,
+                        'error'
+                    );
+                    $('btnSPAlert').disabled = false;
+                    return;
+                }
             }
             $('btnSPAlert').disabled = false;
 
@@ -2533,9 +2558,15 @@
             const notas = conUbicacion.length < features.length
                 ? [`${features.length - conUbicacion.length} detections without a catalog location yet were skipped.`]
                 : [];
+            if (respaldo) {
+                const generado = fc.metadata && fc.metadata.generado;
+                notas.unshift(`The server at ${servidor} didn't answer, so this is the published snapshot` +
+                    (generado ? ` from ${new Date(generado).toISOString().slice(0, 16).replace('T', ' ')} UTC` : '') +
+                    ', not live data.');
+            }
             cargarColeccionEvento(Object.assign({}, fc, { features: conUbicacion }),
-                'SPAlert (sismos-alerta)', notas,
-                { origen: 'spalert', nombreArchivo: 'sismos-detectados.geojson', urlConsulta: SPALERT_URL });
+                respaldo ? 'SPAlert (published snapshot)' : 'SPAlert (sismos-alerta)', notas,
+                { origen: 'spalert', nombreArchivo: 'sismos-detectados.geojson', urlConsulta: url });
         }
 
         async function consultarEvento() {
@@ -5292,6 +5323,10 @@
             });
 
             $('btnSPAlert').addEventListener('click', cargarSPAlert);
+            try {
+                const guardado = localStorage.getItem(SPALERT_SERVIDOR_KEY);
+                if (guardado) $('spalertServidor').value = guardado;
+            } catch (e) { /* sin almacenamiento: queda la dirección por defecto */ }
 
             $('colorInicialEvento').addEventListener('input', actualizarColoresEvento);
             $('colorFinalEvento').addEventListener('input', actualizarColoresEvento);
