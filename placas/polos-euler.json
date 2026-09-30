@@ -1,0 +1,359 @@
+{
+ "marco": "IGS14",
+ "derivadoDe": "https://geodesy.unr.edu/velocities/midas.<placa>.txt",
+ "metodo": "Mínimos cuadrados sobre v_IGS14 − v_placa = ω × r en cada estación común, con rechazo iterativo de residuos mayores a 4σ.",
+ "bajado": "2026-09-30",
+ "nota": "ω en radianes por año, componentes ECEF. El residuo es lo que queda sin explicar por una rotación rígida: sub-milimétrico salvo en placas con deformación interna real.",
+ "polos": {
+  "AF": {
+   "nombre": "África (Nubia)",
+   "lat": 49.8553,
+   "lon": -80.6445,
+   "gradosMa": 0.26651,
+   "w": [
+    4.87507251e-10,
+    -2.95904156e-9,
+    3.55571803e-9
+   ],
+   "estaciones": 865,
+   "residuoMm": 0.059,
+   "rigida": true
+  },
+  "AN": {
+   "nombre": "Antártica",
+   "lat": 59.0405,
+   "lon": -127.5024,
+   "gradosMa": 0.21979,
+   "w": [
+    -1.20138135e-9,
+    -1.56553487e-9,
+    3.28951679e-9
+   ],
+   "estaciones": 239,
+   "residuoMm": 0.046,
+   "rigida": true
+  },
+  "AR": {
+   "nombre": "Arabia",
+   "lat": 51.271,
+   "lon": -18.289,
+   "gradosMa": 0.46523,
+   "w": [
+    4.8234868e-9,
+    -1.5941893e-9,
+    6.33442281e-9
+   ],
+   "estaciones": 190,
+   "residuoMm": 0.026,
+   "rigida": true
+  },
+  "AU": {
+   "nombre": "Australia",
+   "lat": 32.295,
+   "lon": 37.9646,
+   "gradosMa": 0.62977,
+   "w": [
+    7.32519816e-9,
+    5.7157796e-9,
+    5.87258668e-9
+   ],
+   "estaciones": 1369,
+   "residuoMm": 0.089,
+   "rigida": true
+  },
+  "BU": {
+   "nombre": "Burma",
+   "lat": -4.699,
+   "lon": -76.3958,
+   "gradosMa": 2.3412,
+   "w": [
+    9.5788918e-9,
+    -3.95817398e-8,
+    -3.34746179e-9
+   ],
+   "estaciones": 21,
+   "residuoMm": 0.071,
+   "rigida": true
+  },
+  "CA": {
+   "nombre": "Caribe",
+   "lat": 36.9391,
+   "lon": -99.5866,
+   "gradosMa": 0.27246,
+   "w": [
+    -6.32977934e-10,
+    -3.74770057e-9,
+    2.85776182e-9
+   ],
+   "estaciones": 279,
+   "residuoMm": 0.22,
+   "rigida": true
+  },
+  "CO": {
+   "nombre": "Cocos",
+   "lat": 26.6186,
+   "lon": -124.8615,
+   "gradosMa": 1.15786,
+   "w": [
+    -1.03267179e-8,
+    -1.48241951e-8,
+    9.05437472e-9
+   ],
+   "estaciones": 73,
+   "residuoMm": 0.207,
+   "rigida": true
+  },
+  "EU": {
+   "nombre": "Eurasia",
+   "lat": 55.4299,
+   "lon": -99.8091,
+   "gradosMa": 0.25386,
+   "w": [
+    -4.28300277e-10,
+    -2.47725295e-9,
+    3.64832376e-9
+   ],
+   "estaciones": 6325,
+   "residuoMm": 0.072,
+   "rigida": true
+  },
+  "IN": {
+   "nombre": "India",
+   "lat": 50.9993,
+   "lon": -6.205,
+   "gradosMa": 0.50546,
+   "w": [
+    5.51942832e-9,
+    -6.00092408e-10,
+    6.85591738e-9
+   ],
+   "estaciones": 165,
+   "residuoMm": 0.064,
+   "rigida": true
+  },
+  "MA": {
+   "nombre": "Mariana",
+   "lat": 10.6795,
+   "lon": 142.7568,
+   "gradosMa": 2.16825,
+   "w": [
+    -2.96041317e-8,
+    2.25059279e-8,
+    7.0129028e-9
+   ],
+   "estaciones": 5,
+   "residuoMm": 0.153,
+   "rigida": true
+  },
+  "NA": {
+   "nombre": "Norteamérica",
+   "lat": -1.5266,
+   "lon": -86.228,
+   "gradosMa": 0.20736,
+   "w": [
+    2.38002447e-10,
+    -3.60997715e-9,
+    -9.6417989e-11
+   ],
+   "estaciones": 8677,
+   "residuoMm": 0.05,
+   "rigida": true
+  },
+  "NB": {
+   "nombre": "Bismarck Norte",
+   "lat": -30.6167,
+   "lon": 135.214,
+   "gradosMa": 1.21194,
+   "w": [
+    -1.29198123e-8,
+    1.28236619e-8,
+    -1.07726695e-8
+   ],
+   "estaciones": 3,
+   "residuoMm": 0.269,
+   "rigida": true
+  },
+  "NZ": {
+   "nombre": "Nazca",
+   "lat": 48.7921,
+   "lon": -103.978,
+   "gradosMa": 0.59481,
+   "w": [
+    -1.65201464e-9,
+    -6.63672532e-9,
+    7.81022431e-9
+   ],
+   "estaciones": 162,
+   "residuoMm": 0.381,
+   "rigida": true
+  },
+  "OK": {
+   "nombre": "Ojotsk",
+   "lat": 37.0342,
+   "lon": -103.5473,
+   "gradosMa": 0.19535,
+   "w": [
+    -6.37559162e-10,
+    -2.64599048e-9,
+    2.05351313e-9
+   ],
+   "estaciones": 417,
+   "residuoMm": 1.437,
+   "rigida": false
+  },
+  "ON": {
+   "nombre": "Okinawa",
+   "lat": 38.2042,
+   "lon": 145.4208,
+   "gradosMa": 1.39412,
+   "w": [
+    -1.5742575e-8,
+    1.08516246e-8,
+    1.50484681e-8
+   ],
+   "estaciones": 186,
+   "residuoMm": 1.617,
+   "rigida": false
+  },
+  "PA": {
+   "nombre": "Pacífico",
+   "lat": -62.4701,
+   "lon": 110.642,
+   "gradosMa": 0.6802,
+   "w": [
+    -1.93440148e-9,
+    5.13494738e-9,
+    -1.052744e-8
+   ],
+   "estaciones": 1755,
+   "residuoMm": 0.121,
+   "rigida": true
+  },
+  "PM": {
+   "nombre": "Panamá",
+   "lat": 16.1135,
+   "lon": -84.7013,
+   "gradosMa": 1.37284,
+   "w": [
+    2.12579714e-9,
+    -2.29209449e-8,
+    6.65005974e-9
+   ],
+   "estaciones": 58,
+   "residuoMm": 0.059,
+   "rigida": true
+  },
+  "PS": {
+   "nombre": "Mar de Filipinas",
+   "lat": -47.3813,
+   "lon": -27.9247,
+   "gradosMa": 0.88911,
+   "w": [
+    9.28402141e-9,
+    -4.92076084e-9,
+    -1.14193104e-8
+   ],
+   "estaciones": 529,
+   "residuoMm": 1.76,
+   "rigida": false
+  },
+  "SA": {
+   "nombre": "Suramérica",
+   "lat": -20.5858,
+   "lon": -125.049,
+   "gradosMa": 0.12277,
+   "w": [
+    -1.15195638e-9,
+    -1.64217443e-9,
+    -7.53412117e-10
+   ],
+   "estaciones": 858,
+   "residuoMm": 0.22,
+   "rigida": true
+  },
+  "SB": {
+   "nombre": "Bismarck Sur",
+   "lat": 6.768,
+   "lon": -32.3874,
+   "gradosMa": 6.66402,
+   "w": [
+    9.75322396e-8,
+    -6.18657073e-8,
+    1.37069798e-8
+   ],
+   "estaciones": 4,
+   "residuoMm": 0.225,
+   "rigida": true
+  },
+  "SC": {
+   "nombre": "Escocia",
+   "lat": 18.8802,
+   "lon": -105.5661,
+   "gradosMa": 0.10924,
+   "w": [
+    -4.84109586e-10,
+    -1.73784943e-9,
+    6.1695651e-10
+   ],
+   "estaciones": 16,
+   "residuoMm": 0.067,
+   "rigida": true
+  },
+  "SL": {
+   "nombre": "Shetland",
+   "lat": 65.2529,
+   "lon": 133.9847,
+   "gradosMa": 1.69803,
+   "w": [
+    -8.61563603e-9,
+    8.92652464e-9,
+    2.69145979e-8
+   ],
+   "estaciones": 13,
+   "residuoMm": 0.005,
+   "rigida": true
+  },
+  "SO": {
+   "nombre": "Somalia",
+   "lat": 47.2137,
+   "lon": -97.3752,
+   "gradosMa": 0.32886,
+   "w": [
+    -5.00470909e-10,
+    -3.86654003e-9,
+    4.21234147e-9
+   ],
+   "estaciones": 235,
+   "residuoMm": 0.053,
+   "rigida": true
+  },
+  "SU": {
+   "nombre": "Sonda",
+   "lat": 50.919,
+   "lon": -94.412,
+   "gradosMa": 0.33376,
+   "w": [
+    -2.82505911e-10,
+    -3.66148917e-9,
+    4.52190955e-9
+   ],
+   "estaciones": 292,
+   "residuoMm": 0.283,
+   "rigida": true
+  },
+  "WL": {
+   "nombre": "Woodlark",
+   "lat": -1.9685,
+   "lon": 130.6841,
+   "gradosMa": 1.97474,
+   "w": [
+    -2.24545471e-8,
+    2.61204691e-8,
+    -1.18390196e-9
+   ],
+   "estaciones": 6,
+   "residuoMm": 0.111,
+   "rigida": true
+  }
+ }
+}
