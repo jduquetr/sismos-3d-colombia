@@ -15,7 +15,7 @@
 //    exige cuenta, así que no sirve para una página pública.
 //    Incluye la red GeoRED del SGC: hay ~140 estaciones dentro de Colombia.
 //
-// 2. POLOS DE EULER. NGL publica el mismo campo en 26 marcos con una placa
+// 2. POLOS DE EULER. NGL publica el mismo campo en 25 marcos con una placa
 //    fija. La diferencia entre el archivo IGS14 y el de la placa X es, en cada
 //    estación, la rotación de X: v_IGS14 − v_X = ω_X × r. Eso es lineal en ω,
 //    así que el polo se saca por mínimos cuadrados de sus propios archivos.
@@ -24,7 +24,7 @@
 //    exactamente consistente con las velocidades que servimos (una tabla de
 //    otro marco metería un sesgo de 1–2 mm/a), y el residuo del ajuste es una
 //    prueba: si la rotación fuera mal calculada, no daría sub-milimétrico.
-//    Con los polos, el navegador cambia de marco sin bajar 26 archivos, y puede
+//    Con los polos, el navegador cambia de marco sin bajar 25 archivos, y puede
 //    calcular el movimiento relativo entre dos placas en cualquier punto,
 //    también mar adentro, donde no hay estaciones.
 //
@@ -45,13 +45,15 @@ const SALIDA = join(RAIZ, 'placas');
 const NGL = 'https://geodesy.unr.edu/velocities';
 const PB2002 = 'https://raw.githubusercontent.com/fraxen/tectonicplates/master/GeoJSON';
 
-// Solo las placas con marco publicado por NGL. Las demás de PB2002 se dibujan,
-// pero no tienen polo: no hay GNSS suficiente sobre ellas.
+// Solo las placas con marco documentado por NGL (midas.readme.txt). Las demás de
+// PB2002 se dibujan, pero no tienen polo: no hay GNSS suficiente sobre ellas.
+// NGL publica además un midas.BG.txt que su documentación no nombra: sin saber
+// qué placa es, no se usa.
 const PLACAS = {
-    AF: 'África (Nubia)', AN: 'Antártica', AR: 'Arabia', AU: 'Australia', BG: 'Bismarck Sur',
+    AF: 'África (Nubia)', AN: 'Antártica', AR: 'Arabia', AU: 'Australia',
     BU: 'Burma', CA: 'Caribe', CO: 'Cocos', EU: 'Eurasia', IN: 'India', MA: 'Mariana',
     NA: 'Norteamérica', NB: 'Bismarck Norte', NZ: 'Nazca', OK: 'Ojotsk', ON: 'Okinawa',
-    PA: 'Pacífico', PM: 'Panamá', PS: 'Mar de Filipinas', SA: 'Suramérica', SB: 'Salomón',
+    PA: 'Pacífico', PM: 'Panamá', PS: 'Mar de Filipinas', SA: 'Suramérica', SB: 'Bismarck Sur',
     SC: 'Escocia', SL: 'Shetland', SO: 'Somalia', SU: 'Sonda', WL: 'Woodlark'
 };
 

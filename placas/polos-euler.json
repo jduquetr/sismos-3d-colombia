@@ -61,20 +61,6 @@
    "residuoMm": 0.089,
    "rigida": true
   },
-  "BG": {
-   "nombre": "Bismarck Sur",
-   "lat": -43.861,
-   "lon": -54.2998,
-   "gradosMa": 0.33025,
-   "w": [
-    2.42520709e-9,
-    -3.37500736e-9,
-    -3.99395958e-9
-   ],
-   "estaciones": 78,
-   "residuoMm": 0.087,
-   "rigida": true
-  },
   "BU": {
    "nombre": "Burma",
    "lat": -4.699,
@@ -286,7 +272,7 @@
    "rigida": true
   },
   "SB": {
-   "nombre": "Salomón",
+   "nombre": "Bismarck Sur",
    "lat": 6.768,
    "lon": -32.3874,
    "gradosMa": 6.66402,
