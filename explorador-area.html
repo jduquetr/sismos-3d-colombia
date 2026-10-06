@@ -52,6 +52,7 @@
             --scene-label:#898781;
             --area-draw:#84cc16;         /* área marcada (rectángulo/círculo) */
             --slab:#6da7ec;              /* superficie de la placa (Slab2) */
+            --falla:#f87171;             /* trazas de fallas activas (GEM) */
             /* capa de fondo: <=35 km corteza (neutro) y rampa naranja 35 km -> máx., como cubo-v2 */
             --crust:#8a8a86;
             --o0:#fde0cc; --o1:#f7b389; --o2:#ef8348; --o3:#d95926; --o4:#a33f18;
@@ -273,6 +274,7 @@
             --msg-load-bg:rgba(99,102,241,.12); --msg-load-line:rgba(129,140,248,.35); --msg-load-ink:#a5b4fc;
             --scene-bg:#0a0a0a; --scene-box:#71717a; --scene-surface:#1c1c1f; --scene-label:#a3a3a3; --area-draw:#a3e635;
             --slab:#818cf8;
+            --falla:#f87171;
             --crust:#737373;
             --o0:#ecfccb; --o1:#bef264; --o2:#84cc16; --o3:#65a30d; --o4:#4d7c0f;
             --shadow:0 24px 70px rgba(24,24,40,.28);
@@ -291,6 +293,7 @@
             --msg-load-bg:#eef2ff; --msg-load-line:#c7d2fe; --msg-load-ink:#4338ca;
             --scene-bg:#f7f7f8; --scene-box:#71717a; --scene-surface:#e4e4e7; --scene-label:#52525b; --area-draw:#65a30d;
             --slab:#4f46e5;
+            --falla:#dc2626;
             --crust:#a1a1aa;
             --o0:#bef264; --o1:#84cc16; --o2:#65a30d; --o3:#4d7c0f; --o4:#365314;
             --shadow:0 18px 48px rgba(24,24,27,.08);
@@ -634,6 +637,24 @@
                             to 10/cos(dip) as it steepens — about 14 km at 45°. Measuring perpendicular keeps the
                             thickness constant no matter the dip.
                         </div>
+                    </div>
+                    <div class="checkbox-item">
+                        <input type="checkbox" id="showFallas">
+                        <label for="showFallas">Active faults — GEM (Colombia)</label>
+                    </div>
+                    <div id="fallasControles" hidden>
+                        <div class="bbox-grid" style="margin-top:6px">
+                            <div class="campo">
+                                <label for="fallasProfMax">Shallow if depth ≤ (km)</label>
+                                <input type="number" id="fallasProfMax" min="1" max="300" step="5" value="40">
+                            </div>
+                            <div class="campo">
+                                <label for="fallasDistMax">Near if distance ≤ (km)</label>
+                                <input type="number" id="fallasDistMax" min="1" max="100" step="1" value="10">
+                            </div>
+                        </div>
+                        <div class="info-box" id="fallasResumen" style="margin-top:8px">Loading faults…</div>
+                        <div class="nota">Fault traces from the GEM Global Active Faults Database (Styron &amp; Pagani, 2020) — for Colombia it builds on the Quaternary fault map of Paris et al. (2000). Coverage: Colombia and its neighbors only. Click a fault for its name, kinematics and slip rate. For each <strong>shallow</strong> earthquake, its popup gives the nearest fault and the <strong>horizontal</strong> distance from the epicenter to the surface trace — a dipping fault passes under the epicenter off its trace, so this is a first screen, not an association. Deeper events (the subducting slab) are left out, and so is the trench.</div>
                     </div>
                     <div class="nota">Moment tensors now live in the <strong>Special Event</strong> tab, with the event they belong to.</div>
                 </div>
@@ -1781,10 +1802,11 @@
                     fillColor: colorParaCapa(capaId, ev),
                     color: '#fff', weight: 1, opacity: 0.8, fillOpacity: 0.8
                 });
-                m.bindPopup(
+                m.bindPopup(() =>
                     `<strong>M ${ev.mag.toFixed(1)}</strong> · ${ev.prof.toFixed(1)} km<br>` +
                     `${fechaHora(ev.time)}<br>${ev.region || ''}` +
-                    (capaId === 'evento' ? '<br><em>Special event</em>' : '')
+                    (capaId === 'evento' ? '<br><em>Special event</em>' : '') +
+                    lineaFallaPopup(ev)
                 );
                 grupoCapa.addLayer(m);
                 render.marcadores.push(m);
@@ -2697,6 +2719,7 @@
             actualizarTimeline(parseFloat($('timelineSlider').value) / 100);
             actualizarBotonExportar();
             tensoresDeLaConsulta();
+            actualizarResumenFallas();
         }
 
         // ============================================================
@@ -2728,6 +2751,7 @@
                 etiqueta: v('--scene-label', '#898781'),
                 area: v('--area-draw', '#84cc16'),
                 slab: v('--slab', '#6da7ec'),
+                falla: v('--falla', '#f87171'),
                 fuente: v('--font', 'system-ui,sans-serif')
             };
         }
@@ -2798,6 +2822,7 @@
             }
             mallaSuperior = null;
             grupoTensores = null;
+            grupoFallas = null;
             renderFondo.malla = null; renderFondo.indices = [];
             renderEvento.malla = null; renderEvento.indices = [];
         }
@@ -3179,6 +3204,8 @@
         // Slab2: contornos de profundidad de la placa (USGS)
         // ============================================================
         let capaSlab2 = null, grupoSlab2 = null, slab2Token = 0;
+        // Fallas activas: se cargan una vez (fallas-gem.json) al marcar la casilla.
+        let fallas = null, fallasCargando = null, capaFallas = null, grupoFallas = null;
         let slab2Cache = { clave: null, lineas: null };
 
         function claveBbox(b) {
@@ -3493,6 +3520,198 @@
             }
         }
 
+        // ============================================================
+        // Fallas activas (GEM Global Active Faults, recorte de Colombia)
+        // ============================================================
+
+        const KM_GRADO = 111.32;
+        const TIPOS_FALLA = {
+            Reverse: 'reverse', Dextral: 'right-lateral', Sinistral: 'left-lateral', Normal: 'normal',
+            Subduction_Thrust: 'subduction thrust (trench)', 'Strike-Slip': 'strike-slip'
+        };
+        const esFosa = f => f.tipo === 'Subduction_Thrust';
+
+        async function cargarFallas() {
+            if (fallas) return fallas;
+            if (!fallasCargando) {
+                fallasCargando = fetch('fallas-gem.json').then(r => {
+                    if (!r.ok) throw new Error('HTTP ' + r.status);
+                    return r.json();
+                }).then(j => {
+                    // Caja de cada traza: descarta rápido las que quedan lejos de un sismo.
+                    j.fallas.forEach(f => {
+                        f.caja = f.traza.reduce((c, [x, y]) => ({
+                            o: Math.min(c.o, x), e: Math.max(c.e, x), s: Math.min(c.s, y), n: Math.max(c.n, y)
+                        }), { o: Infinity, e: -Infinity, s: Infinity, n: -Infinity });
+                    });
+                    return (fallas = j);
+                }).catch(err => { fallasCargando = null; throw err; });
+            }
+            return fallasCargando;
+        }
+
+        function describirFalla(f) {
+            const tipo = f.tipo ? (TIPOS_FALLA[f.tipo] || f.tipo.replace(/_/g, ' ').toLowerCase()) : 'kinematics not given';
+            let tasa = '';
+            if (f.tasa && f.tasa[0] != null) {
+                tasa = `<br>Slip rate: ${f.tasa[0]} mm/yr` +
+                    (f.tasa[1] != null && f.tasa[2] != null ? ` (${f.tasa[1]}–${f.tasa[2]})` : '');
+            }
+            return `<strong>${f.nombre || 'Unnamed fault'}</strong><br>${tipo}${tasa}` +
+                `<br><small>${f.catalogo}${f.referencia ? ' · ' + f.referencia : ''}</small>`;
+        }
+
+        function construirCapaFallas() {
+            const color = leerTema3D().falla;
+            // Panel propio bajo los marcadores (overlayPane = 400): clicar un sismo
+            // sobre una traza abre el sismo, no la falla.
+            if (!map.getPane('fallas')) map.createPane('fallas').style.zIndex = 390;
+            const g = L.layerGroup();
+            fallas.fallas.forEach(f => {
+                L.polyline(f.traza.map(([lon, lat]) => [lat, lon]), {
+                    pane: 'fallas', color, weight: esFosa(f) ? 2 : 1.6, opacity: 0.9,
+                    dashArray: esFosa(f) ? '6 5' : null
+                }).bindPopup(describirFalla(f)).addTo(g);
+            });
+            return g;
+        }
+
+        async function mostrarFallas(activar) {
+            $('fallasControles').hidden = !activar;
+            if (!activar) {
+                if (capaFallas && map.hasLayer(capaFallas)) map.removeLayer(capaFallas);
+                if (grupoFallas && grupo) { grupo.remove(grupoFallas); liberar(grupoFallas); grupoFallas = null; }
+                return;
+            }
+            try {
+                await cargarFallas();
+            } catch (err) {
+                $('fallasResumen').textContent = `Could not load the fault map (${err.message}).`;
+                return;
+            }
+            if (!$('showFallas').checked) return;   // la desmarcaron mientras cargaba
+            if (!capaFallas) capaFallas = construirCapaFallas();
+            if (!map.hasLayer(capaFallas)) capaFallas.addTo(map);
+            if (grupo && datosFondo.bbox && !grupoFallas) {
+                grupoFallas = construirGrupoFallas(proyector());
+                if (grupoFallas) grupo.add(grupoFallas);
+            }
+            actualizarResumenFallas();
+        }
+
+        function liberar(obj) {
+            obj.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); });
+        }
+
+        // Recorta el segmento a-b al bbox (Liang-Barsky). Devuelve null si queda afuera.
+        function recortarSegmento(a, b, bb) {
+            let t0 = 0, t1 = 1;
+            const dx = b[0] - a[0], dy = b[1] - a[1];
+            const lados = [[-dx, a[0] - bb.o], [dx, bb.e - a[0]], [-dy, a[1] - bb.s], [dy, bb.n - a[1]]];
+            for (const [p, q] of lados) {
+                if (p === 0) { if (q < 0) return null; continue; }
+                const r = q / p;
+                if (p < 0) { if (r > t1) return null; if (r > t0) t0 = r; }
+                else { if (r < t0) return null; if (r < t1) t1 = r; }
+            }
+            return [[a[0] + t0 * dx, a[1] + t0 * dy], [a[0] + t1 * dx, a[1] + t1 * dy]];
+        }
+
+        // Trazas sobre la cara superior de la caja, recortadas al área consultada.
+        function construirGrupoFallas(P) {
+            const bb = datosFondo.bbox;
+            const pts = [];
+            fallas.fallas.forEach(f => {
+                if (f.caja.e < bb.o || f.caja.o > bb.e || f.caja.n < bb.s || f.caja.s > bb.n) return;
+                for (let i = 1; i < f.traza.length; i++) {
+                    const seg = recortarSegmento(f.traza[i - 1], f.traza[i], bb);
+                    if (!seg) continue;
+                    // Un pelo por encima del mapa de la cara superior, para que no parpadee.
+                    seg.forEach(([lon, lat]) => pts.push(new THREE.Vector3(P.x(lon), P.y(lat), 0.02)));
+                }
+            });
+            if (!pts.length) return null;
+            const g = new THREE.Group();
+            g.add(new THREE.LineSegments(
+                new THREE.BufferGeometry().setFromPoints(pts),
+                new THREE.LineBasicMaterial({ color: new THREE.Color(leerTema3D().falla) })
+            ));
+            return g;
+        }
+
+        // Distancia horizontal (km) del epicentro a la traza más cercana, en una
+        // proyección plana local: sobra a estas distancias. Solo mira trazas a
+        // menos de ~1° (unos 110 km); más lejos no interesa como cercanía.
+        function fallaMasCercana(ev) {
+            const cosLat = Math.cos(ev.lat * Math.PI / 180);
+            const km = ([lon, lat]) => [(lon - ev.lon) * cosLat * KM_GRADO, (lat - ev.lat) * KM_GRADO];
+            let mejor = null;
+            for (const f of fallas.fallas) {
+                if (esFosa(f)) continue;
+                const c = f.caja;
+                if (ev.lon < c.o - 1 || ev.lon > c.e + 1 || ev.lat < c.s - 1 || ev.lat > c.n + 1) continue;
+                let a = km(f.traza[0]);
+                for (let i = 1; i < f.traza.length; i++) {
+                    const b = km(f.traza[i]);
+                    const dx = b[0] - a[0], dy = b[1] - a[1];
+                    const l2 = dx * dx + dy * dy;
+                    const t = l2 ? Math.max(0, Math.min(1, -(a[0] * dx + a[1] * dy) / l2)) : 0;
+                    const d = Math.hypot(a[0] + t * dx, a[1] + t * dy);
+                    if (!mejor || d < mejor.dist) mejor = { falla: f, dist: d };
+                    a = b;
+                }
+            }
+            return mejor && mejor.dist <= KM_GRADO ? mejor : null;
+        }
+
+        const leerProfSomera = () => Math.max(0, parseFloat($('fallasProfMax').value) || 40);
+        const leerDistCerca = () => Math.max(0, parseFloat($('fallasDistMax').value) || 10);
+
+        // Se calcula al abrir el popup o al resumir, y se guarda en el evento.
+        function cercania(ev) {
+            if (!fallas) return undefined;
+            if (ev._falla === undefined) ev._falla = fallaMasCercana(ev);
+            return ev._falla;
+        }
+
+        function lineaFallaPopup(ev) {
+            if (!$('showFallas').checked || !fallas) return '';
+            if (ev.prof > leerProfSomera()) {
+                return `<br><small>Deeper than ${leerProfSomera()} km — not compared with surface faults.</small>`;
+            }
+            const c = cercania(ev);
+            if (!c) return '<br><small>No mapped active fault within ~110 km.</small>';
+            const cerca = c.dist <= leerDistCerca();
+            return `<br>Nearest active fault: <strong>${c.falla.nombre || 'unnamed'}</strong> — ` +
+                `${c.dist < 10 ? c.dist.toFixed(1) : Math.round(c.dist)} km` +
+                (cerca ? ' <strong>(near)</strong>' : '');
+        }
+
+        function resumenCapa(nombre, capa) {
+            const someros = capa.eventos.filter(e => e.prof <= leerProfSomera());
+            if (!someros.length) return `<strong>${nombre}:</strong> no events shallower than ${leerProfSomera()} km.`;
+            const d = leerDistCerca();
+            const cerca = someros.filter(e => { const c = cercania(e); return c && c.dist <= d; });
+            const porFalla = {};
+            // Las trazas sin nombre no dicen nada en la lista: cuentan en el total, no aquí.
+            cerca.forEach(e => { const n = e._falla.falla.nombre; if (n) porFalla[n] = (porFalla[n] || 0) + 1; });
+            const top = Object.entries(porFalla).sort((a, b) => b[1] - a[1]).slice(0, 3)
+                .map(([n, k]) => `${n} (${k})`).join(', ');
+            const pct = Math.round(100 * cerca.length / someros.length);
+            return `<strong>${nombre}:</strong> ${cerca.length} of ${someros.length} shallow events (≤ ${leerProfSomera()} km) ` +
+                `are within ${d} km of a mapped fault (${pct}%).` + (top ? `<br>Most: ${top}.` : '');
+        }
+
+        function actualizarResumenFallas() {
+            if (!$('showFallas').checked || !fallas) return;
+            const partes = [];
+            if (datosFondo.eventos.length) partes.push(resumenCapa('Background layer', datosFondo));
+            if (datosEvento && datosEvento.eventos.length) partes.push(resumenCapa('Special event', datosEvento));
+            $('fallasResumen').innerHTML = partes.length
+                ? partes.join('<br><br>')
+                : `${fallas.fallas.length} fault traces loaded. Query a catalog to compare its earthquakes with them.`;
+        }
+
         function proyector() {
             const b = datosFondo.bbox;
             const centroLat = (b.n + b.s) / 2, centroLon = (b.e + b.o) / 2;
@@ -3582,6 +3801,11 @@
 
             grupoSlab2 = null;      // limpiarEscena ya vació el grupo
             actualizarSlab2();
+
+            if ($('showFallas').checked && fallas) {
+                grupoFallas = construirGrupoFallas(P);
+                if (grupoFallas) grupo.add(grupoFallas);
+            }
 
             // Encuadre: distancia justa para que quepa la esfera que envuelve la caja.
             const radio = Math.hypot((x1 - x0) / 2, (y1 - y0) / 2, PROF_MUNDO / 2);
@@ -4188,6 +4412,7 @@
                 render.marcadores.forEach((m, i) => m.setStyle({ fillColor: colorParaCapa(id, capa.eventos[i]) }));
             });
             [rectangulo, circuloDibujo].forEach(f => { if (f) f.setStyle({ color: t.area, fillColor: t.area }); });
+            if (capaFallas) capaFallas.eachLayer(l => l.setStyle({ color: t.falla }));
 
             const gris = tema === 'light' ? capaCartoClaro : capaCartoOscuro;
             if (map && (capaBaseActual === capaCartoClaro || capaBaseActual === capaCartoOscuro) && capaBaseActual !== gris) {
@@ -5184,6 +5409,10 @@
                 if (e.target.checked) capaSlab2.addTo(map); else map.removeLayer(capaSlab2);
                 actualizarSlab2();
             });
+
+            $('showFallas').addEventListener('change', (e) => mostrarFallas(e.target.checked));
+            $('fallasProfMax').addEventListener('change', actualizarResumenFallas);
+            $('fallasDistMax').addEventListener('change', actualizarResumenFallas);
 
             $('slab2OpacidadSlider').addEventListener('input', (e) => {
                 $('slab2OpacidadValue').textContent = e.target.value + '%';
