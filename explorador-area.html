@@ -3204,7 +3204,7 @@
         // Slab2: contornos de profundidad de la placa (USGS)
         // ============================================================
         let capaSlab2 = null, grupoSlab2 = null, slab2Token = 0;
-        // Fallas activas: se cargan una vez (fallas-colombia.json) al marcar la casilla.
+        // Fallas activas: se cargan una vez (fallas-gem.json) al marcar la casilla.
         let fallas = null, fallasCargando = null, capaFallas = null, grupoFallas = null;
         let slab2Cache = { clave: null, lineas: null };
 
@@ -3534,7 +3534,7 @@
         async function cargarFallas() {
             if (fallas) return fallas;
             if (!fallasCargando) {
-                fallasCargando = fetch('fallas-colombia.json').then(r => {
+                fallasCargando = fetch('fallas-gem.json').then(r => {
                     if (!r.ok) throw new Error('HTTP ' + r.status);
                     return r.json();
                 }).then(j => {

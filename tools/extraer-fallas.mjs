@@ -1,9 +1,9 @@
 #!/usr/bin/env node
-// Genera fallas-colombia.json: las fallas activas de Colombia y alrededores,
+// Genera fallas-gem.json: las fallas activas de Sur y Centroamérica (con el Caribe y el sur de México),
 // recortadas de GEM Global Active Faults (Styron & Pagani, 2020).
 //
 // Por qué un recorte y no el archivo completo: el GeoJSON mundial pesa ~12 MB
-// y el visor solo necesita el norte de los Andes. Se fija el commit de GEM para
+// y el visor solo necesita Latinoamérica (~0,5 MB recortado). Se fija el commit de GEM para
 // que el recorte sea reproducible y citable.
 //
 // Catálogos que se conservan (los que tienen nombres de falla):
@@ -16,7 +16,7 @@
 //
 // Licencia de los datos: CC BY-SA 4.0 — el recorte hereda esa licencia.
 //
-// Uso: node tools/extraer-fallas.mjs      (escribe fallas-colombia.json; commitealo)
+// Uso: node tools/extraer-fallas.mjs      (escribe fallas-gem.json; commitealo)
 
 import { writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
@@ -25,9 +25,9 @@ import { dirname, join } from 'node:path';
 const RAIZ = join(dirname(fileURLToPath(import.meta.url)), '..');
 const COMMIT_GEM = '56816508ad92fd6846dad1163b1c8c01376a2cd1';
 const URL_GEM = `https://raw.githubusercontent.com/GEMScienceTools/gem-global-active-faults/${COMMIT_GEM}/geojson/gem_active_faults.geojson`;
-const RECUADRO = { o: -82, e: -66, s: -5, n: 14 };   // Colombia y vecinos
+const RECUADRO = { o: -120, e: -30, s: -60, n: 24 };   // Sur y Centroamérica, Caribe y sur de México
 const CATALOGOS = new Set(['Active Tectonics of the Andes', 'SARA', 'GEM_Central_Am_Carib']);
-const DECIMALES = 4;   // ~10 m: de sobra para trazas a escala regional
+const DECIMALES = 3;   // ~100 m: de sobra para trazas a escala regional
 
 // "(2,,)" o "(0.5,0.1,1.0)" -> [preferida, mínima, máxima] en mm/año (null si falta)
 function tasa(texto) {
@@ -78,6 +78,6 @@ const salida = {
     generado: new Date().toISOString().slice(0, 10),
     fallas
 };
-await writeFile(join(RAIZ, 'fallas-colombia.json'), JSON.stringify(salida));
+await writeFile(join(RAIZ, 'fallas-gem.json'), JSON.stringify(salida));
 const conNombre = fallas.filter(f => f.nombre).length;
-console.log(`${fallas.length} trazas (${conNombre} con nombre) -> fallas-colombia.json`);
+console.log(`${fallas.length} trazas (${conNombre} con nombre) -> fallas-gem.json`);
