@@ -49,6 +49,11 @@ Solo una de las dos bases de datos históricas se muestra a la vez (selector des
 - `eventos/libreria.json` — biblioteca de eventos especiales: una ficha por evento (contexto regional, consulta de la secuencia, estilo, id de USGS y tensor de respaldo)
 - `eventos/<id>.json` — instantánea congelada de cada ficha: es lo que carga la página por defecto
 - `tools/snapshot-eventos.mjs` — regenera esas instantáneas desde USGS
+- `placas/velocidades-gnss.json` — 17 359 velocidades GNSS (NGL MIDAS, marco IGS14)
+- `placas/polos-euler.json` — 25 polos de Euler derivados de los marcos de NGL
+- `placas/placas-pb2002.json`, `placas/bordes-pb2002.json` — geometría de placas de Bird (2003)
+- `tools/velocidades-placas.mjs` — regenera los cuatro archivos de `placas/`
+- `tools/verificar-placas.mjs` — los contrasta con hechos que no salen de ellos
 
 ## Uso local
 
@@ -157,6 +162,67 @@ nombres y resúmenes al mostrarlos, porque la biblioteca ya no la alimenta una s
 
 Lo que se publique queda público en el repo.
 
+## Movimiento de placas
+
+Tres capas en el panel **View → Plate motion**, en el mapa y sobre la cara superior del cubo:
+
+- **GNSS velocities — observed.** Cuánto se mueve cada estación: las velocidades MIDAS del
+  Nevada Geodetic Laboratory, 17 359 estaciones del mundo tras filtrar (σ ≤ 1 mm/a y al
+  menos 2,5 años de serie), incluida la red GeoRED del SGC — más de cien dentro de Colombia.
+- **Plate model — rigid plates.** El movimiento de la placa rígida a partir de polos de Euler.
+  Se puede calcular en cualquier punto, también mar adentro, donde no hay estaciones.
+- **Plate boundaries — PB2002.** Los bordes de Bird (2003).
+
+**No son lo mismo, y la diferencia es lo interesante.** Cerca de una fosa, la velocidad GNSS
+no es la de la placa: incluye la deformación elástica que acumula la interfase acoplada, y que
+el próximo sismo grande devuelve. Tumaco va a 19 mm/a respecto a Suramérica, no porque el
+Bloque Norte de los Andes vaya a 19, sino porque está enganchado a Nazca. El modelo muestra el
+presupuesto de largo plazo — Nazca entra a 54 mm/a — y el GNSS, dónde se está cargando.
+
+**Todo es relativo a un marco.** Bogotá va a 15 mm/a en IGS14 y a 7 con Suramérica fija; sin
+decir el marco, la flecha no significa nada. *Automatic* tiene quieta la placa del centro de
+lo que se mira (Suramérica, en Colombia), e IGS14 cuando la vista es demasiado ancha para una
+sola placa. El selector permite cualquiera de las 25.
+
+**De dónde salen los datos.** EarthScope publica un producto equivalente, pero exige cuenta;
+NGL no. Los polos no se copiaron de una tabla: NGL publica su campo en 25 marcos con una placa
+fija, y la diferencia con el de IGS14 es, estación por estación, la rotación de esa placa. Eso
+es lineal en el polo, así que se ajusta por mínimos cuadrados. Queda exactamente consistente
+con las velocidades servidas, en vez de cargar el sesgo de 1–2 mm/a de una tabla de otro marco.
+
+**Lo que no hay.** El Bloque Norte de los Andes no tiene polo propio — no es lo bastante rígido
+para uno — y el modelo usa el de Suramérica ahí; lo dice en pantalla con un asterisco. El
+bloque se mueve ~10 mm/a respecto a ella: eso es precisamente lo que muestra la capa GNSS.
+Tampoco se usa el `midas.BG.txt` de NGL: existe, pero su documentación no dice qué placa es.
+
+**Movimiento a través de los bordes.** La ficha del panel promedia, tramo a tramo, el
+movimiento relativo en cada borde del área y lo separa en cierre (o apertura) y rumbo. En
+Colombia: Nazca respecto al Bloque Norte de los Andes, 54 mm/a hacia 81°, con 45 de cierre y
+26 a lo largo de la fosa — la oblicuidad que empuja al bloque hacia el NE.
+
+**La escala de las flechas** es la de un quiver: la de referencia mide un doceavo de la vista
+y vale el percentil 90 de lo que se dibuja, redondeado a 1-2-5, con leyenda en el mapa. Las
+flechas del modelo van centradas en su nodo, como un campo; las GNSS nacen en la estación.
+
+### Verificación
+
+```bash
+node tools/velocidades-placas.mjs    # baja y regenera placas/
+node tools/verificar-placas.mjs      # la contrasta
+```
+
+1. **Reconstrucción.** Con los polos, rehacer los 25 marcos de NGL desde IGS14: mediana del
+   residuo bajo 0,11 mm/a en 20 placas, y 0,33–0,35 en Bismarck Norte y Sur, que tienen 3 y 4
+   estaciones. En Ojotsk, Okinawa y Mar de Filipinas queda ~1 mm/a:
+   el marco de NGL no es ahí una rotación rígida exacta de su propio campo, y `polos-euler.json`
+   las marca con `rigida: false`.
+2. **Cratón quieto.** Las 47 estaciones del escudo amazónico, con Suramérica fija: mediana
+   0,99 mm/a. Si el marco estuviera mal, el cratón se movería.
+3. **Contra la literatura.** Ocho movimientos relativos publicados — Nazca–Suramérica frente a
+   Tumaco (54,3 mm/a), Lima (60,5) y el norte de Chile (63,1); Cocos–Norteamérica; San Andrés;
+   Caribe–Suramérica; Zagros; Himalaya — todos dentro de su rango.
+4. **Geometría.** Qué placa de PB2002 queda bajo siete puntos conocidos.
+
 ## Verificación de la geometría de la placa
 
 Dos scripts comprueban, ejecutando el código publicado, lo que es fácil romper sin notarlo
@@ -183,6 +249,11 @@ El sitio se publica automáticamente en **Vercel** con cada push a `main`: https
 - Catálogo sísmico del SGC (`archive.sgc.gov.co`) — enjambre de Chocó.
 - USGS Earthquake Hazards Program (`earthquake.usgs.gov/fdsnws/event/1/query`) — ambas bases históricas.
 - Mapa Geológico de Colombia 2023 — SGC, servicio ArcGIS (`srvags.sgc.gov.co`).
+- Velocidades GNSS: Nevada Geodetic Laboratory, MIDAS (`geodesy.unr.edu/velocities`). Citar
+  Blewitt, G., C. Kreemer, W.C. Hammond y J. Gazeaux (2016), *MIDAS robust trend estimator
+  for accurate GPS station velocities without step detection*, JGR 121, doi:10.1002/2015JB012552.
+- Bordes de placa: Bird, P. (2003), *An updated digital model of plate boundaries*, G³ 4(3),
+  1027, doi:10.1029/2001GC000252 — en la versión GeoJSON de `fraxen/tectonicplates`.
 - OpenStreetMap / Esri World Imagery — mapas base.
 
 ## Tecnologías

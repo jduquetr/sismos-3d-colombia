@@ -52,6 +52,9 @@
             --scene-label:#898781;
             --area-draw:#84cc16;         /* área marcada (rectángulo/círculo) */
             --slab:#6da7ec;              /* superficie de la placa (Slab2) */
+            --gnss:#22d3ee;              /* flechas GNSS observadas */
+            --plate-model:#f472b6;       /* flechas del modelo rígido de placas */
+            --plate-boundary:#fbbf24;    /* bordes de placa PB2002 */
             /* capa de fondo: <=35 km corteza (neutro) y rampa naranja 35 km -> máx., como cubo-v2 */
             --crust:#8a8a86;
             --o0:#fde0cc; --o1:#f7b389; --o2:#ef8348; --o3:#d95926; --o4:#a33f18;
@@ -211,6 +214,10 @@
         .escala-mag figcaption { font-size: 10px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
 
         .nota { font-size: 10px; color: var(--ink-3); line-height: 1.5; margin-top: 6px; }
+        .leyenda-placas {
+            display: flex; align-items: center; gap: 6px; padding: 4px 8px; border-radius: 6px;
+            background: var(--overlay); color: var(--ink-2); font: 11px var(--font);
+        }
 
         .lista-anio { max-height: 300px; overflow-y: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); }
         .evento-fila { display: block; width: 100%; text-align: left; padding: 7px 10px; font-size: 11px; color: var(--ink-2); border-bottom: 1px solid var(--line); line-height: 1.45; }
@@ -273,6 +280,7 @@
             --msg-load-bg:rgba(99,102,241,.12); --msg-load-line:rgba(129,140,248,.35); --msg-load-ink:#a5b4fc;
             --scene-bg:#0a0a0a; --scene-box:#71717a; --scene-surface:#1c1c1f; --scene-label:#a3a3a3; --area-draw:#a3e635;
             --slab:#818cf8;
+            --gnss:#22d3ee; --plate-model:#f472b6; --plate-boundary:#fbbf24;
             --crust:#737373;
             --o0:#ecfccb; --o1:#bef264; --o2:#84cc16; --o3:#65a30d; --o4:#4d7c0f;
             --shadow:0 24px 70px rgba(24,24,40,.28);
@@ -291,6 +299,7 @@
             --msg-load-bg:#eef2ff; --msg-load-line:#c7d2fe; --msg-load-ink:#4338ca;
             --scene-bg:#f7f7f8; --scene-box:#71717a; --scene-surface:#e4e4e7; --scene-label:#52525b; --area-draw:#65a30d;
             --slab:#4f46e5;
+            --gnss:#0e7490; --plate-model:#be185d; --plate-boundary:#b45309;
             --crust:#a1a1aa;
             --o0:#bef264; --o1:#84cc16; --o2:#65a30d; --o3:#4d7c0f; --o4:#365314;
             --shadow:0 18px 48px rgba(24,24,27,.08);
@@ -654,6 +663,54 @@
                         </div>
                     </div>
                     <div class="nota">Moment tensors now live in the <strong>Special Event</strong> tab, with the event they belong to.</div>
+                </div>
+
+                <div class="control-group">
+                    <div class="group-title">Plate motion</div>
+                    <div class="checkbox-item">
+                        <input type="checkbox" id="showGnss">
+                        <label for="showGnss">GNSS velocities — observed (NGL)</label>
+                    </div>
+                    <div class="checkbox-item">
+                        <input type="checkbox" id="showModeloPlacas">
+                        <label for="showModeloPlacas">Plate model — rigid plates (Euler poles)</label>
+                    </div>
+                    <div class="checkbox-item">
+                        <input type="checkbox" id="showBordesPlacas">
+                        <label for="showBordesPlacas">Plate boundaries — PB2002</label>
+                    </div>
+                    <div id="placasControles" hidden>
+                        <div class="campo" style="margin-top:8px">
+                            <label for="marcoPlacas">Reference frame — the plate held still</label>
+                            <select id="marcoPlacas">
+                                <option value="auto">Automatic</option>
+                                <option value="IGS14">IGS14 (global)</option>
+                            </select>
+                        </div>
+                        <div class="slider-group">
+                            <div class="slider-label">
+                                <span>Arrow length</span>
+                                <span class="slider-value" id="escalaFlechasValor">×1</span>
+                            </div>
+                            <input type="range" id="escalaFlechas" min="-2" max="2" step="0.25" value="0">
+                        </div>
+                        <div class="info-box" id="fichaPlacas" style="margin-top:8px" hidden></div>
+                        <div class="info-box" style="margin-top:8px">
+                            <strong>Two layers, two different things.</strong><br>
+                            <strong>GNSS</strong> is how fast each station actually moves: the Nevada Geodetic
+                            Laboratory's MIDAS velocities, 17&nbsp;000 stations worldwide, the SGC's GeoRED among them.
+                            Near a trench this is <strong>not</strong> the plate's speed. It includes the elastic
+                            strain the locked interface is storing, which the next large earthquake gives back —
+                            on the Colombian Pacific coast that is most of what you see.<br><br>
+                            <strong>The model</strong> is rigid-plate motion from Euler poles, so it can be drawn
+                            anywhere, offshore included, where there are no stations. It is the long-term budget
+                            that feeds that strain. The North Andes block has no pole of its own, so the model uses
+                            South America's there; the GNSS layer shows the ~10&nbsp;mm/yr it moves relative to it.<br><br>
+                            <strong>Every arrow is relative to a plate held still.</strong> Bogotá moves 15&nbsp;mm/yr
+                            in IGS14 and 7&nbsp;mm/yr with South America fixed. <em>Automatic</em> holds still the plate
+                            at the center of the area (or of the map), and IGS14 when the view is too wide for one plate.
+                        </div>
+                    </div>
                 </div>
 
                 <div class="control-group">
@@ -1545,6 +1602,7 @@
             limpiarMensaje();
             limpiarMensajeEvento();
             refrescarTrasCambioDeCapas();
+            actualizarPlacas();
         }
 
         function setModoArea(modo) {
@@ -2767,6 +2825,9 @@
                 etiqueta: v('--scene-label', '#898781'),
                 area: v('--area-draw', '#84cc16'),
                 slab: v('--slab', '#6da7ec'),
+                gnss: v('--gnss', '#22d3ee'),
+                modeloPlacas: v('--plate-model', '#f472b6'),
+                bordePlaca: v('--plate-boundary', '#fbbf24'),
                 fuente: v('--font', 'system-ui,sans-serif')
             };
         }
@@ -2837,6 +2898,7 @@
             }
             mallaSuperior = null;
             grupoTensores = null;
+            grupoPlacas = null;
             renderFondo.malla = null; renderFondo.indices = [];
             renderEvento.malla = null; renderEvento.indices = [];
         }
@@ -3217,6 +3279,635 @@
                 `M${(T.mag || ficha.mag).toFixed(1)} · scalar moment ${T.scalarMoment.toExponential(2)} N·m<br>` +
                 plano + dc +
                 `Source: USGS ${escaparHTML(T.fuente || '')} ${T.revision ? '(' + escaparHTML(T.revision) + ')' : ''} · ${escaparHTML(ficha.usgsId)}`;
+        }
+
+        // ============================================================
+        // Movimiento de placas: velocidades GNSS observadas y modelo rígido
+        // ============================================================
+        // Dos capas que se complementan y NO son lo mismo:
+        //
+        //   - Observado (GNSS, MIDAS de NGL): lo que se mueve cada estación. Cerca
+        //     de una fosa incluye la carga elástica del acople, que se devuelve en
+        //     el próximo sismo grande: no es la velocidad de la placa.
+        //   - Modelo (polos de Euler): el movimiento de la placa rígida, calculable
+        //     en cualquier punto, también mar adentro donde no hay estaciones. Es el
+        //     presupuesto de largo plazo que alimenta esa carga.
+        //
+        // Las dos se dibujan respecto a un marco. Sin decirlo la flecha no significa
+        // nada: Bogotá va a 15 mm/a en IGS14 y a 7 con Suramérica fija.
+        // Los datos y su verificación: tools/velocidades-placas.mjs y
+        // tools/verificar-placas.mjs.
+        const RUTA_PLACAS = 'placas/';
+        // Bloques de PB2002 sin polo propio que se mueven poco respecto a una placa
+        // grande: se calcula con la de esa placa, y se dice. El Bloque Norte de los
+        // Andes va a ~10 mm/a respecto a Suramérica, que es lo que muestra el GNSS.
+        const PLACA_SUSTITUTA = { ND: 'SA', AP: 'SA' };
+        // Escala como la de un quiver: la flecha de referencia mide un doceavo del
+        // ancho de lo que se mira y vale el percentil 90 de las velocidades
+        // dibujadas, redondeado a 1-2-5. Una escala fija no sirve: en IGS14 el
+        // mundo va hasta 100 mm/a y, con Suramérica fija, Colombia no pasa de 20.
+        // El deslizador multiplica el largo por 2^valor; la leyenda dice cuánto vale.
+        const FRACCION_FLECHA = 1 / 12;
+        const MAX_FLECHAS_2D = 1500;
+        const ATRIBUCION_PLACAS = 'GNSS: <a href="https://geodesy.unr.edu" target="_blank" rel="noopener">NGL</a> ' +
+            'MIDAS (Blewitt et al. 2016) · Plates: PB2002 (Bird 2003)';
+
+        let datosPlacas = null, promesaPlacas = null;
+        let capaPlacas2D = null, rendererPlacas = null, atribucionPlacas = false, leyendaPlacas = null;
+        let grupoPlacas = null, placasToken = 0;
+        let marcoAutoCache = { clave: null, marco: null };
+
+        function hayCapaDePlacas() {
+            return $('showGnss').checked || $('showModeloPlacas').checked || $('showBordesPlacas').checked;
+        }
+
+        // Se bajan solo al prender una capa: son 1,3 MB que casi nadie necesita.
+        function cargarDatosPlacas() {
+            if (datosPlacas) return Promise.resolve(datosPlacas);
+            if (promesaPlacas) return promesaPlacas;
+            const traer = (a) => fetch(RUTA_PLACAS + a).then(r => {
+                if (!r.ok) throw new Error(`${a}: ${r.status}`);
+                return r.json();
+            });
+            promesaPlacas = Promise.all([
+                traer('velocidades-gnss.json'), traer('polos-euler.json'),
+                traer('placas-pb2002.json'), traer('bordes-pb2002.json')
+            ]).then(([gnss, polos, placas, bordes]) => {
+                // La caja de cada anillo evita probar los 54 polígonos enteros en
+                // cada punto.
+                const nombres = {};
+                placas.features.forEach(f => {
+                    nombres[f.properties.codigo] = f.properties.nombre;
+                    const anillos = f.geometry.type === 'Polygon'
+                        ? [f.geometry.coordinates[0]]
+                        : f.geometry.coordinates.map(poli => poli[0]);
+                    f.anillos = anillos.map(a => {
+                        let o = Infinity, e = -Infinity, sur = Infinity, n = -Infinity;
+                        a.forEach(([x, y]) => {
+                            o = Math.min(o, x); e = Math.max(e, x); sur = Math.min(sur, y); n = Math.max(n, y);
+                        });
+                        return { a, o, e, s: sur, n };
+                    });
+                });
+                return datosPlacas = { gnss, polos: polos.polos, placas, bordes, nombres };
+            }).catch(err => { promesaPlacas = null; throw err; });
+            return promesaPlacas;
+        }
+
+        // polos-euler.json trae los nombres en español; la interfaz va en inglés,
+        // con los de PB2002.
+        function nombrePlaca(codigo) {
+            return (datosPlacas && datosPlacas.nombres[codigo]) || codigo;
+        }
+
+        function dentroDeAnillo(x, y, a) {
+            let dentro = false;
+            for (let i = 0, j = a.length - 1; i < a.length; j = i++) {
+                const xi = a[i][0], yi = a[i][1], xj = a[j][0], yj = a[j][1];
+                if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) dentro = !dentro;
+            }
+            return dentro;
+        }
+
+        function placaEn(lat, lon) {
+            for (const f of datosPlacas.placas.features) {
+                for (const r of f.anillos) {
+                    for (const x of [lon, lon + 360, lon - 360]) {
+                        if (x < r.o || x > r.e || lat < r.s || lat > r.n) continue;
+                        if (dentroDeAnillo(x, lat, r.a)) return f.properties.codigo;
+                    }
+                }
+            }
+            return null;
+        }
+
+        // El polo con que se calcula una placa: el suyo, o el de su sustituta.
+        function poloDe(codigo) {
+            const P = datosPlacas.polos;
+            if (P[codigo]) return { codigo, w: P[codigo].w, sustituta: null };
+            const s = PLACA_SUSTITUTA[codigo];
+            if (s && P[s]) return { codigo: s, w: P[s].w, sustituta: codigo };
+            return null;
+        }
+
+        // v = ω × r en este y norte, mm/año. Elipsoide WGS84, igual que la
+        // herramienta que derivó los polos.
+        function velocidadRotacion(w, lat, lon) {
+            const E2 = 0.0066943799901413, p = lat * Math.PI / 180, l = lon * Math.PI / 180;
+            const N = 6378137 / Math.sqrt(1 - E2 * Math.sin(p) ** 2);
+            const r = [N * Math.cos(p) * Math.cos(l), N * Math.cos(p) * Math.sin(l), N * (1 - E2) * Math.sin(p)];
+            const v = [w[1] * r[2] - w[2] * r[1], w[2] * r[0] - w[0] * r[2], w[0] * r[1] - w[1] * r[0]];
+            return {
+                ve: (-Math.sin(l) * v[0] + Math.cos(l) * v[1]) * 1000,
+                vn: (-Math.sin(p) * Math.cos(l) * v[0] - Math.sin(p) * Math.sin(l) * v[1] + Math.cos(p) * v[2]) * 1000
+            };
+        }
+
+        const azimutDe = (ve, vn) => (Math.atan2(ve, vn) * 180 / Math.PI + 360) % 360;
+        const restarPolos = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+
+        function bboxDelMapa() {
+            const b = map.getBounds();
+            return { n: Math.min(85, b.getNorth()), s: Math.max(-85, b.getSouth()), e: b.getEast(), o: b.getWest() };
+        }
+
+        // Lo que se está mirando: el área consultada, o el mapa si no hay.
+        function bboxContexto() {
+            return datosFondo.bbox || bboxDelMapa();
+        }
+
+        // Copias de una longitud (±360) dentro de la caja: el mapa 2D repite el
+        // mundo hacia los lados.
+        function longitudesEn(lon, b) {
+            const r = [];
+            for (const k of [-360, 0, 360]) { const x = lon + k; if (x >= b.o && x <= b.e) r.push(x); }
+            return r;
+        }
+
+        function estacionesEn(b) {
+            const res = [];
+            datosPlacas.gnss.filas.forEach(f => {
+                if (f[1] < b.s || f[1] > b.n) return;
+                longitudesEn(f[2], b).forEach(x => res.push({ f, lon: x }));
+            });
+            return res;
+        }
+
+        // "Automático" tiene quieta la placa del centro de lo que se mira, con su
+        // sustituta si no tiene polo: centrado en Colombia cae en el Bloque Norte
+        // de los Andes y da Suramérica, que es como se lee en la literatura.
+        // Contar estaciones parecía mejor y no lo es: el mapa centrado en Colombia
+        // abarca Centroamérica y las Antillas, con redes muy densas, y ganaba el
+        // Caribe. El conteo queda de respaldo, para un centro sin placa con polo.
+        // Con una vista más ancha que 90° no hay una placa que tener quieta: IGS14.
+        function marcoPlacas(b) {
+            const sel = $('marcoPlacas').value;
+            if (sel === 'IGS14') return { codigo: 'IGS14', w: [0, 0, 0], auto: false };
+            if (sel !== 'auto' && datosPlacas.polos[sel]) return { codigo: sel, w: datosPlacas.polos[sel].w, auto: false };
+            if (b.e - b.o > 90) return { codigo: 'IGS14', w: [0, 0, 0], auto: true, ancho: true };
+            const clave = claveBbox(b);
+            if (marcoAutoCache.clave === clave) return marcoAutoCache.marco;
+            const centro = placaEn((b.n + b.s) / 2, (b.e + b.o) / 2);
+            const poloCentro = centro && poloDe(centro);
+            if (poloCentro) {
+                const marco = { codigo: poloCentro.codigo, w: poloCentro.w, auto: true, centro };
+                marcoAutoCache = { clave, marco };
+                return marco;
+            }
+            const votos = {};
+            const votar = (lat, lon) => {
+                const c = placaEn(lat, lon), polo = c && poloDe(c);
+                if (polo) votos[polo.codigo] = (votos[polo.codigo] || 0) + 1;
+            };
+            const est = estacionesEn(b);
+            const paso = Math.max(1, Math.floor(est.length / 400));
+            for (let i = 0; i < est.length; i += paso) votar(est[i].f[1], est[i].f[2]);
+            if (!Object.keys(votos).length) {           // sin estaciones: la malla
+                for (let i = 0; i <= 6; i++) for (let j = 0; j <= 6; j++) {
+                    votar(b.s + (b.n - b.s) * i / 6, b.o + (b.e - b.o) * j / 6);
+                }
+            }
+            const codigo = Object.keys(votos).sort((x, y) => votos[y] - votos[x])[0];
+            const marco = codigo ? { codigo, w: datosPlacas.polos[codigo].w, auto: true }
+                                 : { codigo: 'IGS14', w: [0, 0, 0], auto: true };
+            marcoAutoCache = { clave, marco };
+            return marco;
+        }
+
+        function flechasGnss(b, marco) {
+            return estacionesEn(b).map(({ f, lon }) => {
+                const rot = velocidadRotacion(marco.w, f[1], f[2]);
+                return { lat: f[1], lon, ve: f[3] - rot.ve, vn: f[4] - rot.vn, sta: f[0], sigma: f[6], anios: f[7] };
+            });
+        }
+
+        // Malla con el mismo paso en km en las dos direcciones, ~14 nodos a lo
+        // largo del lado mayor.
+        function flechasModelo(b, marco) {
+            const latMedia = (b.n + b.s) / 2;
+            const anchoKm = (b.e - b.o) * 111.32 * Math.cos(latMedia * Math.PI / 180);
+            const altoKm = (b.n - b.s) * 111.32;
+            const pasoKm = Math.max(anchoKm, altoKm, 1) / 14;
+            const flechas = [], sinPolo = new Set(), sustitutas = new Set();
+            const nLat = Math.max(1, Math.round(altoKm / pasoKm));
+            for (let i = 0; i < nLat; i++) {
+                const lat = b.s + (b.n - b.s) * (i + 0.5) / nLat;
+                const kmLon = 111.32 * Math.max(0.05, Math.cos(lat * Math.PI / 180));
+                const nLon = Math.max(1, Math.round((b.e - b.o) * kmLon / pasoKm));
+                for (let j = 0; j < nLon; j++) {
+                    const lon = b.o + (b.e - b.o) * (j + 0.5) / nLon;
+                    const c = placaEn(lat, lon);
+                    if (!c) continue;
+                    const polo = poloDe(c);
+                    if (!polo) { sinPolo.add(c); continue; }
+                    if (polo.sustituta) sustitutas.add(polo.sustituta);
+                    const v = velocidadRotacion(restarPolos(polo.w, marco.w), lat, lon);
+                    flechas.push({ lat, lon, ve: v.ve, vn: v.vn, placa: c });
+                }
+            }
+            return { flechas, sinPolo, sustitutas };
+        }
+
+        // Movimiento relativo a través de cada borde del área, promediado por par
+        // de placas tramo a tramo (pesado por largo) y separado en la componente
+        // normal al borde (cierre o apertura) y la paralela (rumbo).
+        function movimientoEnBordes(b) {
+            const pares = new Map(), KM = 111.32;
+            datosPlacas.bordes.features.forEach(ft => {
+                const A = ft.properties.a, B = ft.properties.b;
+                const pA = poloDe(A), pB = poloDe(B);
+                if (!pA || !pB || pA.codigo === pB.codigo) return;
+                const w = restarPolos(pB.w, pA.w);               // B respecto a A
+                const cs = ft.geometry.coordinates;
+                for (let i = 1; i < cs.length; i++) {
+                    const [lon1, lat1] = cs[i - 1], [lon2, lat2] = cs[i];
+                    const lonM = (lon1 + lon2) / 2, latM = (lat1 + lat2) / 2;
+                    if (latM < b.s || latM > b.n || !longitudesEn(lonM, b).length) continue;
+                    const kmLon = KM * Math.cos(latM * Math.PI / 180);
+                    const tx = (lon2 - lon1) * kmLon, ty = (lat2 - lat1) * KM;
+                    const largo = Math.hypot(tx, ty);
+                    if (largo < 1e-6) continue;
+                    const t = [tx / largo, ty / largo], nrm = [-t[1], t[0]];
+                    // De qué lado queda A: un paso corto por la normal.
+                    const paso = Math.min(20, largo);
+                    const lado = placaEn(latM + nrm[1] * paso / KM, lonM + nrm[0] * paso / kmLon);
+                    let nA;
+                    if (lado === A) nA = nrm;
+                    else if (lado === B) nA = [-nrm[0], -nrm[1]];
+                    else continue;
+                    const v = velocidadRotacion(w, latM, lonM);
+                    const cierre = v.ve * nA[0] + v.vn * nA[1];      // > 0: B avanza sobre A
+                    const rumbo = v.ve * t[0] + v.vn * t[1];
+                    // Siempre "segunda respecto a primera" en orden fijo, para que
+                    // NZ-ND y ND-NZ sumen en el mismo par.
+                    const [x, y] = [A, B].sort();
+                    const signo = x === A ? 1 : -1;
+                    const clave = x + '-' + y;
+                    const e = pares.get(clave) || { a: x, b: y, km: 0, cierre: 0, rumbo: 0, ve: 0, vn: 0 };
+                    e.km += largo;
+                    e.cierre += cierre * largo;
+                    e.rumbo += Math.abs(rumbo) * largo;
+                    e.ve += signo * v.ve * largo;
+                    e.vn += signo * v.vn * largo;
+                    pares.set(clave, e);
+                }
+            });
+            return [...pares.values()]
+                .map(e => ({ ...e, cierre: e.cierre / e.km, rumbo: e.rumbo / e.km, ve: e.ve / e.km, vn: e.vn / e.km }))
+                .sort((p, q) => q.km - p.km);
+        }
+
+        function factorFlechas() {
+            return Math.pow(2, parseFloat($('escalaFlechas').value) || 0);
+        }
+
+        function redondeoAmable(v) {
+            const e = Math.pow(10, Math.floor(Math.log10(v)));
+            const m = v / e;
+            return (m < 1.5 ? 1 : m < 3.5 ? 2 : m < 7.5 ? 5 : 10) * e;
+        }
+
+        // Una sola escala para las dos capas: comparar lo observado con el modelo
+        // es justamente para lo que están juntas. La referencia es el mayor de los
+        // percentiles de cada capa, no el de la mezcla: con Suramérica fija las
+        // estaciones son muchas y lentas, la mezcla daba 20 mm/a y las flechas de
+        // Nazca (54) medían casi tres referencias, con la punta metida en tierra.
+        function percentil90(flechas) {
+            const r = flechas.map(fl => Math.hypot(fl.ve, fl.vn)).filter(v => v > 0.05).sort((a, b) => a - b);
+            return r.length ? r[Math.floor((r.length - 1) * 0.9)] : 0;
+        }
+
+        function escalaFlechas(anchoKm, capas) {
+            const vRef = redondeoAmable(Math.max(...capas.map(percentil90)) || 20);
+            const kmRef = anchoKm * FRACCION_FLECHA * factorFlechas();
+            return { vRef, kmRef, kmPorMm: kmRef / vRef };
+        }
+
+        const anchoKmDe = (b) => (b.e - b.o) * 111.32 * Math.cos((b.n + b.s) / 2 * Math.PI / 180);
+
+        // Lo que hay que dibujar en una caja, con su escala.
+        function flechasPlacas(b, marco) {
+            const modelo = $('showModeloPlacas').checked ? flechasModelo(b, marco).flechas : [];
+            const gnss = $('showGnss').checked ? flechasGnss(b, marco) : [];
+            return { modelo, gnss, escala: escalaFlechas(anchoKmDe(b), [modelo, gnss]) };
+        }
+
+        // Base, cuello (donde empieza la punta) y las dos alas, en grados. Una
+        // estación GNSS es un punto medido: su flecha nace ahí. El modelo es un
+        // campo muestreado en una malla: su flecha va centrada en el nodo, como en
+        // un quiver, y así no invade la placa vecina con la punta.
+        function geometriaFlecha(lat, lon, ve, vn, kmPorMm, centrada = false) {
+            let ex = ve * kmPorMm, ny = vn * kmPorMm;
+            const largo = Math.hypot(ex, ny);
+            if (!(largo > 1e-9)) return null;
+            const kmLon = 111.32 * Math.max(0.05, Math.cos(lat * Math.PI / 180));
+            const x0 = centrada ? -ex / 2 : 0, y0 = centrada ? -ny / 2 : 0;
+            const aGrados = (x, y) => [lat + (y + y0) / 111.32, lon + (x + x0) / kmLon];
+            const ux = ex / largo, uy = ny / largo, h = largo * 0.32;
+            const c = Math.cos(0.42), sn = Math.sin(0.42);
+            return {
+                base: aGrados(0, 0),
+                punta: aGrados(ex, ny),
+                cuello: aGrados(ex - h * c * ux, ny - h * c * uy),
+                ala1: aGrados(ex - h * (ux * c - uy * sn), ny - h * (uy * c + ux * sn)),
+                ala2: aGrados(ex - h * (ux * c + uy * sn), ny - h * (uy * c - ux * sn))
+            };
+        }
+
+        // Una estación por celda, y la celda del largo de una flecha típica: así no
+        // se pisan. En Colombia con Suramérica fija la celda queda en ~40 km y pasan
+        // casi todas; en el mundo en IGS14, en ~1 500 km, y quedan un centenar.
+        function ralear(flechas, b, kmPorMm) {
+            const r = flechas.map(fl => Math.hypot(fl.ve, fl.vn)).sort((x, y) => x - y);
+            const celdaKm = Math.max(1, (r.length ? r[r.length >> 1] : 0) * kmPorMm * 1.2);
+            const kmLon = 111.32 * Math.max(0.05, Math.cos((b.n + b.s) / 2 * Math.PI / 180));
+            let dx = celdaKm / kmLon, dy = celdaKm / 111.32;
+            const celdasTotales = ((b.e - b.o) / dx) * ((b.n - b.s) / dy);
+            if (celdasTotales > MAX_FLECHAS_2D) {                   // tope, por si acaso
+                const k = Math.sqrt(celdasTotales / MAX_FLECHAS_2D);
+                dx *= k; dy *= k;
+            }
+            const elegida = new Map();
+            flechas.forEach(fl => {
+                const k = Math.floor((fl.lon - b.o) / dx) + ',' + Math.floor((fl.lat - b.s) / dy);
+                const previa = elegida.get(k);
+                if (!previa || fl.sigma < previa.sigma) elegida.set(k, fl);
+            });
+            return [...elegida.values()];
+        }
+
+        function textoVelocidad(ve, vn) {
+            return `${Math.hypot(ve, vn).toFixed(1)} mm/yr toward ${azimutDe(ve, vn).toFixed(0)}°`;
+        }
+
+        // ------------------------------------------------ 2D
+        function dibujarPlacas2D() {
+            if (!map) return;
+            if (capaPlacas2D) { map.removeLayer(capaPlacas2D); capaPlacas2D = null; }
+            if (!datosPlacas || !hayCapaDePlacas()) return;
+            const t = leerTema3D();
+            const b = bboxDelMapa();
+            const marco = marcoPlacas(bboxContexto());
+            const { modelo, gnss, escala } = flechasPlacas(b, marco);
+            const kmPorMm = escala.kmPorMm;
+            rendererPlacas = rendererPlacas || L.canvas({ padding: 0.2 });
+            const capa = L.layerGroup();
+
+            if ($('showBordesPlacas').checked) {
+                datosPlacas.bordes.features.forEach(ft => {
+                    const cs = ft.geometry.coordinates;
+                    [-360, 0, 360].forEach(k => {
+                        if (!cs.some(([x]) => x + k >= b.o - 5 && x + k <= b.e + 5)) return;
+                        L.polyline(cs.map(([x, y]) => [y, x + k]), {
+                            renderer: rendererPlacas, color: t.bordePlaca, weight: 1.6, opacity: 0.9
+                        }).bindTooltip(`${escaparHTML(nombrePlaca(ft.properties.a))} – ${escaparHTML(nombrePlaca(ft.properties.b))}`,
+                            { sticky: true }).addTo(capa);
+                    });
+                });
+            }
+
+            const flecha = (fl, color, texto, centrada) => {
+                const g = geometriaFlecha(fl.lat, fl.lon, fl.ve, fl.vn, kmPorMm, centrada);
+                if (!g) return;
+                L.polyline([[g.base, g.punta], [g.ala1, g.punta, g.ala2]], {
+                    renderer: rendererPlacas, color, weight: 1.6, opacity: 0.95
+                }).bindTooltip(texto, { sticky: true }).addTo(capa);
+            };
+            modelo.forEach(fl => flecha(fl, t.modeloPlacas,
+                `${escaparHTML(nombrePlaca(fl.placa))} (model): ${textoVelocidad(fl.ve, fl.vn)}`, true));
+            ralear(gnss, b, kmPorMm).forEach(fl => flecha(fl, t.gnss,
+                `<strong>${escaparHTML(fl.sta)}</strong> · ${textoVelocidad(fl.ve, fl.vn)}<br>` +
+                `±${fl.sigma.toFixed(2)} mm/yr · ${fl.anios.toFixed(1)} yr of data`));
+            capaPlacas2D = capa.addTo(map);
+            pintarLeyendaPlacas(modelo.length || gnss.length ? escala : null, b);
+        }
+
+        // Leyenda del mapa: una flecha del largo de referencia, con lo que vale.
+        const LeyendaPlacas = L.Control.extend({
+            options: { position: 'bottomright' },
+            onAdd() {
+                const div = L.DomUtil.create('div', 'leyenda-placas');
+                L.DomEvent.disableClickPropagation(div);
+                return div;
+            }
+        });
+
+        function pintarLeyendaPlacas(escala, b) {
+            if (!escala) {
+                if (leyendaPlacas) { leyendaPlacas.remove(); leyendaPlacas = null; }
+                return;
+            }
+            if (!leyendaPlacas) leyendaPlacas = new LeyendaPlacas().addTo(map);
+            const latC = (b.n + b.s) / 2, lonC = (b.e + b.o) / 2;
+            const kmLon = 111.32 * Math.max(0.05, Math.cos(latC * Math.PI / 180));
+            const px = Math.round(map.latLngToContainerPoint([latC, lonC + escala.kmRef / kmLon]).x -
+                                  map.latLngToContainerPoint([latC, lonC]).x);
+            const ancho = Math.max(12, Math.min(px, 400));
+            leyendaPlacas.getContainer().innerHTML =
+                `<svg width="${ancho + 2}" height="10" aria-hidden="true">` +
+                `<line x1="1" y1="5" x2="${ancho - 6}" y2="5" stroke="currentColor" stroke-width="1.6"/>` +
+                `<polygon points="${ancho - 7},1 ${ancho + 1},5 ${ancho - 7},9" fill="currentColor"/></svg>` +
+                `<span>${escala.vRef} mm/yr</span>`;
+        }
+
+        // ------------------------------------------------ 3D
+        function quitarPlacas3D() {
+            if (!grupoPlacas) return;
+            if (grupo) grupo.remove(grupoPlacas);
+            grupoPlacas.traverse(o => {
+                if (o.geometry) o.geometry.dispose();
+                if (o.material) o.material.dispose();
+            });
+            grupoPlacas = null;
+        }
+
+        function construirGrupoPlacas(P, b, marco) {
+            const t = leerTema3D();
+            const g = new THREE.Group();
+            const { modelo, gnss, escala } = flechasPlacas(b, marco);
+            const kmPorMm = escala.kmPorMm;
+            const Z = 0.15;      // apenas sobre la cara superior, para que no parpadee con el mapa
+            const q = (p) => [P.x(p[1]), P.y(p[0]), Z];
+
+            if ($('showBordesPlacas').checked) {
+                const material = new THREE.LineBasicMaterial({ color: new THREE.Color(t.bordePlaca) });
+                datosPlacas.bordes.features.forEach(ft => {
+                    [-360, 0, 360].forEach(k => {
+                        recortarABbox(ft.geometry.coordinates.map(([x, y]) => [x + k, y]), b).forEach(tramo => {
+                            const geo = new THREE.BufferGeometry().setFromPoints(
+                                tramo.map(([x, y]) => new THREE.Vector3(P.x(x), P.y(y), Z * 0.7)));
+                            g.add(new THREE.Line(geo, material));
+                        });
+                    });
+                });
+            }
+
+            const capaFlechas = (flechas, color, centrada) => {
+                const lineas = [], tris = [];
+                flechas.forEach(fl => {
+                    const f = geometriaFlecha(fl.lat, fl.lon, fl.ve, fl.vn, kmPorMm, centrada);
+                    if (!f) return;
+                    lineas.push(...q(f.base), ...q(f.cuello));
+                    tris.push(...q(f.punta), ...q(f.ala1), ...q(f.ala2));
+                });
+                if (!lineas.length) return;
+                const gl = new THREE.BufferGeometry();
+                gl.setAttribute('position', new THREE.Float32BufferAttribute(lineas, 3));
+                g.add(new THREE.LineSegments(gl, new THREE.LineBasicMaterial({ color: new THREE.Color(color) })));
+                const gt = new THREE.BufferGeometry();
+                gt.setAttribute('position', new THREE.Float32BufferAttribute(tris, 3));
+                g.add(new THREE.Mesh(gt, new THREE.MeshBasicMaterial({ color: new THREE.Color(color), side: THREE.DoubleSide })));
+            };
+            capaFlechas(modelo, t.modeloPlacas, true);
+            capaFlechas(gnss, t.gnss, false);
+            return g.children.length ? g : null;
+        }
+
+        async function actualizarPlacas3D() {
+            quitarPlacas3D();
+            if (!hayCapaDePlacas() || !datosFondo.bbox || !grupo) return;
+            const miToken = ++placasToken;
+            try { await cargarDatosPlacas(); } catch (err) { return; }
+            if (miToken !== placasToken || !grupo || !datosFondo.bbox) return;   // cambió el área
+            const b = datosFondo.bbox;
+            const g = construirGrupoPlacas(proyector(), b, marcoPlacas(b));
+            if (g) { grupoPlacas = g; grupo.add(g); }
+        }
+
+        // ------------------------------------------------ ficha y controles
+        function pintarFichaPlacas() {
+            const el = $('fichaPlacas');
+            if (!datosPlacas || !hayCapaDePlacas()) { el.hidden = true; return; }
+            const b = bboxContexto();
+            const marco = marcoPlacas(b);
+            const nombre = (c) => escaparHTML(nombrePlaca(c));
+            const partes = [];
+
+            if (marco.codigo === 'IGS14') {
+                partes.push('<strong>Frame: IGS14</strong> — global, close to ITRF2014.' +
+                    (marco.ancho ? ' The view is too wide to hold a single plate still.' : ''));
+            } else {
+                let porque = '.';
+                if (marco.auto && marco.centro && marco.centro !== marco.codigo) {
+                    porque = ` — automatic: the center is on the ${nombre(marco.centro)} block, which has no ` +
+                        `pole of its own, so ${nombre(marco.codigo)}.`;
+                } else if (marco.auto) {
+                    porque = marco.centro ? ' — automatic, the plate at the center of the view.'
+                                          : ' — automatic, the plate under most stations here.';
+                }
+                partes.push(`<strong>Frame: ${nombre(marco.codigo)} fixed</strong>` + porque);
+                if (!datosPlacas.polos[marco.codigo].rigida) {
+                    partes.push('This plate deforms internally: NGL\'s frame for it is not an exact rigid ' +
+                        'rotation (about 1 mm/yr residual).');
+                }
+            }
+
+            if ($('showGnss').checked) {
+                // Con el mapa repetido hacia los lados una estación puede aparecer
+                // dos veces: se cuenta una.
+                const unicas = new Map();
+                flechasGnss(b, marco).forEach(fl => unicas.set(fl.sta, fl));
+                const r = [...unicas.values()].map(fl => Math.hypot(fl.ve, fl.vn)).sort((x, y) => x - y);
+                partes.push(r.length
+                    ? `<strong>GNSS:</strong> ${r.length} stations · median ${r[r.length >> 1].toFixed(1)} mm/yr, ` +
+                      `fastest ${r[r.length - 1].toFixed(1)}.`
+                    : '<strong>GNSS:</strong> no stations in this area.');
+            }
+
+            if ($('showModeloPlacas').checked || $('showBordesPlacas').checked) {
+                const bordes = movimientoEnBordes(b).slice(0, 5);
+                const marcaSust = (c) => nombre(c) + (poloDe(c) && poloDe(c).sustituta ? '*' : '');
+                if (bordes.length) {
+                    partes.push('<strong>Across the plate boundaries here</strong> (rigid-plate model):');
+                    bordes.forEach(e => {
+                        const tipo = Math.abs(e.cierre) >= e.rumbo ? (e.cierre > 0 ? 'closing' : 'opening') : 'strike-slip';
+                        partes.push(`· ${marcaSust(e.b)} relative to ${marcaSust(e.a)}: ${textoVelocidad(e.ve, e.vn)} — ` +
+                            `${tipo}; ${Math.abs(e.cierre).toFixed(0)} ${e.cierre > 0 ? 'closing' : 'opening'}, ` +
+                            `${e.rumbo.toFixed(0)} along the boundary.`);
+                    });
+                }
+                const modelo = flechasModelo(b, marco);
+                const sust = [...new Set([...modelo.sustitutas,
+                    ...bordes.flatMap(e => [e.a, e.b]).filter(c => poloDe(c) && poloDe(c).sustituta)])];
+                if (sust.length) {
+                    partes.push('* ' + sust.map(nombre).join(', ') + ' has no pole of its own: computed with ' +
+                        sust.map(c => nombre(PLACA_SUSTITUTA[c])).filter((v, i, a) => a.indexOf(v) === i).join(', ') + '\'s.');
+                }
+                if (modelo.sinPolo.size && $('showModeloPlacas').checked) {
+                    partes.push('No model arrows on ' + [...modelo.sinPolo].map(nombre).join(', ') +
+                        ': too few stations to fit a pole.');
+                }
+            }
+            if (datosFondo.bbox && ($('showGnss').checked || $('showModeloPlacas').checked)) {
+                const { escala } = flechasPlacas(b, marco);
+                partes.push(`<span class="nota">In 3D, an arrow of ${Math.round(escala.kmRef)} km is ` +
+                    `${escala.vRef} mm/yr. The map has its own scale, in the corner.</span>`);
+            }
+            el.innerHTML = partes.join('<br>');
+            el.hidden = false;
+        }
+
+        function poblarSelectorMarco() {
+            const sel = $('marcoPlacas');
+            if (sel.dataset.poblado) return;
+            Object.keys(datosPlacas.polos)
+                .sort((a, b) => nombrePlaca(a).localeCompare(nombrePlaca(b)))
+                .forEach(c => {
+                    const op = document.createElement('option');
+                    op.value = c;
+                    op.textContent = `${nombrePlaca(c)} fixed`;
+                    sel.appendChild(op);
+                });
+            sel.dataset.poblado = '1';
+        }
+
+        function actualizarAtribucionPlacas() {
+            if (!map || !map.attributionControl) return;
+            const debe = hayCapaDePlacas();
+            if (debe && !atribucionPlacas) map.attributionControl.addAttribution(ATRIBUCION_PLACAS);
+            if (!debe && atribucionPlacas) map.attributionControl.removeAttribution(ATRIBUCION_PLACAS);
+            atribucionPlacas = debe;
+        }
+
+        async function actualizarPlacas() {
+            $('placasControles').hidden = !hayCapaDePlacas();
+            actualizarAtribucionPlacas();
+            if (!hayCapaDePlacas()) {
+                quitarPlacas3D();
+                dibujarPlacas2D();
+                pintarFichaPlacas();
+                return;
+            }
+            try {
+                await cargarDatosPlacas();
+            } catch (err) {
+                mensaje(`The plate motion data could not be loaded: ${err.message}`, 'error');
+                return;
+            }
+            poblarSelectorMarco();
+            dibujarPlacas2D();
+            await actualizarPlacas3D();
+            pintarFichaPlacas();
+        }
+
+        function conectarPlacas() {
+            ['showGnss', 'showModeloPlacas', 'showBordesPlacas', 'marcoPlacas'].forEach(id =>
+                $(id).addEventListener('change', actualizarPlacas));
+            $('escalaFlechas').addEventListener('input', () => {
+                $('escalaFlechasValor').textContent = '×' + +factorFlechas().toFixed(2);
+            });
+            // La geometría se rehace al soltar: con cientos de flechas, rehacerla en
+            // cada paso del deslizador traba el mapa.
+            $('escalaFlechas').addEventListener('change', () => {
+                dibujarPlacas2D();
+                actualizarPlacas3D();
+                pintarFichaPlacas();
+            });
+            map.on('moveend', () => {
+                if (!datosPlacas || !hayCapaDePlacas()) return;
+                dibujarPlacas2D();
+                if (!datosFondo.bbox) pintarFichaPlacas();
+            });
         }
 
         // ============================================================
@@ -3626,6 +4317,7 @@
 
             grupoSlab2 = null;      // limpiarEscena ya vació el grupo
             actualizarSlab2();
+            actualizarPlacas();
 
             // Encuadre: distancia justa para que quepa la esfera que envuelve la caja.
             const radio = Math.hypot((x1 - x0) / 2, (y1 - y0) / 2, PROF_MUNDO / 2);
@@ -4207,7 +4899,8 @@
         const COMPARTIR_SELECTS = { mb: 'mapaBaseSelector', mt: 'mapaSuperiorSelector' };
         const COMPARTIR_CASILLAS = {
             es: 'showEvents', cj: 'showCaja', fo: 'showFondo', ec: 'showEventoCapa',
-            cg: 'cortezaGris', sl: 'showSlab2', te: 'showTensor', fa: 'showFallas', vp: 'showVelocidades'
+            cg: 'cortezaGris', sl: 'showSlab2', te: 'showTensor', fa: 'showFallas',
+            gn: 'showGnss', mp: 'showModeloPlacas', bp: 'showBordesPlacas'
         };
 
         function escribirConsultaEnlace(q, pre, p, fuenteId) {
@@ -4496,6 +5189,7 @@
                 render.marcadores.forEach((m, i) => m.setStyle({ fillColor: colorParaCapa(id, capa.eventos[i]) }));
             });
             [rectangulo, circuloDibujo].forEach(f => { if (f) f.setStyle({ color: t.area, fillColor: t.area }); });
+            if (!datosFondo.bbox) dibujarPlacas2D();
 
             const gris = tema === 'light' ? capaCartoClaro : capaCartoOscuro;
             if (map && (capaBaseActual === capaCartoClaro || capaBaseActual === capaCartoOscuro) && capaBaseActual !== gris) {
@@ -5371,6 +6065,7 @@
 
         function conectarControles() {
             conectarRestringido();
+            conectarPlacas();
             promesaLibreria = cargarLibreria();
             $('libreriaEvento').addEventListener('change', () => pintarFichaBiblioteca(fichaPorId($('libreriaEvento').value)));
             $('btnCargarBiblioteca').addEventListener('click', cargarDeBiblioteca);
@@ -5768,7 +6463,16 @@
             quitarCapaEvento,
             setBbox: (b) => { escribirBbox(b); pintarRectangulo(bboxALatLngBounds(b)); },
             togglePlay,
-            setVelocidad: (v) => { velocidad = v; }
+            setVelocidad: (v) => { velocidad = v; },
+            mapa: () => map,
+            placas: () => ({
+                cargadas: !!datosPlacas,
+                marco: datosPlacas ? marcoPlacas(bboxContexto()) : null,
+                grupo3D: grupoPlacas ? grupoPlacas.children.length : 0,
+                capa2D: capaPlacas2D ? capaPlacas2D.getLayers().length : 0,
+                bordes: datosPlacas ? movimientoEnBordes(bboxContexto()) : null,
+                ficha: $('fichaPlacas').innerText
+            })
         };
     })();
     </script>
