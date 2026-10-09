@@ -48,6 +48,8 @@ Solo una de las dos bases de datos históricas se muestra a la vez (selector des
 - `swtectonics-logo.png` — branding
 - `eventos/libreria.json` — biblioteca de eventos especiales: una ficha por evento (contexto regional, consulta de la secuencia, estilo, id de USGS y tensor de respaldo)
 - `eventos/<id>.json` — instantánea congelada de cada ficha: es lo que carga la página por defecto
+- `estaciones/cm-earthscope.json` — estado congelado de las estaciones del SGC publicadas en EarthScope
+- `tools/estaciones-sgc.mjs` — lo regenera, pidiendo datos reales a cada estación
 - `tools/snapshot-eventos.mjs` — regenera esas instantáneas desde USGS
 
 ## Uso local
@@ -172,6 +174,38 @@ dar el espesor pedido (no espesor/cos(buzamiento)) y formar 90° con la superfic
 baja contornos reales de cuatro zonas de subducción y compara los nodos generados con las
 celdas que geométricamente están dentro de la placa.
 
+## Estaciones sismológicas del SGC en EarthScope
+
+**View → Seismic stations** dibuja las estaciones de la Red Sismológica Nacional (código FDSN
+`CM`) que el SGC comparte por el convenio con IRIS — hoy EarthScope —, donde cualquiera puede
+bajar sus formas de onda sin cuenta. Son 27 de una red de cientos. Triángulos en el mapa,
+pirámides con su código sobre la cara superior del cubo; clic para sensores, canales y la
+ficha de la estación en EarthScope.
+
+**El estado no sale de la ficha, sale de pedir datos.** La ficha de una estación no dice si
+llegan datos: cinco figuran vigentes y no tienen un solo registro archivado. El servicio que
+lo decía (`fdsnws/availability`) fue retirado, así que `tools/estaciones-sgc.mjs` pide 20 s de
+datos a las 12:00 UTC de ayer y de fechas anteriores, estación por estación, y congela el
+resultado con su fecha. Es una muestra, no un inventario: por eso se guarda qué fechas se
+probaron. Al 9 de octubre de 2026:
+
+| Estado | Estaciones |
+|---|---|
+| Transmite (10) | ARGC, CRJC, HEL, LCBC, OCA, PRV, RUS, SMAR, TUM, URI |
+| Detenida (1) | SJC — último dato encontrado el 2026-07-11 |
+| Sin datos archivados (5) | CAP2, CGUAG, FLO2, MAP, PRA — vigentes en su ficha, sin datos en ninguna fecha probada |
+| Retirada (11) | BRR, CHI, COD, MON, PAL, POP2, PTB, ROSC, URE, YOT, ZAR — siete cerraron el mismo día, el 2018-05-11 |
+
+**La marca de restricción engaña a nivel de estación.** Seis estaciones figuran `closed`, pero
+la marca hereda épocas viejas: todos sus canales vigentes son `open`, y cuatro de ellas
+transmiten. La herramienta lee la restricción del canal.
+
+```bash
+node tools/estaciones-sgc.mjs    # ~3 min; reescribe estaciones/cm-earthscope.json
+```
+
+El servicio cambió de casa: `service.iris.edu` redirige a `service.earthscope.org`.
+
 ## Despliegue
 
 El sitio se publica automáticamente en **Vercel** con cada push a `main`: https://sismos-3d-colombia.vercel.app — es público, no pide cuenta ni login.
@@ -182,6 +216,8 @@ El sitio se publica automáticamente en **Vercel** con cada push a `main`: https
 
 - Catálogo sísmico del SGC (`archive.sgc.gov.co`) — enjambre de Chocó.
 - USGS Earthquake Hazards Program (`earthquake.usgs.gov/fdsnws/event/1/query`) — ambas bases históricas.
+- Estaciones de la red CM (SGC): EarthScope Data Services, servicios FDSN `station` y
+  `dataselect` (`service.earthscope.org/fdsnws`).
 - Mapa Geológico de Colombia 2023 — SGC, servicio ArcGIS (`srvags.sgc.gov.co`).
 - OpenStreetMap / Esri World Imagery — mapas base.
 
