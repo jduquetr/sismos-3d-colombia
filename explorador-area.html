@@ -539,6 +539,14 @@
                             <div class="nota">Integrated historical catalog of Colombia and the border with Central America (SGC + ISC + NEIC + other networks), from 1610 <strong>through late 2020</strong>. The best source for historical research in this region, but it doesn't include recent or current seismicity.</div>
                         </label>
                     </div>
+                    <div class="group-title" style="margin-top:12px">Combine with</div>
+                    <div id="fuentesExtra">
+                        <div class="checkbox-item" data-fuente="usgs"><input type="checkbox" name="fuenteExtra" value="usgs" id="extraUsgs"><label for="extraUsgs">USGS</label></div>
+                        <div class="checkbox-item" data-fuente="isc"><input type="checkbox" name="fuenteExtra" value="isc" id="extraIsc"><label for="extraIsc">ISC Bulletin</label></div>
+                        <div class="checkbox-item" data-fuente="sgc_rsnc"><input type="checkbox" name="fuenteExtra" value="sgc_rsnc" id="extraSgcRsnc"><label for="extraSgcRsnc">SGC (Colombian National Seismological Network)</label></div>
+                        <div class="checkbox-item" data-fuente="sgc"><input type="checkbox" name="fuenteExtra" value="sgc" id="extraSgc"><label for="extraSgc">SGC Historical</label></div>
+                    </div>
+                    <div class="nota">Each catalog checked here is queried too, with the same area, dates, magnitude and limit. An earthquake found in more than one (origin times within 16 s and epicenters within 100 km — the rule USGS uses to associate networks in ComCat) is kept once, <strong>with the version of the source selected above</strong>: pick as main the catalog whose locations you trust most for the area.</div>
                 </div>
 
                 <div class="control-group">
@@ -1821,6 +1829,7 @@
                 m.bindPopup(
                     `<strong>M ${ev.mag.toFixed(1)}</strong> · ${ev.prof.toFixed(1)} km<br>` +
                     `${fechaHora(ev.time)}<br>${ev.region || ''}` +
+                    (ev.catalogo ? `<br><small>${ev.catalogo}${ev.tambien ? ' · also in ' + ev.tambien.join(', ') : ''}</small>` : '') +
                     (capaId === 'evento' ? '<br><em>Special event</em>' : '')
                 );
                 grupoCapa.addLayer(m);
@@ -2375,6 +2384,78 @@
             return { norm, total, notas, truncado, fuenteId, fuenteLabel: F.label, urlUsada };
         }
 
+        // --- Varias fuentes en una búsqueda ---
+
+        function marcarFuentesExtra(ids) {
+            document.querySelectorAll('input[name="fuenteExtra"]').forEach(c => { c.checked = ids.includes(c.value); });
+            actualizarFuentesExtraUI();
+        }
+
+        function fuentesExtraSeleccionadas() {
+            const principal = fuenteSeleccionada();
+            return [...document.querySelectorAll('input[name="fuenteExtra"]:checked')]
+                .map(c => c.value).filter(id => id !== principal && FUENTES[id]);
+        }
+
+        // La casilla de la fuente principal no tiene sentido: se oculta y se desmarca.
+        function actualizarFuentesExtraUI() {
+            const principal = fuenteSeleccionada();
+            document.querySelectorAll('#fuentesExtra .checkbox-item').forEach(item => {
+                const esPrincipal = item.dataset.fuente === principal;
+                item.hidden = esPrincipal;
+                if (esPrincipal) item.querySelector('input').checked = false;
+            });
+        }
+
+        // Criterio de USGS para asociar el mismo sismo entre redes en ComCat.
+        const MISMO_SISMO_S = 16, MISMO_SISMO_KM = 100;
+
+        function distanciaKm(a, b) {
+            const r = Math.PI / 180;
+            const dLat = (b.lat - a.lat) * r, dLon = (b.lon - a.lon) * r;
+            const h = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * r) * Math.cos(b.lat * r) * Math.sin(dLon / 2) ** 2;
+            return 2 * 6371 * Math.asin(Math.sqrt(h));
+        }
+
+        // resultados[0] es la fuente principal: sus eventos entran todos. De cada
+        // fuente extra entran solo los que no estaban ya; los repetidos marcan al
+        // que se quedó con "también en …".
+        function combinarResultados(resultados) {
+            const aceptados = [];
+            const resumen = [];
+            let descartados = 0;
+            resultados.forEach((r, i) => {
+                const label = FUENTES[r.fuenteId].label;
+                descartados += r.norm.descartados || 0;
+                const porTiempo = aceptados.slice().sort((a, b) => a.time - b.time);
+                const tiempos = porTiempo.map(e => e.time.getTime());
+                let nuevos = 0, repetidos = 0;
+                for (const ev of r.norm.eventos) {
+                    ev.catalogo = label;
+                    if (i > 0) {
+                        // Búsqueda binaria del primer candidato a menos de 16 s.
+                        const t = ev.time.getTime(), desde = t - MISMO_SISMO_S * 1000;
+                        let lo = 0, hi = tiempos.length;
+                        while (lo < hi) { const m = (lo + hi) >> 1; if (tiempos[m] < desde) lo = m + 1; else hi = m; }
+                        let igual = null;
+                        for (let k = lo; k < tiempos.length && tiempos[k] <= t + MISMO_SISMO_S * 1000; k++) {
+                            if (distanciaKm(ev, porTiempo[k]) <= MISMO_SISMO_KM) { igual = porTiempo[k]; break; }
+                        }
+                        if (igual) {
+                            if (!(igual.tambien || []).includes(label)) igual.tambien = (igual.tambien || []).concat(label);
+                            repetidos++;
+                            continue;
+                        }
+                    }
+                    aceptados.push(ev);
+                    nuevos++;
+                }
+                resumen.push({ label, n: r.norm.eventos.length, nuevos, repetidos, truncado: r.truncado, limite: r.limite });
+            });
+            aceptados.sort((a, b) => a.time - b.time);
+            return { norm: { eventos: aceptados, descartados }, resumen };
+        }
+
         async function consultar() {
             if (consultando) return;
 
@@ -2390,30 +2471,60 @@
 
             const fuenteId = fuenteSeleccionada();
             const F = FUENTES[fuenteId];
+            const extras = fuentesExtraSeleccionadas();
+            const ids = [fuenteId, ...extras];
 
             consultando = true;
             $('btnConsultar').disabled = true;
-            mensaje(`Querying ${F.label}…`, 'cargando');
+            mensaje(`Querying ${ids.map(id => FUENTES[id].label).join(' + ')}…`, 'cargando');
 
-            let resultado;
-            try {
-                resultado = await consultarFuenteRaw(p, fuenteId);
-            } catch (err) {
+            // Cada fuente con su propio tope de límite (SGC Historical no tiene).
+            const intentos = await Promise.allSettled(ids.map(id => {
+                const tope = FUENTES[id].maxLimite;
+                return consultarFuenteRaw({ ...p, limite: tope != null ? Math.min(p.limite, tope) : p.limite }, id)
+                    .then(r => ({ ...r, limite: tope != null ? Math.min(p.limite, tope) : null }));
+            }));
+
+            if (intentos[0].status === 'rejected') {
                 consultando = false;
                 $('btnConsultar').disabled = false;
                 mensaje(
-                    `<strong>Could not query ${F.label}.</strong><br>${err.message}` +
+                    `<strong>Could not query ${F.label}.</strong><br>${intentos[0].reason.message}` +
                     '<br>Check your connection and try again with the "Query catalog" button.',
                     'error'
                 );
                 return;
             }
+            const resultado = intentos[0].value;
 
-            aplicarResultado(resultado.norm, p, resultado.fuenteLabel, resultado.total, resultado.notas, {
-                fuenteId: resultado.fuenteId,
-                urlConsulta: resultado.urlUsada,
-                truncado: resultado.truncado
-            });
+            if (!extras.length) {
+                aplicarResultado(resultado.norm, p, resultado.fuenteLabel, resultado.total, resultado.notas, {
+                    fuenteId: resultado.fuenteId,
+                    urlConsulta: resultado.urlUsada,
+                    truncado: resultado.truncado
+                });
+            } else {
+                const ok = intentos.filter(r => r.status === 'fulfilled').map(r => r.value);
+                const notas = [];
+                intentos.forEach((r, i) => {
+                    if (r.status === 'rejected') notas.push(`Could not query ${FUENTES[ids[i]].label} (${r.reason.message}); showing the rest.`);
+                });
+                ok.forEach(r => r.notas.forEach(n => notas.push(n)));
+                const { norm, resumen } = combinarResultados(ok);
+                const partes = resumen.map((r, i) => i === 0
+                    ? `${r.label}: ${r.n}`
+                    : `${r.label}: ${r.n} (${r.repetidos} already there, ${r.nuevos} new)`);
+                notas.unshift(`${partes.join(' · ')}. Repeated earthquakes keep the ${F.label} version.`);
+                resumen.forEach(r => {
+                    if (r.truncado) notas.push(`${r.label} reached its limit of ${r.limite} — there may be more; raise the limit or narrow the search.`);
+                });
+                aplicarResultado(norm, p, ok.map(r => r.fuenteLabel).join(' + '), null, notas, {
+                    fuenteId: resultado.fuenteId,
+                    fuentesExtra: ok.slice(1).map(r => r.fuenteId),
+                    urlConsulta: resultado.urlUsada,
+                    truncado: ok.some(r => r.truncado)
+                });
+            }
 
             consultando = false;
             $('btnConsultar').disabled = false;
@@ -2448,6 +2559,7 @@
                 modo: p.modo, circulo: p.circulo || null,
                 fuente,
                 fuenteId: opciones.fuenteId || null,
+                fuentesExtra: opciones.fuentesExtra || [],
                 urlConsulta: opciones.urlConsulta || null,
                 total,
                 truncado: !!opciones.truncado,
@@ -4146,7 +4258,8 @@
                     modo: p.modo,
                     inicio: p.inicio, fin: p.fin,
                     minmag: p.minmag, limite: p.limite,
-                    fuenteId, minsig: p.minsig
+                    fuenteId, minsig: p.minsig,
+                    fuentesExtra: fuentesExtraSeleccionadas()
                 }));
             } catch (e) { /* modo privado o storage lleno: no es crítico */ }
         }
@@ -4169,6 +4282,7 @@
             const fuenteId = (guardado && guardado.fuenteId) || 'usgs';
             const radio = document.querySelector(`input[name="fuente"][value="${fuenteId}"]`);
             if (radio) radio.checked = true;
+            marcarFuentesExtra((guardado && guardado.fuentesExtra) || []);
 
             // Fechas por defecto: todo el rango real de la fuente elegida (ver
             // rangoFechasFuente), no una ventana corta — evita el caso típico de
@@ -4195,7 +4309,7 @@
         // controles de vista. Así cabe en un QR y no necesita servidor. Va en el hash
         // (#...), que nunca viaja a ningún servidor.
         //
-        // Formato (v=1): fu, a=n,s,e,o | c=lat,lon,km, d=desde,hasta, m, l, sg
+        // Formato (v=1): fu, fx=fuentes combinadas, a=n,s,e,o | c=lat,lon,km, d=desde,hasta, m, l, sg
         // para la capa de fondo; los mismos con prefijo "e" para el evento especial.
         // ev = lib:<id> | usgs:<id> | cat | sp ; sumar=1 ; p = map|3d ;
         // on/off = casillas de vista ; mb, mt = mapa base y de la cara superior.
@@ -4232,6 +4346,7 @@
 
             if (!fondoDeFicha && datosFondo.params && FUENTES[datosFondo.fuenteId]) {
                 escribirConsultaEnlace(q, '', datosFondo.params, datosFondo.fuenteId);
+                if (datosFondo.fuentesExtra.length) q.push(['fx', datosFondo.fuentesExtra.join(',')]);
             } else if (!fondoDeFicha && datosFondo.eventos.length) {
                 avisos.push('The background layer did not come from a catalog query, so it is left out.');
             }
@@ -4364,6 +4479,7 @@
             const radio = document.querySelector(`input[name="fuente"][value="${c.fuenteId}"]`);
             if (radio) radio.checked = true;
             actualizarLimiteUI();
+            marcarFuentesExtra(c.fuentesExtra || []);
             $('fechaIni').value = c.inicio; $('fechaFin').value = c.fin;
             $('magSlider').value = Math.round(c.minmag * 10);
             $('magValue').textContent = 'M' + c.minmag.toFixed(1);
@@ -4413,6 +4529,7 @@
             const conFicha = (tipoFicha === 'lib' || tipoFicha === 'usgs') && idFicha;
 
             const fondo = leerConsultaEnlace(h, '');
+            if (fondo) fondo.fuentesExtra = (h.get('fx') || '').split(',').filter(id => FUENTES[id]);
             if (fondo && !(conFicha && !h.has('sumar'))) {
                 escribirFondoDesdeEnlace(fondo);
                 await consultar();
@@ -4513,6 +4630,7 @@
 
         function escribirConsultaFondo(c) {
             setModoArea('rect');
+            marcarFuentesExtra([]);
             escribirBbox(c.bbox);
             const radio = document.querySelector(`input[name="fuente"][value="${c.fuenteId}"]`);
             if (radio) { radio.checked = true; actualizarLimiteUI(); }
@@ -5467,6 +5585,7 @@
             document.querySelectorAll('input[name="fuente"]').forEach(r => {
                 r.addEventListener('change', () => {
                     actualizarLimiteUI();
+                    actualizarFuentesExtraUI();
                     // Cada fuente cubre un rango de fechas real distinto (ver
                     // rangoFechasFuente) — al cambiar de fuente, las fechas se
                     // actualizan a su rango completo para no arrastrar un rango
