@@ -29,6 +29,7 @@ Solo una de las dos bases de datos históricas se muestra a la vez (selector des
 
 ## Otras funciones
 
+- **Varias fuentes en una búsqueda (explorador por área)**: bajo *Catalog source*, *Combine with* suma otros catálogos (USGS, ISC, SGC RSNC, SGC histórico) a la fuente principal, con la misma área, fechas, magnitud y límite. Un sismo que aparece en más de uno (horas de origen a menos de 16 s y epicentros a menos de 100 km, el criterio de USGS en ComCat) se conserva una vez, con la versión de la fuente principal; el popup dice de qué catálogo viene y en cuál más está.
 - **Compartir (explorador por área)**: el botón *Share* de la cabecera genera un enlace y un código QR que reabren lo que se está viendo: la consulta de cada capa (fuente, área, fechas, magnitud, límite), el evento de la biblioteca si lo hay, y los controles de vista. El enlace no lleva los datos sino cómo obtenerlos, así que cabe en un QR y no necesita servidor; con una ficha de la biblioteca carga su misma instantánea congelada. Un GeoJSON cargado desde el propio computador no viaja en el enlace.
 - **Timeline cronológico** con reproducción automática, respetando la fecha/hora real de cada sismo.
 - **Perfil de profundidad**: se eligen dos puntos sobre el mapa y se genera un corte 2D (distancia vs. profundidad) con los sismos proyectados, usando los mismos colores/tamaños del cubo 3D.
