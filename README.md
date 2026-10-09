@@ -29,6 +29,7 @@ Solo una de las dos bases de datos históricas se muestra a la vez (selector des
 
 ## Otras funciones
 
+- **Compartir (explorador por área)**: el botón *Share* de la cabecera genera un enlace y un código QR que reabren lo que se está viendo: la consulta de cada capa (fuente, área, fechas, magnitud, límite), el evento de la biblioteca si lo hay, y los controles de vista. El enlace no lleva los datos sino cómo obtenerlos, así que cabe en un QR y no necesita servidor; con una ficha de la biblioteca carga su misma instantánea congelada. Un GeoJSON cargado desde el propio computador no viaja en el enlace.
 - **Timeline cronológico** con reproducción automática, respetando la fecha/hora real de cada sismo.
 - **Perfil de profundidad**: se eligen dos puntos sobre el mapa y se genera un corte 2D (distancia vs. profundidad) con los sismos proyectados, usando los mismos colores/tamaños del cubo 3D.
 - **Brújula N/S/E/O** fija geográficamente, visible desde cualquier ángulo de cámara.
