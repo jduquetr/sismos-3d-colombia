@@ -55,7 +55,6 @@
             /* capa de fondo: <=35 km corteza (neutro) y rampa naranja 35 km -> máx., como cubo-v2 */
             --crust:#8a8a86;
             --st-on:#34d399; --st-stopped:#f59e0b; --st-nodata:#a3a3a3; --st-retired:#71717a;  /* estaciones */
-            --st-live:#38bdf8;           /* estaciones que transmiten en abierto */
             --o0:#fde0cc; --o1:#f7b389; --o2:#ef8348; --o3:#d95926; --o4:#a33f18;
             --timevalue-width:96px;
             --font:system-ui,-apple-system,"Segoe UI",sans-serif;
@@ -276,7 +275,7 @@
             --scene-bg:#0a0a0a; --scene-box:#71717a; --scene-surface:#1c1c1f; --scene-label:#a3a3a3; --area-draw:#a3e635;
             --slab:#818cf8;
             --crust:#737373;
-            --st-on:#34d399; --st-stopped:#f59e0b; --st-nodata:#a3a3a3; --st-retired:#71717a; --st-live:#38bdf8;
+            --st-on:#34d399; --st-stopped:#f59e0b; --st-nodata:#a3a3a3; --st-retired:#71717a;
             --o0:#ecfccb; --o1:#bef264; --o2:#84cc16; --o3:#65a30d; --o4:#4d7c0f;
             --shadow:0 24px 70px rgba(24,24,40,.28);
             --glow:radial-gradient(circle at top, rgba(99,102,241,.16), transparent 34%);
@@ -295,7 +294,7 @@
             --scene-bg:#f7f7f8; --scene-box:#71717a; --scene-surface:#e4e4e7; --scene-label:#52525b; --area-draw:#65a30d;
             --slab:#4f46e5;
             --crust:#a1a1aa;
-            --st-on:#047857; --st-stopped:#b45309; --st-nodata:#52525b; --st-retired:#a1a1aa; --st-live:#0369a1;
+            --st-on:#047857; --st-stopped:#b45309; --st-nodata:#52525b; --st-retired:#a1a1aa;
             --o0:#bef264; --o1:#84cc16; --o2:#65a30d; --o3:#4d7c0f; --o4:#365314;
             --shadow:0 18px 48px rgba(24,24,27,.08);
             --glow:radial-gradient(circle at top, rgba(99,102,241,.12), transparent 30%);
@@ -385,7 +384,6 @@
         .estacion.estado-detenida polygon { fill: var(--st-stopped); }
         .estacion.estado-sin-datos polygon { fill: none; stroke: var(--st-nodata); stroke-width: 1.8; }
         .estacion.estado-retirada polygon { fill: var(--st-retired); opacity: .6; }
-        .estacion.estado-vivo polygon { fill: var(--st-live); }
         .leyenda-estaciones { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 8px; font-size: 11px; color: var(--ink-2); }
         .leyenda-estaciones span { display: inline-flex; align-items: center; gap: 5px; }
     </style>
@@ -705,20 +703,6 @@
                             waveforms. A station's metadata does not say whether data arrive: some are listed as current
                             and have no archived record at all. So the status comes from asking for real data, station by
                             station. Click a station for its sensors and its page at EarthScope.</div>
-                    </div>
-                    <div class="checkbox-item">
-                        <input type="checkbox" id="showTiempoReal">
-                        <label for="showTiempoReal">Live public stations — SeedLink</label>
-                    </div>
-                    <div id="tiempoRealControles" hidden>
-                        <div class="leyenda-estaciones">
-                            <span><svg class="estacion estado-vivo" viewBox="0 0 16 14" width="13" height="11"><polygon points="8,1 15,13 1,13"/></svg>Streaming openly at the time of the snapshot</span>
-                        </div>
-                        <div class="info-box" id="resumenTiempoReal" style="margin-top:8px"></div>
-                        <div class="nota">Any network, not only the SGC: the stations whose signal is streaming openly on a public
-                            SeedLink server — EarthScope or GEOFON — so that a program or a web page can listen to them live.
-                            National networks keep most of their stations' live signal to themselves: in Colombia, only
-                            the SGC stations it shares through EarthScope stream openly. Covers Mexico to northern Peru.</div>
                     </div>
                 </div>
 
@@ -2817,8 +2801,7 @@
                 corteza: v('--crust', '#8a8a86'),
                 estaciones: {
                     transmite: v('--st-on', '#34d399'), detenida: v('--st-stopped', '#f59e0b'),
-                    'sin-datos': v('--st-nodata', '#a3a3a3'), retirada: v('--st-retired', '#71717a'),
-                    vivo: v('--st-live', '#38bdf8')
+                    'sin-datos': v('--st-nodata', '#a3a3a3'), retirada: v('--st-retired', '#71717a')
                 },
                 rampa: ['--o0', '--o1', '--o2', '--o3', '--o4'].map((n, i) => v(n, ['#fde0cc', '#f7b389', '#ef8348', '#d95926', '#a33f18'][i])),
                 fondo: v('--scene-bg', '#0d0d0d'),
@@ -2893,7 +2876,6 @@
             }
             refs = null;
             grupoEstaciones = null;
-            grupoTiempoReal = null;
             if (mallaSuperior && mallaSuperior.material && mallaSuperior.material.map) {
                 mallaSuperior.material.map.dispose();
             }
@@ -3731,58 +3713,44 @@
         }
 
         function quitarEstaciones3D() {
-            soltarGrupo3D(grupoEstaciones);
-            grupoEstaciones = null;
-        }
-
-        // Pirámide de base triangular parada en la cara superior, con su código.
-        // etiqueta() tiene el tamaño de los rótulos de los ejes: con decenas de
-        // estaciones se pisaban, así que aquí el rótulo va en proporción a la caja.
-        function piramideEstacion(g, P, lado, e, color, { hueca = false, opacidad = 1, rotulo = null, escala = 1 } = {}) {
-            const radio = lado * 0.012 * escala, alto = radio * 2.4;
-            const geo = new THREE.ConeGeometry(radio, alto, 3);
-            geo.rotateX(Math.PI / 2);                  // el cono apunta a +Y; arriba en la escena es +Z
-            const piramide = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
-                color: new THREE.Color(color), wireframe: hueca, transparent: opacidad < 1, opacity: opacidad
-            }));
-            piramide.position.set(P.x(e.lon), P.y(e.lat), alto / 2 + 0.05);
-            g.add(piramide);
-            if (rotulo) {
-                const r = etiqueta(rotulo, P.x(e.lon), P.y(e.lat), alto * 1.6);
-                r.scale.set(lado * 0.05, lado * 0.016, 1);
-                g.add(r);
-            }
-        }
-
-        const dentroDelArea = (e, b) => e.lat >= b.s && e.lat <= b.n && e.lon >= b.o && e.lon <= b.e;
-
-        function soltarGrupo3D(g) {
-            if (!g) return;
-            if (grupo) grupo.remove(g);
-            g.traverse(o => {
+            if (!grupoEstaciones) return;
+            if (grupo) grupo.remove(grupoEstaciones);
+            grupoEstaciones.traverse(o => {
                 if (o.geometry) o.geometry.dispose();
                 if (o.material) { if (o.material.map) o.material.map.dispose(); o.material.dispose(); }
             });
+            grupoEstaciones = null;
         }
 
-        // Las dos capas de estaciones en 3D; construirEscena llama a esta.
+        // Pirámides de base triangular paradas en la cara superior, con su código.
         function actualizarEstaciones3D() {
-            actualizarCM3D();
-            actualizarTiempoReal3D();
-        }
-
-        function actualizarCM3D() {
             quitarEstaciones3D();
             if (!datosEstaciones || !$('showEstaciones').checked || !datosFondo.bbox || !grupo) return;
             const b = datosFondo.bbox, P = proyector(), t = leerTema3D();
             const lado = Math.max(P.x(b.e) - P.x(b.o), P.y(b.n) - P.y(b.s));
+            const radio = lado * 0.012, alto = radio * 2.4;
             const g = new THREE.Group();
-            // Las retiradas sin rótulo: son las que menos se buscan.
-            estacionesVisibles().filter(e => dentroDelArea(e, b)).forEach(e => piramideEstacion(g, P, lado, e,
-                t.estaciones[e.estado], {
-                    hueca: e.estado === 'sin-datos', opacidad: e.estado === 'retirada' ? 0.55 : 1,
-                    rotulo: e.estado !== 'retirada' ? e.codigo : null
-                }));
+            estacionesVisibles().forEach(e => {
+                if (e.lat < b.s || e.lat > b.n || e.lon < b.o || e.lon > b.e) return;
+                const geo = new THREE.ConeGeometry(radio, alto, 3);
+                geo.rotateX(Math.PI / 2);              // el cono apunta a +Y; arriba en la escena es +Z
+                const mat = new THREE.MeshBasicMaterial({
+                    color: new THREE.Color(t.estaciones[e.estado]),
+                    wireframe: e.estado === 'sin-datos',
+                    transparent: e.estado === 'retirada', opacity: e.estado === 'retirada' ? 0.55 : 1
+                });
+                const piramide = new THREE.Mesh(geo, mat);
+                piramide.position.set(P.x(e.lon), P.y(e.lat), alto / 2 + 0.05);
+                g.add(piramide);
+                // etiqueta() tiene el tamaño de los rótulos de los ejes: con decenas de
+                // estaciones se pisaban. Aquí va en proporción a la caja, y las retiradas
+                // no llevan, que son las que menos se buscan.
+                if (e.estado !== 'retirada') {
+                    const rotulo = etiqueta(e.codigo, P.x(e.lon), P.y(e.lat), alto * 1.6);
+                    rotulo.scale.set(lado * 0.05, lado * 0.016, 1);
+                    g.add(rotulo);
+                }
+            });
             if (g.children.length) { grupoEstaciones = g; grupo.add(g); }
         }
 
@@ -3801,7 +3769,7 @@
         async function actualizarEstaciones() {
             const on = $('showEstaciones').checked;
             $('estacionesControles').hidden = !on;
-            if (!on) { dibujarEstaciones2D(); quitarEstaciones3D(); actualizarTiempoReal3D(); return; }
+            if (!on) { dibujarEstaciones2D(); quitarEstaciones3D(); return; }
             try {
                 await cargarEstaciones();
             } catch (err) {
@@ -3814,124 +3782,12 @@
             pintarResumenEstaciones();
         }
 
-        // ------------------------------------------------------------
-        // Estaciones en vivo: las que transmiten en abierto por SeedLink
-        // ------------------------------------------------------------
-        // Otra pregunta que la de arriba: no qué archiva EarthScope del SGC, sino qué
-        // estaciones de la región — de cualquier red — se pueden escuchar ahora. Lo
-        // congela tools/estaciones-tiempo-real.mjs leyendo el anillo de los
-        // servidores SeedLink públicos: esa lista pesa 6 MB y no se le pide a cada
-        // visitante.
-        const RUTA_TIEMPO_REAL = 'estaciones/tiempo-real.json';
-        let datosTiempoReal = null, promesaTiempoReal = null;
-        let capaTiempoReal2D = null, grupoTiempoReal = null;
-
-        function cargarTiempoReal() {
-            if (datosTiempoReal) return Promise.resolve(datosTiempoReal);
-            if (!promesaTiempoReal) {
-                promesaTiempoReal = fetch(RUTA_TIEMPO_REAL)
-                    .then(r => { if (!r.ok) throw new Error(`${r.status}`); return r.json(); })
-                    .then(d => (datosTiempoReal = d))
-                    .catch(err => { promesaTiempoReal = null; throw err; });
-            }
-            return promesaTiempoReal;
-        }
-
-        const horaFoto = () => datosTiempoReal.consultado.replace('T', ' ').replace('Z', ' UTC');
-
-        function fichaTiempoReal(e) {
-            const id = `${escaparHTML(e.red)}.${escaparHTML(e.codigo)}`;
-            return [
-                `<strong>${id}</strong> — ${escaparHTML(e.sitio)}`,
-                `Live on ${escaparHTML(horaFoto())}: last data ${e.atrasoMin} min old`,
-                `SeedLink: ${escaparHTML(e.servidor)}` +
-                    (e.websocket ? ' — can stream straight into a web page (WebSocket)' : ''),
-                e.canales.length ? `Channels: ${e.canales.map(escaparHTML).join(' ')}` : '',
-                e.enIsc ? 'In the ISC station registry' : 'Not found in the ISC station registry',
-                e.servidor === 'EarthScope'
-                    ? `<a href="https://ds.iris.edu/mda/${encodeURIComponent(e.red)}/${encodeURIComponent(e.codigo)}/" ` +
-                      'target="_blank" rel="noopener">Station page at EarthScope ↗</a>'
-                    : ''
-            ].filter(Boolean).join('<br>');
-        }
-
-        function dibujarTiempoReal2D() {
-            if (capaTiempoReal2D) { map.removeLayer(capaTiempoReal2D); capaTiempoReal2D = null; }
-            if (!datosTiempoReal || !$('showTiempoReal').checked) return;
-            const capa = L.layerGroup();
-            datosTiempoReal.estaciones.forEach(e => {
-                L.marker([e.lat, e.lon], {
-                    icon: L.divIcon({
-                        className: 'estacion-icono',
-                        html: '<svg class="estacion estado-vivo" viewBox="0 0 16 14" width="14" height="12">' +
-                              '<polygon points="8,1 15,13 1,13"/></svg>',
-                        iconSize: [14, 12], iconAnchor: [7, 8]
-                    }),
-                    // Más chico que el de la capa CM y encima: con las dos encendidas, la
-                    // estación del SGC que transmite se ve como un triángulo dentro de otro.
-                    zIndexOffset: 200,
-                    keyboard: false
-                })
-                    .bindTooltip(`${escaparHTML(e.red)}.${escaparHTML(e.codigo)} · live`, { direction: 'top', offset: [0, -7] })
-                    .bindPopup(fichaTiempoReal(e), FICHA_ESTACION)
-                    .addTo(capa);
-            });
-            capaTiempoReal2D = capa.addTo(map);
-        }
-
-        function actualizarTiempoReal3D() {
-            soltarGrupo3D(grupoTiempoReal);
-            grupoTiempoReal = null;
-            if (!datosTiempoReal || !$('showTiempoReal').checked || !datosFondo.bbox || !grupo) return;
-            const b = datosFondo.bbox, P = proyector(), t = leerTema3D();
-            const lado = Math.max(P.x(b.e) - P.x(b.o), P.y(b.n) - P.y(b.s));
-            const conCM = $('showEstaciones').checked;
-            const g = new THREE.Group();
-            datosTiempoReal.estaciones.filter(e => dentroDelArea(e, b)).forEach(e => piramideEstacion(g, P, lado, e,
-                t.estaciones.vivo, {
-                    escala: 0.7,
-                    // Si la capa CM está encendida ya rotula esa estación: no dos códigos en un punto.
-                    rotulo: conCM && e.red === 'CM' ? null : e.codigo
-                }));
-            if (g.children.length) { grupoTiempoReal = g; grupo.add(g); }
-        }
-
-        function pintarResumenTiempoReal() {
-            if (!datosTiempoReal) return;
-            const d = datosTiempoReal, n = d.estaciones.length;
-            const porServidor = Object.entries(d.resumen).map(([k, v]) => `${escaparHTML(k)} ${v.enVivo}`).join(', ');
-            const conWs = d.estaciones.filter(e => e.websocket).length;
-            $('resumenTiempoReal').innerHTML =
-                `<strong>${n} stations live</strong> on ${escaparHTML(horaFoto())} · ${porServidor}. ` +
-                `${d.estaciones.filter(e => e.enIsc).length} of them are in the ISC station registry, ` +
-                `out of ${d.filasIsc} rows for this region there.<br>` +
-                `${conWs} can be streamed straight into a web page. Live means the last data was under ` +
-                `${d.atrasoMaximoMin} min old at the time of the snapshot — a station can drop out or come back later.`;
-        }
-
-        async function actualizarTiempoReal() {
-            const on = $('showTiempoReal').checked;
-            $('tiempoRealControles').hidden = !on;
-            if (!on) { dibujarTiempoReal2D(); actualizarTiempoReal3D(); actualizarCM3D(); return; }
-            try {
-                await cargarTiempoReal();
-            } catch (err) {
-                mensaje(`The list of live stations could not be loaded: ${err.message}`, 'error');
-                return;
-            }
-            if (!$('showTiempoReal').checked) return;
-            dibujarTiempoReal2D();
-            actualizarTiempoReal3D();
-            pintarResumenTiempoReal();
-        }
-
         function conectarEstaciones() {
             // Viaja en el enlace para compartir. Se registra aquí y no en la tabla
             // COMPARTIR_CASILLAS para no tocar la línea que editan otras capas.
-            Object.assign(COMPARTIR_CASILLAS, { et: 'showEstaciones', er: 'estacionesRetiradas', tr: 'showTiempoReal' });
+            Object.assign(COMPARTIR_CASILLAS, { et: 'showEstaciones', er: 'estacionesRetiradas' });
             $('showEstaciones').addEventListener('change', actualizarEstaciones);
             $('estacionesRetiradas').addEventListener('change', actualizarEstaciones);
-            $('showTiempoReal').addEventListener('change', actualizarTiempoReal);
         }
 
         function construirEscena() {
@@ -6119,10 +5975,7 @@
                 capa2D: capaEstaciones2D ? capaEstaciones2D.getLayers().length : 0,
                 grupo3D: grupoEstaciones ? grupoEstaciones.children.length : 0,
                 resumen: $('resumenEstaciones').innerText,
-                compartir: COMPARTIR_CASILLAS.et,
-                vivo2D: capaTiempoReal2D ? capaTiempoReal2D.getLayers().length : 0,
-                vivo3D: grupoTiempoReal ? grupoTiempoReal.children.length : 0,
-                resumenVivo: $('resumenTiempoReal').innerText
+                compartir: COMPARTIR_CASILLAS.et
             }),
             visiblesFondo: () => renderFondo.visibles,
             visiblesEvento: () => renderEvento.visibles,

@@ -50,8 +50,6 @@ Solo una de las dos bases de datos históricas se muestra a la vez (selector des
 - `eventos/<id>.json` — instantánea congelada de cada ficha: es lo que carga la página por defecto
 - `estaciones/cm-earthscope.json` — estado congelado de las estaciones del SGC publicadas en EarthScope
 - `tools/estaciones-sgc.mjs` — lo regenera, pidiendo datos reales a cada estación
-- `estaciones/tiempo-real.json` — estaciones de cualquier red que transmiten en abierto por SeedLink (México–norte de Perú)
-- `tools/estaciones-tiempo-real.mjs` — lo regenera leyendo el anillo de los servidores SeedLink públicos
 - `tools/snapshot-eventos.mjs` — regenera esas instantáneas desde USGS
 
 ## Uso local
@@ -207,31 +205,6 @@ node tools/estaciones-sgc.mjs    # ~3 min; reescribe estaciones/cm-earthscope.js
 ```
 
 El servicio cambió de casa: `service.iris.edu` redirige a `service.earthscope.org`.
-
-### Estaciones en vivo
-
-La segunda casilla del grupo, **Live public stations — SeedLink**, responde otra pregunta: no
-qué archiva EarthScope del SGC, sino qué estaciones de la región — de cualquier red — se pueden
-escuchar ahora mismo. Un servidor SeedLink lo dice: a `INFO STREAMS` responde, canal por canal,
-la hora del último dato que tiene. Está en vivo la estación cuyo último dato tiene menos de 10
-minutos. `tools/estaciones-tiempo-real.mjs` lo lee de EarthScope y GEOFON (Raspberry Shake no
-ofrece SeedLink público), toma las coordenadas del servicio FDSN de cada centro y cruza con el
-registro de estaciones del ISC por código y posición, porque el ISC usa sus propios códigos de red.
-
-Al 9 de octubre de 2026, en el rectángulo de México al norte de Perú: **134 estaciones en vivo**
-(130 en EarthScope, 4 en GEOFON), 121 de ellas en el registro del ISC — que lista 3 982 filas
-para la región. Las redes nacionales se guardan casi toda su señal en vivo: de Colombia solo
-transmiten en abierto las estaciones del SGC que comparte por EarthScope. Es una foto: una
-estación puede caerse o volver; se regenera con
-
-```bash
-node tools/estaciones-tiempo-real.mjs                 # región por defecto
-node tools/estaciones-tiempo-real.mjs --bbox n,s,e,o  # otra
-```
-
-EarthScope acepta además SeedLink por **WebSocket cifrado** (`wss://rtserve.earthscope.org/seedlink`,
-CORS abierto): una página HTTPS puede escuchar esas estaciones directamente, sin servidor
-intermedio. Probado con CM.RUS: paquetes reales con 15–25 s de retraso. GEOFON no lo ofrece.
 
 ## Despliegue
 
