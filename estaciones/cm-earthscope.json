@@ -1,0 +1,691 @@
+{
+ "red": "CM",
+ "nombre": "Red Sismológica Nacional de Colombia (SGC)",
+ "archivo": "EarthScope Data Services (antes IRIS DMC)",
+ "servicio": "https://service.earthscope.org/fdsnws/station/1/",
+ "consultado": "2026-10-09",
+ "nota": "Estado según pedir 20 s de datos a las 12:00 UTC en cada fecha de \"probadas\". Es una muestra, no un inventario completo del archivo.",
+ "estaciones": [
+  {
+   "codigo": "ARGC",
+   "sitio": "Ariguani, Magdalena, Colombia",
+   "lat": 9.8577,
+   "lon": -74.2458,
+   "elevacion": 187,
+   "desde": "2013-04-22",
+   "hasta": null,
+   "estado": "transmite",
+   "ultimoDato": "2026-10-08",
+   "probadas": [
+    "2026-10-08"
+   ],
+   "bandaAncha": "STS-2.5",
+   "acelerografo": "CMG-5T",
+   "canales": [
+    "HHE",
+    "HHN",
+    "HHZ",
+    "HLE",
+    "HLN",
+    "HLZ",
+    "HNE",
+    "HNN",
+    "HNZ"
+   ],
+   "abiertos": true
+  },
+  {
+   "codigo": "BRR",
+   "sitio": "Barrancabemeja, Santander, Colombia",
+   "lat": 7.1072,
+   "lon": -73.712,
+   "elevacion": 137,
+   "desde": "2008-04-04",
+   "hasta": "2017-12-05",
+   "estado": "retirada",
+   "ultimoDato": null,
+   "probadas": [
+    "2013-02-03"
+   ],
+   "bandaAncha": "STS-2",
+   "acelerografo": null,
+   "canales": [
+    "BHE",
+    "BHN",
+    "BHZ"
+   ],
+   "abiertos": true
+  },
+  {
+   "codigo": "CAP2",
+   "sitio": "Capurgana, Choco, Colombia",
+   "lat": 8.6445,
+   "lon": -77.3604,
+   "elevacion": 221,
+   "desde": "2008-02-06",
+   "hasta": null,
+   "estado": "sin-datos",
+   "ultimoDato": null,
+   "probadas": [
+    "2026-10-08",
+    "2026-10-02",
+    "2026-09-09",
+    "2026-07-11",
+    "2026-04-12",
+    "2025-10-09",
+    "2024-10-09",
+    "2021-10-10"
+   ],
+   "bandaAncha": "CMG-3ESP",
+   "acelerografo": "Episensor",
+   "canales": [
+    "HHE",
+    "HHN",
+    "HHZ",
+    "HNE",
+    "HNN",
+    "HNZ"
+   ],
+   "abiertos": true
+  },
+  {
+   "codigo": "CGUAG",
+   "sitio": "Riohacha, Guajira, Colombia",
+   "lat": 11.5378,
+   "lon": -72.9028,
+   "elevacion": 28,
+   "desde": "1999-11-16",
+   "hasta": null,
+   "estado": "sin-datos",
+   "ultimoDato": null,
+   "probadas": [
+    "2026-10-08",
+    "2026-10-02",
+    "2026-09-09",
+    "2026-07-11",
+    "2026-04-12",
+    "2025-10-09",
+    "2024-10-09",
+    "2021-10-10"
+   ],
+   "bandaAncha": null,
+   "acelerografo": "Titan",
+   "canales": [
+    "HNE",
+    "HNN",
+    "HNZ"
+   ],
+   "abiertos": true
+  },
+  {
+   "codigo": "CHI",
+   "sitio": "Chingaza, Cundinamarca",
+   "lat": 4.6295,
+   "lon": -73.7371,
+   "elevacion": 3140,
+   "desde": "2007-06-30",
+   "hasta": "2018-05-11",
+   "estado": "retirada",
+   "ultimoDato": null,
+   "probadas": [
+    "2012-12-04"
+   ],
+   "bandaAncha": "STS-2",
+   "acelerografo": null,
+   "canales": [
+    "BHE",
+    "BHN",
+    "BHZ"
+   ],
+   "abiertos": true
+  },
+  {
+   "codigo": "COD",
+   "sitio": "Agustin Codazzi, Cesar, Colombia",
+   "lat": 9.935,
+   "lon": -73.444,
+   "elevacion": 108,
+   "desde": "2011-04-11",
+   "hasta": "2014-06-17",
+   "estado": "retirada",
+   "ultimoDato": null,
+   "probadas": [
+    "2012-11-13"
+   ],
+   "bandaAncha": "CMG-3T",
+   "acelerografo": null,
+   "canales": [
+    "HHE",
+    "HHN",
+    "HHZ"
+   ],
+   "abiertos": true
+  },
+  {
+   "codigo": "CRJC",
+   "sitio": "Cerrejon, Guajira, Colombia",
+   "lat": 11.02,
+   "lon": -72.8816,
+   "elevacion": 827,
+   "desde": "2014-11-26",
+   "hasta": null,
+   "estado": "transmite",
+   "ultimoDato": "2026-10-08",
+   "probadas": [
+    "2026-10-08"
+   ],
+   "bandaAncha": "STS-2",
+   "acelerografo": null,
+   "canales": [
+    "BHE",
+    "BHN",
+    "BHZ",
+    "HHE",
+    "HHN",
+    "HHZ"
+   ],
+   "abiertos": true
+  },
+  {
+   "codigo": "FLO2",
+   "sitio": "Florencia, Caqueta, Colombia",
+   "lat": 1.5827,
+   "lon": -75.6527,
+   "elevacion": 365,
+   "desde": "1993-06-01",
+   "hasta": null,
+   "estado": "sin-datos",
+   "ultimoDato": null,
+   "probadas": [
+    "2026-10-08",
+    "2026-10-02",
+    "2026-09-09",
+    "2026-07-11",
+    "2026-04-12",
+    "2025-10-09",
+    "2024-10-09",
+    "2021-10-10"
+   ],
+   "bandaAncha": "STS-2.5",
+   "acelerografo": "CMG-5T",
+   "canales": [
+    "HHE",
+    "HHN",
+    "HHZ",
+    "HNE",
+    "HNN",
+    "HNZ"
+   ],
+   "abiertos": true
+  },
+  {
+   "codigo": "HEL",
+   "sitio": "Santa Helena, Medellin, Colombia",
+   "lat": 6.1909,
+   "lon": -75.529,
+   "elevacion": 2857,
+   "desde": "1993-06-01",
+   "hasta": null,
+   "estado": "transmite",
+   "ultimoDato": "2026-10-08",
+   "probadas": [
+    "2026-10-08"
+   ],
+   "bandaAncha": "CMG-3ESP",
+   "acelerografo": null,
+   "canales": [
+    "HHE",
+    "HHN",
+    "HHZ"
+   ],
+   "abiertos": true
+  },
+  {
+   "codigo": "LCBC",
+   "sitio": "Los Cordobas, Cordoba, Colombia",
+   "lat": 8.8572,
+   "lon": -76.3677,
+   "elevacion": 75,
+   "desde": "2013-11-16",
+   "hasta": null,
+   "estado": "transmite",
+   "ultimoDato": "2026-10-08",
+   "probadas": [
+    "2026-10-08"
+   ],
+   "bandaAncha": "STS-2",
+   "acelerografo": null,
+   "canales": [
+    "HHE",
+    "HHN",
+    "HHZ"
+   ],
+   "abiertos": true
+  },
+  {
+   "codigo": "MAP",
+   "sitio": "Isla Malpelo, Colombia",
+   "lat": 4.0037,
+   "lon": -81.606,
+   "elevacion": 137,
+   "desde": "2009-06-04",
+   "hasta": null,
+   "estado": "sin-datos",
+   "ultimoDato": null,
+   "probadas": [
+    "2026-10-08",
+    "2026-10-02",
+    "2026-09-09",
+    "2026-07-11",
+    "2026-04-12",
+    "2025-10-09",
+    "2024-10-09",
+    "2021-10-10"
+   ],
+   "bandaAncha": "STS-2",
+   "acelerografo": null,
+   "canales": [
+    "BHE",
+    "BHN",
+    "BHZ",
+    "HHE",
+    "HHN",
+    "HHZ"
+   ],
+   "abiertos": true
+  },
+  {
+   "codigo": "MON",
+   "sitio": "Monteria, Cordoba, Colombia",
+   "lat": 8.7785,
+   "lon": -75.665,
+   "elevacion": 109,
+   "desde": "2008-03-01",
+   "hasta": "2016-08-29",
+   "estado": "retirada",
+   "ultimoDato": null,
+   "probadas": [
+    "2012-05-31"
+   ],
+   "bandaAncha": "STS-2",
+   "acelerografo": null,
+   "canales": [
+    "BHE",
+    "BHN",
+    "BHZ",
+    "HHE",
+    "HHN",
+    "HHZ"
+   ],
+   "abiertos": true
+  },
+  {
+   "codigo": "OCA",
+   "sitio": "Ocana, Norte de Santander, Colombia",
+   "lat": 8.2388,
+   "lon": -73.3193,
+   "elevacion": 1264,
+   "desde": "1997-01-19",
+   "hasta": null,
+   "estado": "transmite",
+   "ultimoDato": "2026-10-08",
+   "probadas": [
+    "2026-10-08"
+   ],
+   "bandaAncha": "RTcolt",
+   "acelerografo": "Episensor",
+   "canales": [
+    "HHE",
+    "HHN",
+    "HHZ",
+    "HNE",
+    "HNN",
+    "HNZ"
+   ],
+   "abiertos": true
+  },
+  {
+   "codigo": "PAL",
+   "sitio": "San Jose del Palmar, Choco, Colombia",
+   "lat": 4.905,
+   "lon": -76.283,
+   "elevacion": 675,
+   "desde": "2011-10-04",
+   "hasta": "2018-05-11",
+   "estado": "retirada",
+   "ultimoDato": null,
+   "probadas": [
+    "2015-01-22"
+   ],
+   "bandaAncha": "Trillium 120P",
+   "acelerografo": null,
+   "canales": [
+    "BHZ",
+    "HHE",
+    "HHN",
+    "HHZ"
+   ],
+   "abiertos": true
+  },
+  {
+   "codigo": "POP2",
+   "sitio": "Popayan, Cauca, Colombia",
+   "lat": 2.5402,
+   "lon": -76.6758,
+   "elevacion": 1869,
+   "desde": "2009-07-07",
+   "hasta": "2018-05-11",
+   "estado": "retirada",
+   "ultimoDato": null,
+   "probadas": [
+    "2013-12-08"
+   ],
+   "bandaAncha": "RT151",
+   "acelerografo": null,
+   "canales": [
+    "BHE",
+    "BHN",
+    "BHZ"
+   ],
+   "abiertos": true
+  },
+  {
+   "codigo": "PRA",
+   "sitio": "Prado, Tolima, Colombia",
+   "lat": 3.7138,
+   "lon": -74.8862,
+   "elevacion": 457,
+   "desde": "1993-06-01",
+   "hasta": null,
+   "estado": "sin-datos",
+   "ultimoDato": null,
+   "probadas": [
+    "2026-10-08",
+    "2026-10-02",
+    "2026-09-09",
+    "2026-07-11",
+    "2026-04-12",
+    "2025-10-09",
+    "2024-10-09",
+    "2021-10-10"
+   ],
+   "bandaAncha": "STS-2",
+   "acelerografo": null,
+   "canales": [
+    "HHE",
+    "HHN",
+    "HHZ"
+   ],
+   "abiertos": true
+  },
+  {
+   "codigo": "PRV",
+   "sitio": "Providencia, Archipielago de San Andres, Colombia",
+   "lat": 13.3762,
+   "lon": -81.3635,
+   "elevacion": 38,
+   "desde": "2012-05-15",
+   "hasta": null,
+   "estado": "transmite",
+   "ultimoDato": "2026-10-08",
+   "probadas": [
+    "2026-10-08"
+   ],
+   "bandaAncha": "RTcolt",
+   "acelerografo": "Episensor",
+   "canales": [
+    "HHE",
+    "HHN",
+    "HHZ",
+    "HNE",
+    "HNN",
+    "HNZ"
+   ],
+   "abiertos": true
+  },
+  {
+   "codigo": "PTB",
+   "sitio": "Puerto Berrio, Antioquia, Colombia",
+   "lat": 6.5395,
+   "lon": -74.4563,
+   "elevacion": 260,
+   "desde": "2011-11-13",
+   "hasta": "2018-05-11",
+   "estado": "retirada",
+   "ultimoDato": null,
+   "probadas": [
+    "2015-02-11"
+   ],
+   "bandaAncha": "RT151B",
+   "acelerografo": null,
+   "canales": [
+    "BHE",
+    "BHN",
+    "BHZ"
+   ],
+   "abiertos": true
+  },
+  {
+   "codigo": "ROSC",
+   "sitio": "El Rosal, Cundinamarca, Colombia",
+   "lat": 4.8449,
+   "lon": -74.3212,
+   "elevacion": 2987,
+   "desde": "2002-11-08",
+   "hasta": "2018-05-11",
+   "estado": "retirada",
+   "ultimoDato": null,
+   "probadas": [
+    "2010-08-10"
+   ],
+   "bandaAncha": "CMG-3ESP",
+   "acelerografo": null,
+   "canales": [
+    "BHE",
+    "BHN",
+    "BHZ"
+   ],
+   "abiertos": true
+  },
+  {
+   "codigo": "RUS",
+   "sitio": "La Rusia, Boyaca, Colombia",
+   "lat": 5.8925,
+   "lon": -73.0832,
+   "elevacion": 3697,
+   "desde": "1993-06-01",
+   "hasta": null,
+   "estado": "transmite",
+   "ultimoDato": "2026-10-08",
+   "probadas": [
+    "2026-10-08"
+   ],
+   "bandaAncha": "Trillium 240",
+   "acelerografo": null,
+   "canales": [
+    "HHE",
+    "HHN",
+    "HHZ"
+   ],
+   "abiertos": true
+  },
+  {
+   "codigo": "SJC",
+   "sitio": "San Jacinto, Bolivar, Colombia",
+   "lat": 9.8967,
+   "lon": -75.1795,
+   "elevacion": 596,
+   "desde": "2011-05-03",
+   "hasta": null,
+   "estado": "detenida",
+   "ultimoDato": "2026-07-11",
+   "probadas": [
+    "2026-10-08",
+    "2026-10-02",
+    "2026-09-09",
+    "2026-07-11"
+   ],
+   "bandaAncha": "RT151",
+   "acelerografo": "CMG-5T",
+   "canales": [
+    "BHE",
+    "BHN",
+    "BHZ",
+    "HHE",
+    "HHN",
+    "HHZ",
+    "HNE",
+    "HNN",
+    "HNZ"
+   ],
+   "abiertos": true
+  },
+  {
+   "codigo": "SMAR",
+   "sitio": "Santa Marta, Magdalena, Colombia",
+   "lat": 11.1638,
+   "lon": -74.2245,
+   "elevacion": 122,
+   "desde": "2012-09-18",
+   "hasta": null,
+   "estado": "transmite",
+   "ultimoDato": "2026-10-08",
+   "probadas": [
+    "2026-10-08"
+   ],
+   "bandaAncha": "STS-2",
+   "acelerografo": "CMG-5T",
+   "canales": [
+    "BHE",
+    "BHN",
+    "BHZ",
+    "HHE",
+    "HHN",
+    "HHZ",
+    "HNE",
+    "HNN",
+    "HNZ"
+   ],
+   "abiertos": true
+  },
+  {
+   "codigo": "TUM",
+   "sitio": "Tumaco, Narino, Colombia",
+   "lat": 1.8237,
+   "lon": -78.7267,
+   "elevacion": 50,
+   "desde": "1997-01-28",
+   "hasta": null,
+   "estado": "transmite",
+   "ultimoDato": "2026-10-08",
+   "probadas": [
+    "2026-10-08"
+   ],
+   "bandaAncha": "STS-2.5",
+   "acelerografo": "Episensor",
+   "canales": [
+    "HHE",
+    "HHN",
+    "HHZ",
+    "HNE",
+    "HNN",
+    "HNZ"
+   ],
+   "abiertos": true
+  },
+  {
+   "codigo": "URE",
+   "sitio": "San Jose de Ure, Cordoba, Colombia",
+   "lat": 7.7517,
+   "lon": -75.5327,
+   "elevacion": 251,
+   "desde": "2012-05-01",
+   "hasta": "2018-05-11",
+   "estado": "retirada",
+   "ultimoDato": null,
+   "probadas": [
+    "2015-05-07"
+   ],
+   "bandaAncha": "Trillium 120P",
+   "acelerografo": null,
+   "canales": [
+    "BHE",
+    "BHN",
+    "BHZ"
+   ],
+   "abiertos": true
+  },
+  {
+   "codigo": "URI",
+   "sitio": "Uribia, Guajira, Colombia",
+   "lat": 11.702,
+   "lon": -71.993,
+   "elevacion": 68,
+   "desde": "2008-12-17",
+   "hasta": null,
+   "estado": "transmite",
+   "ultimoDato": "2026-10-08",
+   "probadas": [
+    "2026-10-08"
+   ],
+   "bandaAncha": "Trillium 240",
+   "acelerografo": "Episensor",
+   "canales": [
+    "BHE",
+    "BHN",
+    "BHZ",
+    "HHE",
+    "HHN",
+    "HHZ",
+    "HNE",
+    "HNN",
+    "HNZ"
+   ],
+   "abiertos": true
+  },
+  {
+   "codigo": "YOT",
+   "sitio": "Yotoco, Valle, Colombia",
+   "lat": 3.9835,
+   "lon": -76.345,
+   "elevacion": 1040,
+   "desde": "2012-10-16",
+   "hasta": "2018-05-11",
+   "estado": "retirada",
+   "ultimoDato": null,
+   "probadas": [
+    "2015-07-30"
+   ],
+   "bandaAncha": "RT151B",
+   "acelerografo": null,
+   "canales": [
+    "BHE",
+    "BHN",
+    "BHZ"
+   ],
+   "abiertos": true
+  },
+  {
+   "codigo": "ZAR",
+   "sitio": "Zaragoza, Antioquia, Colombia",
+   "lat": 7.4923,
+   "lon": -74.858,
+   "elevacion": 205,
+   "desde": "2011-08-25",
+   "hasta": "2018-05-11",
+   "estado": "retirada",
+   "ultimoDato": null,
+   "probadas": [
+    "2015-01-02"
+   ],
+   "bandaAncha": "STS-2.5",
+   "acelerografo": null,
+   "canales": [
+    "BHE",
+    "BHN",
+    "BHZ"
+   ],
+   "abiertos": true
+  }
+ ]
+}

@@ -54,6 +54,7 @@
             --slab:#6da7ec;              /* superficie de la placa (Slab2) */
             /* capa de fondo: <=35 km corteza (neutro) y rampa naranja 35 km -> máx., como cubo-v2 */
             --crust:#8a8a86;
+            --st-on:#34d399; --st-stopped:#f59e0b; --st-nodata:#a3a3a3; --st-retired:#71717a;  /* estaciones */
             --o0:#fde0cc; --o1:#f7b389; --o2:#ef8348; --o3:#d95926; --o4:#a33f18;
             --timevalue-width:96px;
             --font:system-ui,-apple-system,"Segoe UI",sans-serif;
@@ -274,6 +275,7 @@
             --scene-bg:#0a0a0a; --scene-box:#71717a; --scene-surface:#1c1c1f; --scene-label:#a3a3a3; --area-draw:#a3e635;
             --slab:#818cf8;
             --crust:#737373;
+            --st-on:#34d399; --st-stopped:#f59e0b; --st-nodata:#a3a3a3; --st-retired:#71717a;
             --o0:#ecfccb; --o1:#bef264; --o2:#84cc16; --o3:#65a30d; --o4:#4d7c0f;
             --shadow:0 24px 70px rgba(24,24,40,.28);
             --glow:radial-gradient(circle at top, rgba(99,102,241,.16), transparent 34%);
@@ -292,6 +294,7 @@
             --scene-bg:#f7f7f8; --scene-box:#71717a; --scene-surface:#e4e4e7; --scene-label:#52525b; --area-draw:#65a30d;
             --slab:#4f46e5;
             --crust:#a1a1aa;
+            --st-on:#047857; --st-stopped:#b45309; --st-nodata:#52525b; --st-retired:#a1a1aa;
             --o0:#bef264; --o1:#84cc16; --o2:#65a30d; --o3:#4d7c0f; --o4:#365314;
             --shadow:0 18px 48px rgba(24,24,27,.08);
             --glow:radial-gradient(circle at top, rgba(99,102,241,.12), transparent 30%);
@@ -373,6 +376,16 @@
         .leaflet-control-layers { border-radius: 12px !important; }
         :root[data-theme="light"] .leaflet-control-layers-toggle { filter: none; }
         :root[data-theme="light"] input[type="date"]::-webkit-calendar-picker-indicator { filter: none; }
+        /* Estaciones sismológicas: triángulo, como se dibujan en sismología. El color va
+           por CSS, así que el cambio de tema no obliga a rehacer los marcadores. */
+        .estacion-icono { background: none; border: none; }
+        .estacion polygon { stroke: var(--ink); stroke-width: 1; stroke-linejoin: round; }
+        .estacion.estado-transmite polygon { fill: var(--st-on); }
+        .estacion.estado-detenida polygon { fill: var(--st-stopped); }
+        .estacion.estado-sin-datos polygon { fill: none; stroke: var(--st-nodata); stroke-width: 1.8; }
+        .estacion.estado-retirada polygon { fill: var(--st-retired); opacity: .6; }
+        .leyenda-estaciones { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 8px; font-size: 11px; color: var(--ink-2); }
+        .leyenda-estaciones span { display: inline-flex; align-items: center; gap: 5px; }
     </style>
 </head>
 <body>
@@ -672,6 +685,32 @@
                             <span class="slider-value" id="opacityValue">100%</span>
                         </div>
                         <input type="range" id="opacitySlider" min="0" max="100" value="100">
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <div class="group-title">Seismic stations</div>
+                    <div class="checkbox-item">
+                        <input type="checkbox" id="showEstaciones">
+                        <label for="showEstaciones">SGC stations on EarthScope — network CM</label>
+                    </div>
+                    <div id="estacionesControles" hidden>
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="estacionesRetiradas">
+                            <label for="estacionesRetiradas">Include retired stations</label>
+                        </div>
+                        <div class="leyenda-estaciones">
+                            <span><svg class="estacion estado-transmite" viewBox="0 0 16 14" width="13" height="11"><polygon points="8,1 15,13 1,13"/></svg>Transmitting</span>
+                            <span><svg class="estacion estado-detenida" viewBox="0 0 16 14" width="13" height="11"><polygon points="8,1 15,13 1,13"/></svg>Stopped</span>
+                            <span><svg class="estacion estado-sin-datos" viewBox="0 0 16 14" width="13" height="11"><polygon points="8,2 14.5,12.6 1.5,12.6"/></svg>No archived data</span>
+                            <span><svg class="estacion estado-retirada" viewBox="0 0 16 14" width="13" height="11"><polygon points="8,1 15,13 1,13"/></svg>Retired</span>
+                        </div>
+                        <div class="info-box" id="resumenEstaciones" style="margin-top:8px"></div>
+                        <div class="nota">The SGC's National Seismological Network has hundreds of stations. These are the ones it
+                            shares through its agreement with IRIS — now EarthScope — where anyone can download their
+                            waveforms. A station's metadata does not say whether data arrive: some are listed as current
+                            and have no archived record at all. So the status comes from asking for real data, station by
+                            station. Click a station for its sensors and its page at EarthScope.</div>
                     </div>
                 </div>
 
@@ -2872,6 +2911,10 @@
             const v = (n, d) => (cs.getPropertyValue(n) || '').trim() || d;
             return temaCache = {
                 corteza: v('--crust', '#8a8a86'),
+                estaciones: {
+                    transmite: v('--st-on', '#34d399'), detenida: v('--st-stopped', '#f59e0b'),
+                    'sin-datos': v('--st-nodata', '#a3a3a3'), retirada: v('--st-retired', '#71717a')
+                },
                 rampa: ['--o0', '--o1', '--o2', '--o3', '--o4'].map((n, i) => v(n, ['#fde0cc', '#f7b389', '#ef8348', '#d95926', '#a33f18'][i])),
                 fondo: v('--scene-bg', '#0d0d0d'),
                 caja: v('--scene-box', '#8a8a86'),
@@ -2944,6 +2987,7 @@
                 }
             }
             refs = null;
+            grupoEstaciones = null;
             if (mallaSuperior && mallaSuperior.material && mallaSuperior.material.map) {
                 mallaSuperior.material.map.dispose();
             }
@@ -3696,6 +3740,168 @@
             if (render.malla.instanceColor) render.malla.instanceColor.needsUpdate = true;
         }
 
+        // ============================================================
+        // Estaciones sismológicas del SGC publicadas en EarthScope (red CM)
+        // ============================================================
+        // Las estaciones que el SGC comparte por el convenio con IRIS — hoy EarthScope —
+        // de una red que tiene cientos. Si transmiten o no, no lo dice su ficha: lo
+        // congela tools/estaciones-sgc.mjs pidiendo datos de verdad, porque el
+        // servicio que lo decía fue retirado. Son pocas: se dibujan todas en el mapa,
+        // y en 3D las que caen en el área.
+        const RUTA_ESTACIONES = 'estaciones/cm-earthscope.json';
+        const ESTADOS_ESTACION = {
+            transmite: 'Transmitting', detenida: 'Stopped',
+            'sin-datos': 'No archived data', retirada: 'Retired'
+        };
+        let datosEstaciones = null, promesaEstaciones = null;
+        let capaEstaciones2D = null, grupoEstaciones = null;
+        // El contador de eventos flota sobre la esquina superior del mapa y tapaba la
+        // ficha de una estación del norte: Leaflet desplaza el mapa hasta dejarla libre.
+        const FICHA_ESTACION = { autoPanPaddingTopLeft: [20, 150], maxWidth: 340 };
+
+        function cargarEstaciones() {
+            if (datosEstaciones) return Promise.resolve(datosEstaciones);
+            if (!promesaEstaciones) {
+                promesaEstaciones = fetch(RUTA_ESTACIONES)
+                    .then(r => { if (!r.ok) throw new Error(`${r.status}`); return r.json(); })
+                    .then(d => (datosEstaciones = d))
+                    .catch(err => { promesaEstaciones = null; throw err; });
+            }
+            return promesaEstaciones;
+        }
+
+        function estacionesVisibles() {
+            return datosEstaciones.estaciones.filter(e => e.estado !== 'retirada' || $('estacionesRetiradas').checked);
+        }
+
+        function textoEstado(e) {
+            if (e.estado === 'transmite') return `Transmitting — data on ${e.ultimoDato}`;
+            if (e.estado === 'detenida') return `Stopped — no data on ${e.probadas[0]}; last found on ${e.ultimoDato}`;
+            if (e.estado === 'sin-datos') {
+                return `Current in its metadata, but no data at any of ${e.probadas.length} dates probed ` +
+                    `(${e.probadas[e.probadas.length - 1]} to ${e.probadas[0]})`;
+            }
+            return `Retired on ${e.hasta}` + (e.ultimoDato
+                ? ` — its archive has data (found on ${e.ultimoDato})`
+                : ` — no archived data found at mid-life (${e.probadas[0]})`);
+        }
+
+        function fichaEstacion(e) {
+            const sensores = [e.bandaAncha && `broadband ${escaparHTML(e.bandaAncha)}`,
+                              e.acelerografo && `accelerometer ${escaparHTML(e.acelerografo)}`].filter(Boolean);
+            return [
+                `<strong>CM.${escaparHTML(e.codigo)}</strong> — ${escaparHTML(e.sitio)}`,
+                escaparHTML(textoEstado(e)),
+                `${e.desde} → ${e.hasta || 'present'} · ${e.elevacion} m`,
+                sensores.length ? sensores.join(' · ') : '',
+                e.canales.length ? `Channels: ${e.canales.map(escaparHTML).join(' ')}` : '',
+                `<a href="https://ds.iris.edu/mda/CM/${encodeURIComponent(e.codigo)}/" target="_blank" rel="noopener">` +
+                    'Station page at EarthScope ↗</a>'
+            ].filter(Boolean).join('<br>');
+        }
+
+        function dibujarEstaciones2D() {
+            if (capaEstaciones2D) { map.removeLayer(capaEstaciones2D); capaEstaciones2D = null; }
+            if (!datosEstaciones || !$('showEstaciones').checked) return;
+            const capa = L.layerGroup();
+            estacionesVisibles().forEach(e => {
+                const punta = e.estado === 'sin-datos' ? '8,2 14.5,12.6 1.5,12.6' : '8,1 15,13 1,13';
+                L.marker([e.lat, e.lon], {
+                    icon: L.divIcon({
+                        className: 'estacion-icono',
+                        html: `<svg class="estacion estado-${e.estado}" viewBox="0 0 16 14" width="19" height="17">` +
+                              `<polygon points="${punta}"/></svg>`,
+                        iconSize: [19, 17], iconAnchor: [9, 11]
+                    }),
+                    // Las retiradas debajo: donde se superponen, manda la que funciona.
+                    zIndexOffset: e.estado === 'retirada' ? -100 : 0,
+                    keyboard: false
+                })
+                    .bindTooltip(`CM.${escaparHTML(e.codigo)}`, { direction: 'top', offset: [0, -8] })
+                    .bindPopup(fichaEstacion(e), FICHA_ESTACION)
+                    .addTo(capa);
+            });
+            capaEstaciones2D = capa.addTo(map);
+        }
+
+        function quitarEstaciones3D() {
+            if (!grupoEstaciones) return;
+            if (grupo) grupo.remove(grupoEstaciones);
+            grupoEstaciones.traverse(o => {
+                if (o.geometry) o.geometry.dispose();
+                if (o.material) { if (o.material.map) o.material.map.dispose(); o.material.dispose(); }
+            });
+            grupoEstaciones = null;
+        }
+
+        // Pirámides de base triangular paradas en la cara superior, con su código.
+        function actualizarEstaciones3D() {
+            quitarEstaciones3D();
+            if (!datosEstaciones || !$('showEstaciones').checked || !datosFondo.bbox || !grupo) return;
+            const b = datosFondo.bbox, P = proyector(), t = leerTema3D();
+            const lado = Math.max(P.x(b.e) - P.x(b.o), P.y(b.n) - P.y(b.s));
+            const radio = lado * 0.012, alto = radio * 2.4;
+            const g = new THREE.Group();
+            estacionesVisibles().forEach(e => {
+                if (e.lat < b.s || e.lat > b.n || e.lon < b.o || e.lon > b.e) return;
+                const geo = new THREE.ConeGeometry(radio, alto, 3);
+                geo.rotateX(Math.PI / 2);              // el cono apunta a +Y; arriba en la escena es +Z
+                const mat = new THREE.MeshBasicMaterial({
+                    color: new THREE.Color(t.estaciones[e.estado]),
+                    wireframe: e.estado === 'sin-datos',
+                    transparent: e.estado === 'retirada', opacity: e.estado === 'retirada' ? 0.55 : 1
+                });
+                const piramide = new THREE.Mesh(geo, mat);
+                piramide.position.set(P.x(e.lon), P.y(e.lat), alto / 2 + 0.05);
+                g.add(piramide);
+                // etiqueta() tiene el tamaño de los rótulos de los ejes: con decenas de
+                // estaciones se pisaban. Aquí va en proporción a la caja, y las retiradas
+                // no llevan, que son las que menos se buscan.
+                if (e.estado !== 'retirada') {
+                    const rotulo = etiqueta(e.codigo, P.x(e.lon), P.y(e.lat), alto * 1.6);
+                    rotulo.scale.set(lado * 0.05, lado * 0.016, 1);
+                    g.add(rotulo);
+                }
+            });
+            if (g.children.length) { grupoEstaciones = g; grupo.add(g); }
+        }
+
+        function pintarResumenEstaciones() {
+            if (!datosEstaciones) return;
+            const cuenta = {};
+            datosEstaciones.estaciones.forEach(e => { cuenta[e.estado] = (cuenta[e.estado] || 0) + 1; });
+            $('resumenEstaciones').innerHTML =
+                `<strong>${datosEstaciones.estaciones.length} stations archived</strong> · ` +
+                Object.keys(ESTADOS_ESTACION).filter(k => cuenta[k])
+                    .map(k => `${cuenta[k]} ${ESTADOS_ESTACION[k].toLowerCase()}`).join(' · ') + '.<br>' +
+                `Checked on ${escaparHTML(datosEstaciones.consultado)} by downloading 20 s of data per station ` +
+                'and date — a sample, not a full inventory of the archive.';
+        }
+
+        async function actualizarEstaciones() {
+            const on = $('showEstaciones').checked;
+            $('estacionesControles').hidden = !on;
+            if (!on) { dibujarEstaciones2D(); quitarEstaciones3D(); return; }
+            try {
+                await cargarEstaciones();
+            } catch (err) {
+                mensaje(`The station list could not be loaded: ${err.message}`, 'error');
+                return;
+            }
+            if (!$('showEstaciones').checked) return;     // la apagaron mientras cargaba
+            dibujarEstaciones2D();
+            actualizarEstaciones3D();
+            pintarResumenEstaciones();
+        }
+
+        function conectarEstaciones() {
+            // Viaja en el enlace para compartir. Se registra aquí y no en la tabla
+            // COMPARTIR_CASILLAS para no tocar la línea que editan otras capas.
+            Object.assign(COMPARTIR_CASILLAS, { et: 'showEstaciones', er: 'estacionesRetiradas' });
+            $('showEstaciones').addEventListener('change', actualizarEstaciones);
+            $('estacionesRetiradas').addEventListener('change', actualizarEstaciones);
+        }
+
         function construirEscena() {
             limpiarEscena();
             const P = proyector();
@@ -3735,6 +3941,7 @@
 
             grupoTensores = construirTensores(P);
             if (grupoTensores) grupo.add(grupoTensores);
+            actualizarEstaciones3D();
 
             grupoSlab2 = null;      // limpiarEscena ya vació el grupo
             actualizarSlab2();
@@ -5610,6 +5817,8 @@
                 if (datosFondo.bbox) refrescarTrasCambioDeCapas();
             });
 
+            conectarEstaciones();
+
             $('showSlab2').addEventListener('change', (e) => {
                 $('slab2Controles').hidden = !e.target.checked;
                 if (!map) return;
@@ -5880,6 +6089,13 @@
         window.__explorador = {
             estadoFondo: () => datosFondo,
             estadoEvento: () => datosEvento,
+            estaciones: () => ({
+                cargadas: !!datosEstaciones,
+                capa2D: capaEstaciones2D ? capaEstaciones2D.getLayers().length : 0,
+                grupo3D: grupoEstaciones ? grupoEstaciones.children.length : 0,
+                resumen: $('resumenEstaciones').innerText,
+                compartir: COMPARTIR_CASILLAS.et
+            }),
             visiblesFondo: () => renderFondo.visibles,
             visiblesEvento: () => renderEvento.visibles,
             consultar,
